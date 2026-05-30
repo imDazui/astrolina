@@ -35,3 +35,11 @@ export const LABEL_HALO_COLORS: Record<Theme, string> = {
   light: 'rgba(255, 255, 255, 0.95)',
   vintage: 'rgba(28, 20, 12, 0.95)',
 };
+
+// Accent used by the on-map measurement tool (line + endpoints), matching each
+// theme's UI accent.
+export const MEASURE_COLORS: Record<Theme, string> = {
+  dark: '#f5b83d',
+  light: '#c97b1a',
+  vintage: '#f5b83d',
+};

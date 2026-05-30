@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import maplibregl from 'maplibre-gl';
+import maplibregl, { type ExpressionSpecification } from 'maplibre-gl';
 import type { FeatureCollection, LineString } from 'geojson';
 import type { LineProps } from '../../lib/astro/lines';
 import type { ParanProps } from '../../lib/astro/parans';
@@ -7,8 +7,11 @@ import type { LocalSpaceProps } from '../../lib/astro/localSpace';
 import {
   BASEMAP_STYLE_URLS,
   LABEL_HALO_COLORS,
+  MEASURE_COLORS,
   type Theme,
 } from '../../lib/theme';
+import { ensureGlyphImages, GLYPH_IMAGE_PREFIX } from './glyphImages';
+import { applyBasemapStyle, applyDetailToggles } from './basemapStyle';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './Map.css';
 
@@ -17,10 +20,98 @@ const EMPTY_FC = <T,>(): FeatureCollection<LineString, T> => ({
   features: [],
 });
 
+// Inline the planet glyph (a baked image, keyed glyph-<planet>) ahead of the
+// angle code in each line label, instead of a two-letter code. Angles read
+// MC / IC / As / Ds. The text portion is colored by the layer's text-color.
+const planetGlyph = (planetProp: string): ExpressionSpecification =>
+  ['image', ['concat', GLYPH_IMAGE_PREFIX, ['get', planetProp]]] as unknown as ExpressionSpecification;
+
+const ACG_LABEL_FIELD = [
+  'format',
+  planetGlyph('planet'),
+  {},
+  ['match', ['get', 'lineType'], 'MC', ' MC', 'IC', ' IC', 'ASC', ' As', 'DSC', ' Ds', ''],
+  {},
+] as unknown as ExpressionSpecification;
+
+const PARAN_LABEL_FIELD = [
+  'format',
+  planetGlyph('planetA'),
+  {},
+  ['match', ['get', 'angleA'], 'MC', ' MC', 'IC', ' IC', ''],
+  {},
+  ' × ',
+  {},
+  planetGlyph('planetB'),
+  {},
+  ['match', ['get', 'angleB'], 'ASC', ' As', 'DSC', ' Ds', ''],
+  {},
+] as unknown as ExpressionSpecification;
+
+// Overlay variants prepend the overlay tag (Tr / Sp / Sa / Sy, stamped onto the
+// feature `label`) so overlay lines read e.g. "Tr ♂ MC".
+const ACG_OV_LABEL_FIELD = [
+  'format',
+  ['get', 'label'],
+  {},
+  ' ',
+  {},
+  planetGlyph('planet'),
+  {},
+  ['match', ['get', 'lineType'], 'MC', ' MC', 'IC', ' IC', 'ASC', ' As', 'DSC', ' Ds', ''],
+  {},
+] as unknown as ExpressionSpecification;
+
+const PARAN_OV_LABEL_FIELD = [
+  'format',
+  ['get', 'label'],
+  {},
+  ' ',
+  {},
+  planetGlyph('planetA'),
+  {},
+  ['match', ['get', 'angleA'], 'MC', ' MC', 'IC', ' IC', ''],
+  {},
+  ' × ',
+  {},
+  planetGlyph('planetB'),
+  {},
+  ['match', ['get', 'angleB'], 'ASC', ' As', 'DSC', ' Ds', ''],
+  {},
+] as unknown as ExpressionSpecification;
+
 export interface OverlayData {
   lines: FeatureCollection<LineString, LineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
+}
+
+// Live result of the on-map measurement tool: great-circle separation between
+// the click origin and the current point, as a central angle plus distance.
+export interface MeasureInfo {
+  angleDeg: number;
+  km: number;
+  miles: number;
+}
+
+const EARTH_RADIUS_KM = 6371.0088;
+const KM_PER_MILE = 1.609344;
+
+function measureBetween(
+  a: { lng: number; lat: number },
+  b: { lng: number; lat: number },
+): MeasureInfo {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const la1 = toRad(a.lat);
+  const la2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  const km = EARTH_RADIUS_KM * c;
+  return { angleDeg: (c * 180) / Math.PI, km, miles: km / KM_PER_MILE };
 }
 
 interface MapProps {
@@ -32,6 +123,13 @@ interface MapProps {
   pin?: { lat: number; lng: number } | null;
   pinType?: 'custom' | 'natal' | null;
   theme: Theme;
+  /** Basemap detail toggles (Theme tab). Default-off keeps the chart uncluttered. */
+  showRoads?: boolean;
+  showRivers?: boolean;
+  /** When true, click-drag on the map measures great-circle distance (and map
+   *  panning is suspended for the duration). */
+  measureActive?: boolean;
+  onMeasure?: (m: MeasureInfo | null) => void;
   onHover?: (lat: number, lng: number) => void;
   onLeave?: () => void;
   onClick?: (lat: number, lng: number) => void;
@@ -62,8 +160,6 @@ function addHorizonArrows(
   source: string,
   lineType: 'ASC' | 'DSC',
   glyph: string,
-  haloColor: string,
-  opacity: number,
 ) {
   map.addLayer({
     id,
@@ -87,15 +183,15 @@ function addHorizonArrows(
     },
     paint: {
       'text-color': ['get', 'color'],
-      'text-opacity': opacity,
-      'text-halo-color': haloColor,
-      'text-halo-width': 1.2,
-      'text-halo-blur': 0.5,
     },
   });
 }
 
-function setupCustomLayers(map: maplibregl.Map, haloColor: string) {
+function setupCustomLayers(
+  map: maplibregl.Map,
+  haloColor: string,
+  measureColor: string,
+) {
   map.addSource('parans', { type: 'geojson', data: EMPTY_FC() });
   map.addLayer({
     id: 'parans-layer',
@@ -112,7 +208,7 @@ function setupCustomLayers(map: maplibregl.Map, haloColor: string) {
     source: 'parans',
     type: 'symbol',
     layout: {
-      'text-field': ['get', 'label'],
+      'text-field': PARAN_LABEL_FIELD,
       'symbol-placement': 'line',
       'symbol-spacing': 320,
       'text-size': 10,
@@ -180,14 +276,14 @@ function setupCustomLayers(map: maplibregl.Map, haloColor: string) {
       'line-opacity': 0.85,
     },
   });
-  addHorizonArrows(map, 'acg-lines-arrows-asc', 'acg-lines', 'ASC', '→', haloColor, 1);
-  addHorizonArrows(map, 'acg-lines-arrows-dsc', 'acg-lines', 'DSC', '←', haloColor, 1);
+  addHorizonArrows(map, 'acg-lines-arrows-asc', 'acg-lines', 'ASC', '→');
+  addHorizonArrows(map, 'acg-lines-arrows-dsc', 'acg-lines', 'DSC', '←');
   map.addLayer({
     id: 'acg-lines-labels',
     source: 'acg-lines',
     type: 'symbol',
     layout: {
-      'text-field': ['get', 'label'],
+      'text-field': ACG_LABEL_FIELD,
       'symbol-placement': 'line',
       'symbol-spacing': 280,
       'text-size': 10,
@@ -218,7 +314,7 @@ function setupCustomLayers(map: maplibregl.Map, haloColor: string) {
     paint: {
       'line-color': ['get', 'color'],
       'line-width': 1.0,
-      'line-opacity': 0.6,
+      'line-opacity': 0.75,
       'line-dasharray': [1, 3],
     },
   });
@@ -230,8 +326,8 @@ function setupCustomLayers(map: maplibregl.Map, haloColor: string) {
     type: 'line',
     paint: {
       'line-color': ['get', 'color'],
-      'line-width': 0.6,
-      'line-opacity': 0.35,
+      'line-width': 0.7,
+      'line-opacity': 0.45,
       'line-dasharray': [2, 3],
     },
   });
@@ -240,7 +336,7 @@ function setupCustomLayers(map: maplibregl.Map, haloColor: string) {
     source: 'parans-ov',
     type: 'symbol',
     layout: {
-      'text-field': ['get', 'label'],
+      'text-field': PARAN_OV_LABEL_FIELD,
       'symbol-placement': 'line',
       'symbol-spacing': 320,
       'text-size': 9,
@@ -253,7 +349,6 @@ function setupCustomLayers(map: maplibregl.Map, haloColor: string) {
     },
     paint: {
       'text-color': ['get', 'color'],
-      'text-opacity': 0.8,
       'text-halo-color': haloColor,
       'text-halo-width': 2,
       'text-halo-blur': 0.5,
@@ -269,7 +364,7 @@ function setupCustomLayers(map: maplibregl.Map, haloColor: string) {
     paint: {
       'line-color': ['get', 'color'],
       'line-width': ['case', ['==', ['get', 'lineType'], 'MC'], 1.5, 0.8],
-      'line-opacity': ['case', ['==', ['get', 'lineType'], 'MC'], 0.7, 0.5],
+      'line-opacity': ['case', ['==', ['get', 'lineType'], 'MC'], 0.95, 0.7],
       'line-dasharray': [3, 3],
     },
   });
@@ -283,18 +378,18 @@ function setupCustomLayers(map: maplibregl.Map, haloColor: string) {
     paint: {
       'line-color': ['get', 'color'],
       'line-width': 1.1,
-      'line-opacity': 0.6,
+      'line-opacity': 0.85,
       'line-dasharray': [2, 3],
     },
   });
-  addHorizonArrows(map, 'acg-lines-ov-arrows-asc', 'acg-lines-ov', 'ASC', '→', haloColor, 0.65);
-  addHorizonArrows(map, 'acg-lines-ov-arrows-dsc', 'acg-lines-ov', 'DSC', '←', haloColor, 0.65);
+  addHorizonArrows(map, 'acg-lines-ov-arrows-asc', 'acg-lines-ov', 'ASC', '→');
+  addHorizonArrows(map, 'acg-lines-ov-arrows-dsc', 'acg-lines-ov', 'DSC', '←');
   map.addLayer({
     id: 'acg-lines-ov-labels',
     source: 'acg-lines-ov',
     type: 'symbol',
     layout: {
-      'text-field': ['get', 'label'],
+      'text-field': ACG_OV_LABEL_FIELD,
       'symbol-placement': 'line',
       'symbol-spacing': 280,
       'text-size': 9,
@@ -307,10 +402,36 @@ function setupCustomLayers(map: maplibregl.Map, haloColor: string) {
     },
     paint: {
       'text-color': ['get', 'color'],
-      'text-opacity': 0.8,
       'text-halo-color': haloColor,
       'text-halo-width': 2,
       'text-halo-blur': 0.5,
+    },
+  });
+
+  // ── Measurement tool: a dashed great-circle segment from the click origin to
+  // the cursor, with a disc at each end. Drawn on top of everything else.
+  map.addSource('measure', { type: 'geojson', data: EMPTY_FC() });
+  map.addLayer({
+    id: 'measure-line',
+    source: 'measure',
+    type: 'line',
+    filter: ['==', ['geometry-type'], 'LineString'],
+    paint: {
+      'line-color': measureColor,
+      'line-width': 2,
+      'line-dasharray': [2, 2],
+    },
+  });
+  map.addLayer({
+    id: 'measure-points',
+    source: 'measure',
+    type: 'circle',
+    filter: ['==', ['geometry-type'], 'Point'],
+    paint: {
+      'circle-radius': 4,
+      'circle-color': measureColor,
+      'circle-stroke-color': haloColor,
+      'circle-stroke-width': 1.5,
     },
   });
 }
@@ -346,6 +467,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   pin,
   pinType,
   theme,
+  showRoads = false,
+  showRivers = false,
+  measureActive,
+  onMeasure,
   onHover,
   onLeave,
   onClick,
@@ -371,6 +496,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const dataRef = useRef<MapData>({ lines, parans, localSpace, overlay });
   dataRef.current = { lines, parans, localSpace, overlay };
   const themeRef = useRef(theme);
+  // Current detail toggles, read inside the (once-bound) load/style.load handlers.
+  const detailRef = useRef({ showRoads, showRivers });
+  detailRef.current = { showRoads, showRivers };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -408,8 +536,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       });
     });
 
-    map.on('load', () => {
-      setupCustomLayers(map, LABEL_HALO_COLORS[themeRef.current]);
+    map.on('load', async () => {
+      await ensureGlyphImages(map);
+      applyBasemapStyle(map, themeRef.current, detailRef.current);
+      setupCustomLayers(
+        map,
+        LABEL_HALO_COLORS[themeRef.current],
+        MEASURE_COLORS[themeRef.current],
+      );
       pushData(map, dataRef.current);
     });
 
@@ -429,8 +563,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     if (themeRef.current === theme) return;
     themeRef.current = theme;
     map.setStyle(BASEMAP_STYLE_URLS[theme]);
-    map.once('style.load', () => {
-      setupCustomLayers(map, LABEL_HALO_COLORS[theme]);
+    map.once('style.load', async () => {
+      await ensureGlyphImages(map);
+      applyBasemapStyle(map, theme, detailRef.current);
+      setupCustomLayers(map, LABEL_HALO_COLORS[theme], MEASURE_COLORS[theme]);
       pushData(map, dataRef.current);
     });
   }, [theme]);
@@ -438,15 +574,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    // While the measurement tool is active, the map's pointer drives the ruler,
+    // so suppress hover-relocation / pin interactions.
     const handleMove = (e: maplibregl.MapMouseEvent) => {
+      if (measureActive) return;
       onHover?.(e.lngLat.lat, e.lngLat.lng);
     };
     const handleLeave = () => onLeave?.();
     const handleClick = (e: maplibregl.MapMouseEvent) => {
+      if (measureActive) return;
       onClick?.(e.lngLat.lat, e.lngLat.lng);
     };
     const handleContext = (e: maplibregl.MapMouseEvent) => {
       e.preventDefault();
+      if (measureActive) return;
       onPinNatal?.();
     };
     map.on('mousemove', handleMove);
@@ -459,7 +600,85 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       map.off('click', handleClick);
       map.off('contextmenu', handleContext);
     };
-  }, [onHover, onLeave, onClick, onPinNatal]);
+  }, [onHover, onLeave, onClick, onPinNatal, measureActive]);
+
+  // Measurement tool: press-drag draws a great-circle segment from the origin to
+  // the cursor and reports the live distance. Panning is disabled while the tool
+  // is active so the drag measures instead of moving the map.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !measureActive) return;
+
+    const setSegment = (
+      o: { lng: number; lat: number },
+      c: { lng: number; lat: number },
+    ) => {
+      const src = map.getSource('measure') as
+        | maplibregl.GeoJSONSource
+        | undefined;
+      src?.setData({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'LineString',
+              coordinates: [
+                [o.lng, o.lat],
+                [c.lng, c.lat],
+              ],
+            },
+          },
+          {
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'Point', coordinates: [o.lng, o.lat] },
+          },
+          {
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
+          },
+        ],
+      });
+    };
+
+    let origin: { lng: number; lat: number } | null = null;
+    const onDown = (e: maplibregl.MapMouseEvent) => {
+      origin = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      setSegment(origin, origin);
+      onMeasure?.(measureBetween(origin, origin));
+    };
+    const onMove = (e: maplibregl.MapMouseEvent) => {
+      if (!origin) return;
+      const cur = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      setSegment(origin, cur);
+      onMeasure?.(measureBetween(origin, cur));
+    };
+    const onUp = () => {
+      origin = null;
+    };
+
+    map.dragPan.disable();
+    map.getCanvas().style.cursor = 'crosshair';
+    map.on('mousedown', onDown);
+    map.on('mousemove', onMove);
+    map.on('mouseup', onUp);
+
+    return () => {
+      map.off('mousedown', onDown);
+      map.off('mousemove', onMove);
+      map.off('mouseup', onUp);
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = '';
+      const src = map.getSource('measure') as
+        | maplibregl.GeoJSONSource
+        | undefined;
+      src?.setData(EMPTY_FC());
+      onMeasure?.(null);
+    };
+  }, [measureActive, onMeasure]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -470,6 +689,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       map.once('load', () => pushData(map, dataRef.current));
     }
   }, [lines, parans, localSpace, overlay]);
+
+  // Toggle basemap road / river visibility live (theme reloads reapply via the
+  // style.load handler above).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    applyDetailToggles(map, { showRoads, showRivers });
+  }, [showRoads, showRivers]);
 
   useEffect(() => {
     const map = mapRef.current;

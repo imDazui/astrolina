@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FeatureCollection, LineString } from 'geojson';
-import { Map, type MapHandle, type OverlayData } from './components/Map/Map';
+import {
+  Map,
+  type MapHandle,
+  type MeasureInfo,
+  type OverlayData,
+} from './components/Map/Map';
 import { Sidebar } from './components/Sidebar/Sidebar';
+import { TimelineHud } from './components/TimelineHud/TimelineHud';
+import {
+  MappingToolsHud,
+  type MapTool,
+} from './components/MappingToolsHud/MappingToolsHud';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
 import { ChartSwitcher } from './components/ChartSwitcher/ChartSwitcher';
@@ -26,9 +36,11 @@ import { generateParans, type ParanProps } from './lib/astro/parans';
 import { generateLocalSpace, type LocalSpaceProps } from './lib/astro/localSpace';
 import {
   buildOverlay,
+  minorStepMs,
   OVERLAY_LABEL_PREFIX,
-  prefixLabels,
+  tagLabels,
   type OverlayMode,
+  type TimeUnit,
 } from './lib/astro/timeline';
 import {
   loadOverlayDate,
@@ -137,6 +149,12 @@ export default function App() {
     const v = localStorage.getItem('astro:house-system:v1');
     return v === 'whole' || v === 'equal' ? v : 'placidus';
   });
+  const [showRoads, setShowRoads] = useState(
+    () => localStorage.getItem('astro:show-roads:v1') === '1',
+  );
+  const [showRivers, setShowRivers] = useState(
+    () => localStorage.getItem('astro:show-rivers:v1') === '1',
+  );
   const [hover, setHover] = useState<Point | null>(null);
   const [pinned, setPinned] = useState<Point | null>(null);
   const [wheelExpanded, setWheelExpanded] = useState(false);
@@ -149,8 +167,12 @@ export default function App() {
   const [partnerId, setPartnerId] = useState<string | null>(() =>
     loadOverlayPartner(),
   );
-  const [stepDays, setStepDays] = useState<number>(() => loadOverlayStep());
+  const [stepUnit, setStepUnit] = useState<TimeUnit>(() => loadOverlayStep());
   const [playing, setPlaying] = useState(false);
+
+  // Mapping tools (top bar). Transient — not persisted across reloads.
+  const [mapTool, setMapTool] = useState<MapTool>('off');
+  const [measure, setMeasure] = useState<MeasureInfo | null>(null);
 
   const mapRef = useRef<MapHandle>(null);
 
@@ -165,23 +187,27 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:house-system:v1', houseSystem);
   }, [houseSystem]);
+  useEffect(() => {
+    localStorage.setItem('astro:show-roads:v1', showRoads ? '1' : '0');
+  }, [showRoads]);
+  useEffect(() => {
+    localStorage.setItem('astro:show-rivers:v1', showRivers ? '1' : '0');
+  }, [showRivers]);
 
   useEffect(() => saveOverlayMode(overlayMode), [overlayMode]);
   useEffect(() => saveOverlayDate(targetDate), [targetDate]);
   useEffect(() => saveOverlayPartner(partnerId), [partnerId]);
-  useEffect(() => saveOverlayStep(stepDays), [stepDays]);
+  useEffect(() => saveOverlayStep(stepUnit), [stepUnit]);
 
-  // Animation: advance the target date one step per tick while playing. setData
-  // is cheap; the per-tick cost is one getPlanetPositions(). ~8 fps keeps the
-  // sweep smooth without thrashing recompute.
+  // Animation: advance the target date one minor notch per tick while playing.
+  // setData is cheap; the per-tick cost is one getPlanetPositions(). ~8 fps keeps
+  // the sweep smooth without thrashing recompute.
   useEffect(() => {
     if (!playing) return;
-    const id = window.setInterval(
-      () => setTargetDate((d) => d + stepDays * 86_400_000),
-      120,
-    );
+    const tick = minorStepMs(stepUnit);
+    const id = window.setInterval(() => setTargetDate((d) => d + tick), 120);
     return () => window.clearInterval(id);
-  }, [playing, stepDays]);
+  }, [playing, stepUnit]);
 
   // Pause if the overlay leaves a time mode (synastry/off have no scrubber).
   const isTimeMode =
@@ -280,19 +306,13 @@ export default function App() {
         : overlayLayer.positions;
     return {
       lines: filterLines(
-        prefixLabels(
-          generateLines(ovPositions, overlayLayer.gmst),
-          prefix,
-        ),
+        tagLabels(generateLines(ovPositions, overlayLayer.gmst), prefix),
         visiblePlanets,
         visibleLineTypes,
       ),
       parans: showParans
         ? filterParans(
-            prefixLabels(
-              generateParans(ovPositions, overlayLayer.gmst),
-              prefix,
-            ),
+            tagLabels(generateParans(ovPositions, overlayLayer.gmst), prefix),
             visiblePlanets,
           )
         : EMPTY_FC,
@@ -440,11 +460,16 @@ export default function App() {
         pin={pinned}
         pinType={isNatalPin ? 'natal' : pinned ? 'custom' : null}
         theme={theme}
+        showRoads={showRoads}
+        showRivers={showRivers}
+        measureActive={mapTool === 'measure'}
+        onMeasure={setMeasure}
         onHover={onHover}
         onLeave={onLeave}
         onClick={onClick}
         onPinNatal={onPinNatal}
       />
+      <div className="map-edge-glow" data-state={coordSource} aria-hidden="true" />
       {!wheelExpanded && (
         <header className="app-header">
           <ChartSwitcher
@@ -482,19 +507,26 @@ export default function App() {
         setHouseSystem={setHouseSystem}
         theme={theme}
         setTheme={setTheme}
+        showRoads={showRoads}
+        setShowRoads={setShowRoads}
+        showRivers={showRivers}
+        setShowRivers={setShowRivers}
+      />
+      <MappingToolsHud tool={mapTool} setTool={setMapTool} measure={measure} />
+      <TimelineHud
         overlayMode={overlayMode}
         setOverlayMode={setOverlayMode}
         targetDate={targetDate}
         setTargetDate={setTargetDate}
-        stepDays={stepDays}
-        setStepDays={setStepDays}
+        stepUnit={stepUnit}
+        setStepUnit={setStepUnit}
         playing={playing}
         setPlaying={setPlaying}
         partnerId={partnerId}
         setPartnerId={setPartnerId}
         charts={charts}
         currentId={current?.id ?? null}
-        overlayLabel={overlayLayer?.label ?? null}
+        overlayMeasure={overlayLayer?.measure ?? null}
       />
       {wheelExpanded ? (
         <ExpandedChartSidebar
@@ -506,7 +538,8 @@ export default function App() {
           angles={angles}
           planets={ecliptic}
           overlayPlanets={overlayEcliptic}
-          overlayLabel={overlayLayer?.label ?? null}
+          overlayLabel={overlayLayer?.labelFull ?? null}
+          overlayPartner={overlayMode === 'synastry' ? partner : null}
           visiblePlanets={visiblePlanets}
           onClose={() => setWheelExpanded(false)}
           onRecenterPin={onRecenterPin}

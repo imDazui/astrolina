@@ -25,9 +25,41 @@ export type OverlayMode =
 
 export type OverlayKind = Exclude<OverlayMode, 'off'>;
 
+// Timeline granularity. Each unit defines the MAJOR (labeled) notch interval on
+// the ruler and how many sub-segments it splits into; the minor notch — and the
+// amount one Step button press / one animation tick advances — is major/subdiv.
+//   hour  → 6 segments → minor 10 min
+//   day   → 4 segments → minor 6 h
+//   week  → 7 segments → minor 1 day
+//   month → 6 segments → minor 5 days
+//   year  → 12 segments → minor ~1 month
+export type TimeUnit = 'hour' | 'day' | 'week' | 'month' | 'year';
+
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+
+export const TIME_UNITS: Record<TimeUnit, { major: number; subdiv: number }> = {
+  hour: { major: HOUR_MS, subdiv: 6 },
+  day: { major: DAY_MS, subdiv: 4 },
+  week: { major: 7 * DAY_MS, subdiv: 7 },
+  month: { major: 30 * DAY_MS, subdiv: 6 },
+  year: { major: 365 * DAY_MS, subdiv: 12 },
+};
+
+// One minor notch = one Step / one animation tick.
+export const minorStepMs = (u: TimeUnit): number =>
+  TIME_UNITS[u].major / TIME_UNITS[u].subdiv;
+
 export interface OverlayLayer {
   kind: OverlayKind;
-  label: string;
+  /** Compact dynamic measure for the HUD readout (no mode word, since the
+   *  dropdown already names the mode): "Age 32.0" / "30.2°". null when the mode
+   *  has nothing extra worth showing (transits — the date is in the bar already;
+   *  synastry — the partner is named in its picker). */
+  measure: string | null;
+  /** Full spelled-out label for the roomy expanded-view caption, e.g.
+   *  "Solar Arc · 30.2°" or "Transits · 2026-05-10 14:30 UTC". */
+  labelFull: string;
   jd: number; // effective JD, for toEclipticPositions in the bi-wheel
   positions: PlanetPosition[];
   gmst: number;
@@ -62,6 +94,12 @@ function fmtDateUTC(ms: number): string {
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
 }
 
+function fmtDateTimeUTC(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${fmtDateUTC(ms)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+
 export function buildOverlay(
   chart: StoredChart,
   mode: OverlayKind,
@@ -73,7 +111,8 @@ export function buildOverlay(
       const jd = epochMsToJD(targetDate);
       return {
         kind: mode,
-        label: `Transits · ${fmtDateUTC(targetDate)} UTC`,
+        measure: null,
+        labelFull: `Transits · ${fmtDateTimeUTC(targetDate)} UTC`,
         jd,
         positions: getPlanetPositions(jd),
         gmst: gmstRadians(jd),
@@ -92,7 +131,8 @@ export function buildOverlay(
           : gmstRadians(birthJD);
       return {
         kind: mode,
-        label: `Progressed · age ${yearsElapsed.toFixed(1)}`,
+        measure: `Age ${yearsElapsed.toFixed(1)}`,
+        labelFull: `Secondary Progressions · age ${yearsElapsed.toFixed(1)}`,
         jd: progressedJD,
         positions: getPlanetPositions(progressedJD),
         gmst,
@@ -119,7 +159,8 @@ export function buildOverlay(
       const positions = natal.map((p) => shiftEclipticLongitude(p, arc, eps));
       return {
         kind: mode,
-        label: `Solar arc · ${((arc * 180) / Math.PI).toFixed(1)}°`,
+        measure: `${((arc * 180) / Math.PI).toFixed(1)}°`,
+        labelFull: `Solar Arc · ${((arc * 180) / Math.PI).toFixed(1)}°`,
         jd: birthJD,
         positions,
         gmst: gmstRadians(birthJD),
@@ -132,7 +173,8 @@ export function buildOverlay(
       const pjd = birthDataToJD(partner);
       return {
         kind: mode,
-        label: `Synastry · ${partner.name}`,
+        measure: null,
+        labelFull: `Synastry · ${partner.name}`,
         jd: pjd,
         positions: getPlanetPositions(pjd),
         gmst: gmstRadians(pjd),
@@ -143,25 +185,27 @@ export function buildOverlay(
   }
 }
 
-// Short label prefix per overlay kind, baked into the GeoJSON feature labels so
-// the map's label layers need no expression changes.
+// Two-letter tag per overlay kind, shown on the map ahead of the glyph + angle
+// code so overlay lines read e.g. "Tr ♂ MC". Tr transits · Sp secondary
+// progressions · Sa solar arc · Sy synastry.
 export const OVERLAY_LABEL_PREFIX: Record<OverlayKind, string> = {
-  transits: 't ',
-  progressed: 'p ',
-  'solar-arc': 'd ', // "directed"
-  synastry: 's ',
+  transits: 'Tr',
+  progressed: 'Sp',
+  'solar-arc': 'Sa',
+  synastry: 'Sy',
 };
 
-// Clone a line/paran FeatureCollection, prepending a prefix to each label.
-export function prefixLabels<P extends { label: string }>(
+// Clone a line/paran FeatureCollection, stamping the overlay tag onto each
+// feature's `label` (the overlay map layers prepend it to the glyph + code).
+export function tagLabels<P extends { label: string }>(
   fc: FeatureCollection<LineString, P>,
-  prefix: string,
+  tag: string,
 ): FeatureCollection<LineString, P> {
   return {
     type: 'FeatureCollection',
     features: fc.features.map((f) => ({
       ...f,
-      properties: { ...f.properties, label: `${prefix}${f.properties.label}` },
+      properties: { ...f.properties, label: tag },
     })),
   };
 }

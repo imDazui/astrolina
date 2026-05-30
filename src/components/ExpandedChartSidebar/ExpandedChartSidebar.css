@@ -93,6 +93,51 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Synastry overlay identity: the partner chart whose lines are overlaid. Lives
+   here in the chart-data panel (where names/dates already are), echoing the
+   dashed overlay dot used elsewhere. */
+.es-synastry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: rgba(var(--accent-rgb), 0.06);
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
+  border-radius: 6px;
+}
+
+.es-synastry-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.es-synastry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.es-synastry-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.es-synastry-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .es-relocated {
   display: flex;
   align-items: center;
@@ -425,6 +470,13 @@
      vertical growth is handled by the panel's own page scroll. */
   overflow-x: auto;
   overflow-y: hidden;
+}
+
+/* While resizing, the wheel's pixel size trails the pane by a frame, so hide the
+   horizontal scrollbar to avoid a glitchy flash. It returns to `auto` on
+   release, so genuinely-too-narrow panels can still scroll to the wheel. */
+.expanded-sidebar.dragging .es-wheel-pane {
+  overflow-x: hidden;
 }
 
 .es-section-wheel svg {

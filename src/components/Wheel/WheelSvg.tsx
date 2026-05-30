@@ -1,5 +1,4 @@
 import {
-  PLANET_CODES,
   PLANET_COLORS,
   type EclipticPosition,
   type RelocatedAngles,
@@ -544,25 +543,13 @@ export function WheelSvg({
               stroke={PLANET_COLORS[p.name]}
               strokeWidth={1.3}
             />
-            {detailed ? (
-              <PlanetGlyph
-                planet={p.name}
-                x={pos.x}
-                y={pos.y}
-                size={16}
-                color={PLANET_COLORS[p.name]}
-              />
-            ) : (
-              <text
-                x={pos.x}
-                y={pos.y + 3}
-                textAnchor="middle"
-                className="planet-glyph"
-                style={{ fill: PLANET_COLORS[p.name] }}
-              >
-                {PLANET_CODES[p.name]}
-              </text>
-            )}
+            <PlanetGlyph
+              planet={p.name}
+              x={pos.x}
+              y={pos.y}
+              size={detailed ? 16 : 13}
+              color={PLANET_COLORS[p.name]}
+            />
           </g>
         );
       })}

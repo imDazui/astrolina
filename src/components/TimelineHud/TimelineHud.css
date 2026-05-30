@@ -1,0 +1,281 @@
+/* Bottom-center heads-up display for transits & overlays. Content-based: in the
+   "off" state it's just a compact mode dropdown; selecting a mode reveals only
+   the controls that mode needs (a transport + scrubber for time modes, a partner
+   picker for synastry). */
+.timeline-hud {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  max-width: calc(100vw - 360px);
+  background: rgba(var(--bg-panel), 0.94);
+  border: 1px solid rgba(var(--tint), 0.08);
+  border-radius: 10px;
+  color: var(--text-strong);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(6px);
+}
+
+/* While an overlay mode is active, lift the accent so the HUD reads as "live". */
+.timeline-hud:not([data-mode='off']) {
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+
+.thud-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  flex-wrap: nowrap;
+}
+
+.thud-divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(var(--tint), 0.12);
+  flex-shrink: 0;
+}
+
+/* ── Mode / partner dropdowns ──────────────────────────────────── */
+.thud-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.thud-mode-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.thud-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.thud-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 6px 26px 6px 10px;
+  background: rgba(var(--tint), 0.05);
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 6px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.thud-select:hover {
+  background: rgba(var(--tint), 0.08);
+  border-color: rgba(var(--tint), 0.24);
+}
+
+.thud-select:focus-visible {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.timeline-hud:not([data-mode='off']) .thud-select {
+  border-color: rgba(var(--accent-rgb), 0.4);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+/* The native popup list draws options on the OS default (white). Give them an
+   opaque themed background + readable text so they aren't white-on-light in the
+   dark/vintage themes. */
+.thud-select option {
+  background: rgb(var(--bg-menu));
+  color: var(--text-strong);
+}
+
+.thud-select-caret {
+  position: absolute;
+  right: 9px;
+  font-size: 9px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+/* ── Transport: step / play / step ─────────────────────────────── */
+.thud-transport {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.thud-step-btn,
+.thud-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 6px;
+  background: rgba(var(--tint), 0.04);
+  color: var(--text-strong);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.thud-step-btn {
+  width: 26px;
+  height: 28px;
+  font-size: 18px;
+  line-height: 1;
+  padding-bottom: 2px;
+}
+
+.thud-play {
+  width: 34px;
+  height: 28px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.thud-step-btn:hover,
+.thud-play:hover {
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+
+.thud-play.on {
+  background: rgba(var(--accent-rgb), 0.16);
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+
+/* ── Compass-style ruler scrubber (sits above the bar) ─────────── */
+.thud-ruler {
+  position: relative;
+  height: 38px;
+  margin: 4px 12px 0;
+  border-bottom: 1px solid rgba(var(--tint), 0.1);
+  overflow: hidden;
+  cursor: ew-resize;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Notch: a faint hairline rising from the baseline. Major notches are taller,
+   stronger, and carry a date label. */
+.thud-tick {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 7px;
+  background: rgba(var(--tint), 0.28);
+  transform: translateX(-0.5px);
+}
+
+.thud-tick.major {
+  height: 13px;
+  background: rgba(var(--tint), 0.5);
+}
+
+.thud-tick-label {
+  position: absolute;
+  bottom: 15px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* Fixed center needle the notches scroll under. */
+.thud-needle {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  height: 22px;
+  margin-left: -1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.thud-needle::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--accent);
+}
+
+/* ── Date readout / picker ─────────────────────────────────────── */
+.thud-datewrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.thud-date {
+  padding: 5px 8px;
+  background: rgba(var(--tint), 0.05);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 6px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  /* color-scheme is inherited from :root per theme (light → dark calendar icon,
+     dark/vintage → light icon), so the native picker glyph stays legible. */
+}
+
+/* Vintage's dark color-scheme makes the native calendar glyph stark white,
+   which clashes with the warm palette — warm it to a muted parchment/gold. */
+:root[data-theme='vintage'] .thud-date::-webkit-calendar-picker-indicator {
+  filter: sepia(0.8) saturate(2.2) brightness(0.82);
+}
+
+.thud-utc {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+/* ── Live label / hints ────────────────────────────────────────── */
+.thud-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.thud-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+@media (max-width: 1080px) {
+  .timeline-hud {
+    max-width: calc(100vw - 32px);
+  }
+  .thud-row {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}

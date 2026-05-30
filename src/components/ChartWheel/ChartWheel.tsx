@@ -20,7 +20,10 @@ interface ChartWheelProps {
   onRecenterPin: () => void;
 }
 
-const COMPACT_SIZE = 280;
+// 25% smaller than the original 280 — the glyphs/labels keep their absolute px
+// sizes (set in WheelSvg / WheelSvg.css), so only the wheel tightens, staying
+// readable.
+const COMPACT_SIZE = 210;
 
 export function ChartWheel({
   chart,
@@ -43,7 +46,9 @@ export function ChartWheel({
     ? 'natal-pinned'
     : pinned
       ? 'pinned'
-      : '';
+      : point
+        ? 'hover'
+        : '';
 
   return (
     <aside className={`chart-wheel ${wheelClass}`}>

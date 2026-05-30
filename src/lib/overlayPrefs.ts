@@ -1,11 +1,14 @@
 // localStorage persistence for the timeline/overlay controls, mirroring the
 // load/save shape of theme.ts and chartLibrary.ts.
-import type { OverlayMode } from './astro/timeline';
+import type { OverlayMode, TimeUnit } from './astro/timeline';
 
 const MODE_KEY = 'astro:overlay-mode:v1';
 const DATE_KEY = 'astro:overlay-date:v1';
 const PARTNER_KEY = 'astro:overlay-partner:v1';
-const STEP_KEY = 'astro:overlay-step:v1';
+// v2: stores a time-unit name (hour/day/week/month/year) rather than a day count.
+const STEP_KEY = 'astro:overlay-step:v2';
+
+const UNITS: TimeUnit[] = ['hour', 'day', 'week', 'month', 'year'];
 
 const MODES: OverlayMode[] = [
   'off',
@@ -39,10 +42,10 @@ export function saveOverlayPartner(id: string | null) {
   else localStorage.removeItem(PARTNER_KEY);
 }
 
-export function loadOverlayStep(): number {
-  const v = Number(localStorage.getItem(STEP_KEY));
-  return Number.isFinite(v) && v > 0 ? v : 1;
+export function loadOverlayStep(): TimeUnit {
+  const v = localStorage.getItem(STEP_KEY);
+  return v && (UNITS as string[]).includes(v) ? (v as TimeUnit) : 'day';
 }
-export function saveOverlayStep(days: number) {
-  localStorage.setItem(STEP_KEY, String(days));
+export function saveOverlayStep(unit: TimeUnit) {
+  localStorage.setItem(STEP_KEY, unit);
 }

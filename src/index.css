@@ -108,6 +108,55 @@ body,
   overflow: hidden;
 }
 
+/* Map edge-glow: a faint pulsing vignette that echoes the active-location color
+   — blue while hovering, orange when pinned, green at the natal pin. Its left
+   edge insets to the visible map area when the expanded chart panel is open
+   (--es-width, 0 otherwise). Decorative only. */
+.map-edge-glow {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--es-width, 0px);
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: inset 0 0 80px 4px var(--glow-color, transparent);
+  transition: opacity 0.5s ease, left 0.2s ease;
+}
+
+.map-edge-glow[data-state='hover'] {
+  --glow-color: rgba(var(--cool-rgb), 0.6);
+  animation: edge-pulse 5.2s ease-in-out infinite;
+}
+.map-edge-glow[data-state='pinned'] {
+  --glow-color: rgba(var(--accent-rgb), 0.65);
+  animation: edge-pulse 5.2s ease-in-out infinite;
+}
+.map-edge-glow[data-state='natal-pinned'] {
+  --glow-color: rgba(var(--success-rgb), 0.65);
+  animation: edge-pulse 5.2s ease-in-out infinite;
+}
+
+@keyframes edge-pulse {
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-edge-glow[data-state='hover'],
+  .map-edge-glow[data-state='pinned'],
+  .map-edge-glow[data-state='natal-pinned'] {
+    animation: none;
+    opacity: 0.2;
+  }
+}
+
 .app-header {
   position: absolute;
   top: 16px;

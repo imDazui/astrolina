@@ -38,6 +38,9 @@ interface ExpandedChartSidebarProps {
   planets: EclipticPosition[];
   overlayPlanets?: EclipticPosition[] | null;
   overlayLabel?: string | null;
+  /** The synastry partner chart, when in synastry mode — shown as an overlay
+   *  identity banner (name + birth data) since this is where chart data lives. */
+  overlayPartner?: StoredChart | null;
   /** Planets toggled on in the Map Filter; hidden ones are dropped everywhere. */
   visiblePlanets: Set<PlanetName>;
   onClose: () => void;
@@ -103,9 +106,20 @@ function fmtDec(decRad: number): string {
   return `${sign}${pad2(dd)}°${pad2(m)}'`;
 }
 
-// Speed in degrees/day, signed for retrograde, 2 decimals.
+// Daily motion, signed for retrograde, in degrees + arcminutes (matching the
+// declination format above) so it never reads as a decimal/percentage. The Sun
+// moves ~0°59'/day, the Moon ~13°11'/day.
 function fmtSpeed(degPerDay: number): string {
-  return `${degPerDay >= 0 ? '+' : ''}${degPerDay.toFixed(2)}°/d`;
+  const sign = degPerDay < 0 ? '-' : '+';
+  const abs = Math.abs(degPerDay);
+  const d = Math.floor(abs);
+  let m = Math.round((abs - d) * 60);
+  let dd = d;
+  if (m === 60) {
+    m = 0;
+    dd += 1;
+  }
+  return `${sign}${dd}°${pad2(m)}'/d`;
 }
 
 // Aspect orb as "0°12'" — seconds rarely meaningful for orbs.
@@ -137,6 +151,7 @@ export function ExpandedChartSidebar({
   planets,
   overlayPlanets,
   overlayLabel,
+  overlayPartner,
   visiblePlanets,
   onClose,
   onRecenterPin,
@@ -152,6 +167,15 @@ export function ExpandedChartSidebar({
 
   useEffect(() => {
     localStorage.setItem(WIDTH_KEY, String(width));
+  }, [width]);
+
+  // Publish the live panel width so the map edge-glow insets its left edge to
+  // the visible map area (right of this sidebar). Reset to 0 when collapsed.
+  useEffect(() => {
+    document.documentElement.style.setProperty('--es-width', `${width}px`);
+    return () => {
+      document.documentElement.style.setProperty('--es-width', '0px');
+    };
   }, [width]);
 
   const [visibleAspects, setVisibleAspects] = useState<Set<AspectCategory>>(
@@ -211,6 +235,12 @@ export function ExpandedChartSidebar({
   // Cursor-to-edge offset captured at mousedown, so grabbing the handle (which
   // sits a few px inside the right edge) doesn't make the width jump.
   const dragOffsetRef = useRef(0);
+  // Mirrors draggingRef as state so we can toggle a class while resizing. The
+  // wheel's pixel width trails the pane (it's driven by a ResizeObserver), so
+  // mid-drag the SVG is briefly wider than the shrinking pane — which would
+  // flash the pane's horizontal scrollbar. We suppress that overflow while
+  // dragging (see .expanded-sidebar.dragging .es-wheel-pane).
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -225,6 +255,7 @@ export function ExpandedChartSidebar({
     const onUp = () => {
       if (!draggingRef.current) return;
       draggingRef.current = false;
+      setDragging(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
@@ -266,13 +297,17 @@ export function ExpandedChartSidebar({
 
   const beginDrag = (e: ReactMouseEvent) => {
     draggingRef.current = true;
+    setDragging(true);
     dragOffsetRef.current = width - e.clientX;
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
   };
 
   return (
-    <aside className="expanded-sidebar" style={{ width: `${width}px` }}>
+    <aside
+      className={`expanded-sidebar ${dragging ? 'dragging' : ''}`}
+      style={{ width: `${width}px` }}
+    >
       <div className="es-scroll">
       <section className="es-section es-section-header">
         <div className="es-header-row">
@@ -326,6 +361,19 @@ export function ExpandedChartSidebar({
           <p className="es-meta">
             {fmtChartDate(chart)} · {chart.birthplace.label}
           </p>
+        )}
+        {overlayPartner && (
+          <div className="es-synastry">
+            <span className="es-synastry-tag">
+              <span className="es-overlay-dot" /> Overlay
+            </span>
+            <span className="es-synastry-body">
+              <span className="es-synastry-name">{overlayPartner.name}</span>
+              <span className="es-synastry-meta">
+                {fmtChartDate(overlayPartner)} · {overlayPartner.birthplace.label}
+              </span>
+            </span>
+          </div>
         )}
         {(() => {
           const displayPoint =

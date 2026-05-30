@@ -3,7 +3,7 @@
   bottom: 16px;
   left: 16px;
   z-index: 10;
-  width: 312px;
+  width: 242px;
   padding: 10px 14px 12px;
   background: rgba(var(--bg-panel), 0.94);
   border: 1px solid rgba(var(--tint), 0.08);
@@ -33,6 +33,16 @@
   color: var(--success);
 }
 
+/* Hover (relocated, not pinned): blue accent matching the map edge-glow, the
+   same way pinned shows orange and natal-pinned shows green. */
+.chart-wheel.hover {
+  border-color: rgba(var(--cool-rgb), 0.5);
+}
+
+.chart-wheel.hover .pin-indicator {
+  color: var(--cool);
+}
+
 .chart-wheel-header {
   display: flex;
   justify-content: space-between;
@@ -54,7 +64,7 @@
   font-weight: 600;
 }
 
-.chart-wheel:not(.pinned):not(.natal-pinned) .pin-indicator {
+.chart-wheel:not(.pinned):not(.natal-pinned):not(.hover) .pin-indicator {
   color: var(--text-faint);
 }
 
@@ -137,7 +147,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 240px;
+  height: 150px;
   color: var(--text-faint);
   font-size: 12px;
 }
