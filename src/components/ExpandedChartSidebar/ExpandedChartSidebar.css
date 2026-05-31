@@ -398,6 +398,15 @@
   white-space: nowrap;
 }
 
+/* Sign glyph + full sign name following the degree·minute in a longitude row. */
+.es-lon-sign {
+  white-space: nowrap;
+}
+.es-lon-sign .astro-glyph {
+  margin: 0 1px 0 2px;
+  vertical-align: -1px;
+}
+
 /* --- Aspects section (only shown in Advanced mode) --- */
 
 .es-section-aspects {

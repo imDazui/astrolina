@@ -424,9 +424,16 @@ export default function App() {
     });
   }, []);
 
+  // True while the expanded sidebar is being drag-resized — pauses map hover so
+  // the cursor sweeping over the map mid-drag doesn't flicker the hover state.
+  const resizingRef = useRef(false);
+  const onResizing = useCallback((v: boolean) => {
+    resizingRef.current = v;
+    if (v) setHover(null);
+  }, []);
   const onHover = useCallback(
     (lat: number, lng: number) => {
-      if (!pinned) setHover({ lat, lng });
+      if (!pinned && !resizingRef.current) setHover({ lat, lng });
     },
     [pinned],
   );
@@ -610,6 +617,7 @@ export default function App() {
             visiblePlanets={visiblePlanets}
             onClose={() => setWheelExpanded(false)}
             onRecenterPin={onRecenterPin}
+            onResizingChange={onResizing}
             onSelectChart={(id) => setCurrentId(id)}
             onNewChart={() => setCreating(true)}
             onEditChart={(id) => setEditingId(id)}

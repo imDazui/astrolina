@@ -44,6 +44,13 @@
   stroke-dasharray: 2 3;
 }
 
+/* Faint full-length house spokes spanning the inner rings out to the zodiac
+   band, so the 12 house sectors read across the whole wheel. */
+.wheel-svg .house-spoke {
+  stroke: rgba(var(--tint), 0.2);
+  stroke-width: 0.7;
+}
+
 .wheel-svg .house-number {
   fill: var(--text-muted);
   font-size: 9px;
@@ -106,13 +113,7 @@
   stroke-dasharray: 3 3;
 }
 
-/* Advanced house-cusp degree + sign labels ringing the outside of the rim.
-   The group's `color` drives the sign glyph's currentColor stroke; the degree
-   text sets its own fill. */
-.wheel-svg .cusp-rim-label {
-  color: var(--text-muted);
-}
-
+/* Advanced house-cusp degree·minute labels ringing the outside of the rim. */
 .wheel-svg .cusp-rim-deg {
   fill: var(--text);
   font-size: 9px;

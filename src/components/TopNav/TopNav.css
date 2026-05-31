@@ -271,6 +271,10 @@ button.topnav-status:hover {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
+  /* Menu items use the steady brand accent, not the pin-state color the bar
+     aliases onto --accent — so checks/active rows don't recolor with map state. */
+  --accent: var(--accent-brand);
+  --accent-rgb: var(--accent-brand-rgb);
   min-width: 170px;
   padding: 5px;
   background: rgb(var(--bg-menu));

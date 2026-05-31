@@ -399,14 +399,14 @@ export function TopNav({
 
             <NavMenu label="View">
               <CheckItem
-                label="Chart"
-                checked={showChart}
-                onToggle={() => setShowChart(!showChart)}
-              />
-              <CheckItem
                 label="Coordinates"
                 checked={showCoords}
                 onToggle={() => setShowCoords(!showCoords)}
+              />
+              <CheckItem
+                label="Minimap"
+                checked={showChart}
+                onToggle={() => setShowChart(!showChart)}
               />
               <CheckItem
                 label="Settings"

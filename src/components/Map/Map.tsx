@@ -1,4 +1,11 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 import maplibregl, { type ExpressionSpecification } from 'maplibre-gl';
 import type { FeatureCollection, LineString } from 'geojson';
 import type { LineProps } from '../../lib/astro/lines';
@@ -11,6 +18,14 @@ import {
 } from '../../lib/theme';
 import { ensureGlyphImages, GLYPH_IMAGE_PREFIX } from './glyphImages';
 import { applyDetailToggles } from './basemapStyle';
+import {
+  computeLineBadges,
+  dodgeBadges,
+  type AvoidRect,
+  type LineBadge,
+} from './edgeAnchors';
+import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
+import type { LineType } from '../../lib/astro/lines';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './Map.css';
 
@@ -24,14 +39,6 @@ const EMPTY_FC = <T,>(): FeatureCollection<LineString, T> => ({
 // MC / IC / As / Ds. The text portion is colored by the layer's text-color.
 const planetGlyph = (planetProp: string): ExpressionSpecification =>
   ['image', ['concat', GLYPH_IMAGE_PREFIX, ['get', planetProp]]] as unknown as ExpressionSpecification;
-
-const ACG_LABEL_FIELD = [
-  'format',
-  planetGlyph('planet'),
-  {},
-  ['match', ['get', 'lineType'], 'MC', ' MC', 'IC', ' IC', 'ASC', ' As', 'DSC', ' Ds', ''],
-  {},
-] as unknown as ExpressionSpecification;
 
 const PARAN_LABEL_FIELD = [
   'format',
@@ -49,18 +56,6 @@ const PARAN_LABEL_FIELD = [
 
 // Overlay variants prepend the overlay tag (Tr / Sp / Sa / Sy, stamped onto the
 // feature `label`) so overlay lines read e.g. "Tr ♂ MC".
-const ACG_OV_LABEL_FIELD = [
-  'format',
-  ['get', 'label'],
-  {},
-  ' ',
-  {},
-  planetGlyph('planet'),
-  {},
-  ['match', ['get', 'lineType'], 'MC', ' MC', 'IC', ' IC', 'ASC', ' As', 'DSC', ' Ds', ''],
-  {},
-] as unknown as ExpressionSpecification;
-
 const PARAN_OV_LABEL_FIELD = [
   'format',
   ['get', 'label'],
@@ -78,6 +73,65 @@ const PARAN_OV_LABEL_FIELD = [
   ['match', ['get', 'angleB'], 'ASC', ' As', 'DSC', ' Ds', ''],
   {},
 ] as unknown as ExpressionSpecification;
+
+// Angle code shown in each edge badge (As/Ds match the wheel's shorthand).
+const ANGLE_CODE: Record<LineType, string> = {
+  MC: 'MC',
+  IC: 'IC',
+  ASC: 'As',
+  DSC: 'Ds',
+};
+
+// How far inside the viewport edge the badges anchor (px). Small, since badges
+// then dodge the HUD panels rather than relying on a wide margin.
+const BADGE_INSET = 16;
+// Below this zoom the whole-world view packs every planet's lines together, so the
+// edge badges just stack up and read as noise — hide them until zoomed in enough
+// for the lines (and their labels) to be distinguishable.
+const BADGE_MIN_ZOOM = 3;
+
+// HUD panels the edge badges should slide clear of, so a label is never hidden.
+const HUD_SELECTORS = [
+  '.timeline-hud', // top nav bar(s) + bottom timeline
+  '.sidebar',
+  '.app-header',
+  '.chart-wheel',
+  '.expanded-sidebar',
+  '.maplibregl-ctrl-top-right',
+  '.maplibregl-ctrl-bottom-right',
+];
+
+// Current screen rects of the HUD panels, in map-container coordinates.
+function readHudRects(map: maplibregl.Map): AvoidRect[] {
+  const cont = map.getContainer().getBoundingClientRect();
+  const out: AvoidRect[] = [];
+  for (const sel of HUD_SELECTORS) {
+    document.querySelectorAll(sel).forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return;
+      out.push({
+        left: r.left - cont.left,
+        top: r.top - cont.top,
+        right: r.right - cont.left,
+        bottom: r.bottom - cont.top,
+      });
+    });
+  }
+  return out;
+}
+
+// Pick dark or white text for a badge from the line color's luminance, so the
+// glyph/code stays legible on both pale (e.g. Moon) and dark planet colors.
+function badgeTextColor(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return '#fff';
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.62 ? '#1a1c22' : '#fff';
+}
 
 export interface OverlayData {
   lines: FeatureCollection<LineString, LineProps>;
@@ -291,29 +345,8 @@ function setupCustomLayers(
   });
   addHorizonArrows(map, 'acg-lines-arrows-asc', 'acg-lines', 'ASC', '→');
   addHorizonArrows(map, 'acg-lines-arrows-dsc', 'acg-lines', 'DSC', '←');
-  map.addLayer({
-    id: 'acg-lines-labels',
-    source: 'acg-lines',
-    type: 'symbol',
-    layout: {
-      'text-field': ACG_LABEL_FIELD,
-      'symbol-placement': 'line',
-      'symbol-spacing': 280,
-      'text-size': 10,
-      'text-font': ['Noto Sans Regular'],
-      'text-rotation-alignment': 'viewport',
-      'text-pitch-alignment': 'viewport',
-      'text-keep-upright': true,
-      'text-padding': 3,
-      'text-letter-spacing': 0.04,
-    },
-    paint: {
-      'text-color': ['get', 'color'],
-      'text-halo-color': haloColor,
-      'text-halo-width': 2,
-      'text-halo-blur': 0.5,
-    },
-  });
+  // The glyph + angle label is no longer drawn along the line — it's rendered as
+  // a colored edge badge (see the edge-badge overlay in the Map component).
 
   // ── Overlay slot (-ov): a second set of sources/layers for the timeline
   // overlay (transits / progressed / solar-arc / synastry). Same per-planet
@@ -397,29 +430,7 @@ function setupCustomLayers(
   });
   addHorizonArrows(map, 'acg-lines-ov-arrows-asc', 'acg-lines-ov', 'ASC', '→');
   addHorizonArrows(map, 'acg-lines-ov-arrows-dsc', 'acg-lines-ov', 'DSC', '←');
-  map.addLayer({
-    id: 'acg-lines-ov-labels',
-    source: 'acg-lines-ov',
-    type: 'symbol',
-    layout: {
-      'text-field': ACG_OV_LABEL_FIELD,
-      'symbol-placement': 'line',
-      'symbol-spacing': 280,
-      'text-size': 9,
-      'text-font': ['Noto Sans Regular'],
-      'text-rotation-alignment': 'viewport',
-      'text-pitch-alignment': 'viewport',
-      'text-keep-upright': true,
-      'text-padding': 3,
-      'text-letter-spacing': 0.04,
-    },
-    paint: {
-      'text-color': ['get', 'color'],
-      'text-halo-color': haloColor,
-      'text-halo-width': 2,
-      'text-halo-blur': 0.5,
-    },
-  });
+  // Overlay glyph + angle labels are also drawn as edge badges, not along the line.
 
   // ── Measurement tool: a dashed great-circle segment from the click origin to
   // the cursor, with a disc at each end. Drawn on top of everything else.
@@ -519,6 +530,41 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const detailRef = useRef({ showRoads, showRivers });
   detailRef.current = { showRoads, showRivers };
 
+  // Edge badges: glyph + angle code per ACG line, anchored where the line exits
+  // the viewport. Recomputed (rAF-throttled) on every map move + when data changes.
+  const [badges, setBadges] = useState<LineBadge[]>([]);
+  const badgeRafRef = useRef(0);
+  const computeBadges = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    // Zoomed-out world view crams every line together — skip the badges there.
+    if (map.getZoom() < BADGE_MIN_ZOOM) {
+      setBadges((prev) => (prev.length ? [] : prev));
+      return;
+    }
+    const data = dataRef.current;
+    const natal = computeLineBadges(map, data.lines.features, BADGE_INSET, false);
+    const ov = data.overlay?.lines
+      ? computeLineBadges(map, data.overlay.lines.features, BADGE_INSET, true)
+      : [];
+    const cont = map.getContainer();
+    const dodged = dodgeBadges(
+      natal.concat(ov),
+      readHudRects(map),
+      cont.clientWidth,
+      cont.clientHeight,
+      BADGE_INSET,
+    );
+    setBadges(dodged);
+  }, []);
+  const scheduleBadges = useCallback(() => {
+    if (badgeRafRef.current) return;
+    badgeRafRef.current = requestAnimationFrame(() => {
+      badgeRafRef.current = 0;
+      computeBadges();
+    });
+  }, [computeBadges]);
+
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -570,17 +616,23 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         measureColorRef.current,
       );
       pushData(map, dataRef.current);
+      computeBadges();
     });
+
+    // Re-anchor the edge badges on every pan/zoom (throttled to one rAF/frame).
+    map.on('move', scheduleBadges);
+    map.on('moveend', computeBadges);
 
     mapRef.current = map;
 
     return () => {
+      if (badgeRafRef.current) cancelAnimationFrame(badgeRafRef.current);
       markerRef.current?.remove();
       markerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [computeBadges, scheduleBadges]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -593,8 +645,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       applyDetailToggles(map, detailRef.current);
       setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current);
       pushData(map, dataRef.current);
+      computeBadges();
     });
-  }, [theme]);
+  }, [theme, computeBadges]);
 
   // Repaint the measure layers when the map-state accent changes (e.g. pinning a
   // location) without needing a full style reload.
@@ -729,10 +782,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     if (!map) return;
     if (map.isStyleLoaded() && map.getSource('acg-lines')) {
       pushData(map, { lines, parans, localSpace, overlay });
+      computeBadges();
     } else {
-      map.once('load', () => pushData(map, dataRef.current));
+      map.once('load', () => {
+        pushData(map, dataRef.current);
+        computeBadges();
+      });
     }
-  }, [lines, parans, localSpace, overlay]);
+  }, [lines, parans, localSpace, overlay, computeBadges]);
 
   // Toggle basemap road / river visibility live (theme reloads reapply via the
   // style.load handler above).
@@ -779,5 +836,25 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         : 'Pinned location (click to unpin)';
   }, [pin, pinType]);
 
-  return <div ref={containerRef} className="map-container" />;
+  return (
+    <>
+      <div ref={containerRef} className="map-container" />
+      <div className="acg-edge-badges" aria-hidden="true">
+        {badges.map((b) => {
+          const text = badgeTextColor(b.color);
+          return (
+            <span
+              key={b.key}
+              className="acg-badge"
+              style={{ left: b.x, top: b.y, background: b.color, color: text }}
+            >
+              {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
+              <PlanetGlyph planet={b.planet} size={11} color={text} />
+              <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
+            </span>
+          );
+        })}
+      </div>
+    </>
+  );
 });

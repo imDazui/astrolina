@@ -142,6 +142,7 @@ export interface EclipticPosition {
   dec?: number;          // equatorial declination, radians
   speed?: number;        // ecliptic longitude motion, degrees/day (negative = Rx)
   retrograde?: boolean;
+  stationary?: boolean;  // motion reverses within ±1 day (near a station)
 }
 
 export interface RelocatedAngles {
@@ -417,23 +418,26 @@ export function toEclipticPositions(
   nodeType: NodeType = 'mean',
 ): EclipticPosition[] {
   const eps = obliquity(jd);
-  // Sample again ~12h later to derive ecliptic-longitude speed, which gives
-  // us retrograde state and °/day motion for the advanced readout. nodeType is
-  // forwarded so the node rows' speed/retrograde matches the node convention.
-  const dt = 0.5;
-  const positionsLater = getPlanetPositions(jd + dt, nodeType);
+  // Sample one day either side to derive ecliptic-longitude speed (°/day) and to
+  // detect a station: a body is stationary when its motion REVERSES within ±1 day.
+  // The sign-change test catches stations for slow outer planets too, where a
+  // fixed small-speed cutoff would misfire (their mean motion is already tiny).
+  // nodeType is forwarded so the node rows match the node convention.
+  const before = getPlanetPositions(jd - 1, nodeType);
+  const after = getPlanetPositions(jd + 1, nodeType);
+  const wrap = (d: number) => {
+    if (d > Math.PI) return d - 2 * Math.PI;
+    if (d < -Math.PI) return d + 2 * Math.PI;
+    return d;
+  };
   return positions.map((p, i) => {
     const lon = raDecToEclipticLon(p.ra, p.dec, eps);
     const lat = raDecToEclipticLat(p.ra, p.dec, eps);
-    const lonLater = raDecToEclipticLon(
-      positionsLater[i].ra,
-      positionsLater[i].dec,
-      eps,
-    );
-    let dlon = lonLater - lon;
-    if (dlon > Math.PI) dlon -= 2 * Math.PI;
-    if (dlon < -Math.PI) dlon += 2 * Math.PI;
-    const speed = (dlon * 180) / Math.PI / dt;
+    const lonBefore = raDecToEclipticLon(before[i].ra, before[i].dec, eps);
+    const lonAfter = raDecToEclipticLon(after[i].ra, after[i].dec, eps);
+    const dBefore = wrap(lon - lonBefore); // motion over the prior day
+    const dAfter = wrap(lonAfter - lon); // motion over the next day
+    const speed = (wrap(lonAfter - lonBefore) * 180) / Math.PI / 2;
     return {
       name: p.name,
       lon,
@@ -441,6 +445,7 @@ export function toEclipticPositions(
       dec: p.dec,
       speed,
       retrograde: speed < 0,
+      stationary: dBefore !== 0 && dAfter !== 0 && dBefore > 0 !== dAfter > 0,
     };
   });
 }

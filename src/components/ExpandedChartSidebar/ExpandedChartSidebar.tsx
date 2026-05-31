@@ -9,15 +9,46 @@ import {
 import type { StoredChart } from '../../lib/chartLibrary';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
+import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import {
   WheelSvg,
-  fmtLon,
   computeAspects,
   computeCrossAspects,
-  SIGNS,
   type AspectCategory,
 } from '../Wheel/WheelSvg';
 import './ExpandedChartSidebar.css';
+
+const SIGN_NAMES = [
+  'Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
+  'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces',
+];
+
+// Longitude readout for the planet/angle rows: "23°17'" (with arc-seconds in
+// Advanced) followed by the sign glyph and full sign name — e.g. 23°17' ♑ Capricorn.
+function Longitude({ lon, advanced }: { lon: number; advanced: boolean }) {
+  const lonDeg = ((lon * 180) / Math.PI + 360) % 360;
+  const signIdx = Math.floor(lonDeg / 30);
+  const inSign = lonDeg % 30;
+  const d = Math.floor(inSign);
+  const mFull = (inSign - d) * 60;
+  const m = Math.floor(mFull);
+  let dd = d;
+  let mm = m;
+  let ss = Math.round((mFull - m) * 60);
+  if (ss === 60) { ss = 0; mm += 1; }
+  if (mm === 60) { mm = 0; dd += 1; }
+  const dms = advanced
+    ? `${dd}°${pad2(mm)}'${pad2(ss)}"`
+    : `${d}°${pad2(m)}'`;
+  return (
+    <>
+      {dms}{' '}
+      <span className="es-lon-sign">
+        <ZodiacGlyph sign={signIdx} size={12} /> {SIGN_NAMES[signIdx]}
+      </span>
+    </>
+  );
+}
 
 const MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -45,6 +76,8 @@ interface ExpandedChartSidebarProps {
   visiblePlanets: Set<PlanetName>;
   onClose: () => void;
   onRecenterPin: () => void;
+  /** Fired while the panel is being drag-resized, so the map can pause hover. */
+  onResizingChange?: (resizing: boolean) => void;
   onSelectChart: (id: string) => void;
   onNewChart: () => void;
   onEditChart: (id: string) => void;
@@ -76,22 +109,6 @@ const ASPECT_GLYPHS: Record<string, string> = {
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
-}
-
-// Long-form longitude with arc-seconds: "23°45'12" Sag"
-function fmtLonExact(lonRad: number): string {
-  const lonDeg = ((lonRad * 180) / Math.PI + 360) % 360;
-  const sign = SIGNS[Math.floor(lonDeg / 30)];
-  const inSign = lonDeg % 30;
-  const d = Math.floor(inSign);
-  const mFull = (inSign - d) * 60;
-  const m = Math.floor(mFull);
-  let s = Math.round((mFull - m) * 60);
-  let dd = d;
-  let mm = m;
-  if (s === 60) { s = 0; mm += 1; }
-  if (mm === 60) { mm = 0; dd += 1; }
-  return `${dd}°${pad2(mm)}'${pad2(s)}" ${sign}`;
 }
 
 // Signed declination, deg/min: "+12°34'" or "-05°02'"
@@ -155,6 +172,7 @@ export function ExpandedChartSidebar({
   visiblePlanets,
   onClose,
   onRecenterPin,
+  onResizingChange,
   onSelectChart,
   onNewChart,
   onEditChart,
@@ -212,9 +230,6 @@ export function ExpandedChartSidebar({
     localStorage.setItem(SHOW_ANGLES_KEY, anglesOpen ? '1' : '0');
   }, [anglesOpen]);
 
-  // Longitude formatter shared by the header angles and the planet rows.
-  const fmt = advanced ? fmtLonExact : fmtLon;
-
   // Respect the Map Filter's planet toggles across every area of the expanded
   // view (planet list, wheel, aspects, overlay aspects). Order is preserved
   // from the incoming arrays (PLANET_NAMES order).
@@ -241,6 +256,9 @@ export function ExpandedChartSidebar({
   // flash the pane's horizontal scrollbar. We suppress that overflow while
   // dragging (see .expanded-sidebar.dragging .es-wheel-pane).
   const [dragging, setDragging] = useState(false);
+  // Latest callback, read inside the once-bound mouseup handler below.
+  const onResizingChangeRef = useRef(onResizingChange);
+  onResizingChangeRef.current = onResizingChange;
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -256,6 +274,7 @@ export function ExpandedChartSidebar({
       if (!draggingRef.current) return;
       draggingRef.current = false;
       setDragging(false);
+      onResizingChangeRef.current?.(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
@@ -298,6 +317,7 @@ export function ExpandedChartSidebar({
   const beginDrag = (e: ReactMouseEvent) => {
     draggingRef.current = true;
     setDragging(true);
+    onResizingChange?.(true);
     dragOffsetRef.current = width - e.clientX;
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
@@ -441,25 +461,25 @@ export function ExpandedChartSidebar({
               aria-expanded={anglesOpen}
             >
               <span>Angles</span>
-              <span className="es-angles-chevron">{anglesOpen ? '▴' : '▾'}</span>
+              <span className="es-angles-chevron">{anglesOpen ? '▾' : '▸'}</span>
             </button>
             {anglesOpen && (
               <ul className="es-angle-list">
                 <li>
                   <span className="es-name">ASC</span>
-                  <span className="es-lon">{fmt(angles.asc)}</span>
+                  <span className="es-lon"><Longitude lon={angles.asc} advanced={advanced} /></span>
                 </li>
                 <li>
                   <span className="es-name">MC</span>
-                  <span className="es-lon">{fmt(angles.mc)}</span>
+                  <span className="es-lon"><Longitude lon={angles.mc} advanced={advanced} /></span>
                 </li>
                 <li>
                   <span className="es-name">DSC</span>
-                  <span className="es-lon">{fmt(angles.dsc)}</span>
+                  <span className="es-lon"><Longitude lon={angles.dsc} advanced={advanced} /></span>
                 </li>
                 <li>
                   <span className="es-name">IC</span>
-                  <span className="es-lon">{fmt(angles.ic)}</span>
+                  <span className="es-lon"><Longitude lon={angles.ic} advanced={advanced} /></span>
                 </li>
               </ul>
             )}
@@ -484,7 +504,7 @@ export function ExpandedChartSidebar({
               </span>
               <span className="es-name">{PLANET_DISPLAY[p.name]}</span>
               <span className="es-lon">
-                {fmt(p.lon)}
+                <Longitude lon={p.lon} advanced={advanced} />
                 {advanced && p.retrograde ? (
                   <span className="es-rx" title="Retrograde">℞</span>
                 ) : null}
@@ -529,7 +549,6 @@ export function ExpandedChartSidebar({
               detailed={true}
               advanced={advanced}
               overlayPlanets={shownOverlay}
-              overlayDetailed={advanced}
               visibleAspects={visibleAspects}
             />
           ) : (

@@ -59,6 +59,12 @@ span.astro-glyph {
   --map-accent: var(--accent);
   --map-accent-rgb: var(--accent-rgb);
 
+  /* The steady brand accent, captured here so it survives the bars' local
+     `--accent: var(--map-accent)` aliasing — used where chrome should NOT track
+     the pin state (e.g. dropdown-menu items). */
+  --accent-brand: var(--accent);
+  --accent-brand-rgb: var(--accent-rgb);
+
   --scrim: rgba(0, 0, 0, 0.72);
   --scrim-strong: rgba(0, 0, 0, 0.82);
 

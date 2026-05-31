@@ -5,6 +5,43 @@
   height: 100%;
 }
 
+/* ── ACG line edge badges ──────────────────────────────────────────
+   Glyph + angle code in a line-colored pill, anchored where each line exits
+   the viewport. Sits above the map + edge glow (z 4) and below the HUD (z 12).
+   pointer-events: none so the map stays interactive through them. */
+.acg-edge-badges {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.acg-badge {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.38);
+}
+
+.acg-badge-prefix {
+  font-size: 9px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.acg-badge-code {
+  letter-spacing: 0.02em;
+}
+
 .map-pin {
   position: relative;
   width: 22px;

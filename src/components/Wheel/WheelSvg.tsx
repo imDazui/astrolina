@@ -139,12 +139,32 @@ function spreadOnRing(
   return m;
 }
 
+// Retrograde / stationary highlight colors for the readout (sign · degree ·
+// minute) text only — the planet glyph keeps its own color. Plain hex (not theme
+// vars): red and dark-yellow read clearly on every theme.
+const RETRO_COLOR = '#e85a4f';
+const STATION_COLOR = '#c79a17';
+
+// Size-driven detail tiers (independent of the Advanced toggle): the per-planet
+// degree·sign·minute readout appears once the wheel is big enough to read it, and
+// the overlay (bi-wheel) readout needs a larger wheel still.
+const READOUT_MIN = 440;
+const OVERLAY_READOUT_MIN = 600;
+
+// Highlight color for a body's motion state, or null for normal coloring.
+function statusColor(p: EclipticPosition): string | null {
+  if (p.stationary) return STATION_COLOR;
+  if (p.retrograde) return RETRO_COLOR;
+  return null;
+}
+
 interface WheelSvgProps {
   size: number;
   angles: RelocatedAngles;
   planets: EclipticPosition[];
   detailed: boolean;
-  /** Advanced mode reveals the per-planet degree·sign·minute readout ring. */
+  /** Advanced mode adds the rim degree-scale + cusp-rim labels (the inner
+   *  readout is now driven by wheel size, not this toggle). */
   advanced?: boolean;
   /**
    * Bi-wheel: a second chart's planets (transits / progressed / solar-arc /
@@ -153,12 +173,6 @@ interface WheelSvgProps {
    * enough to fit the extra ring.
    */
   overlayPlanets?: EclipticPosition[] | null;
-  /**
-   * Bi-ring detail: when true, the overlay planets get their own
-   * degree·sign·minute readout ring (like the natal Advanced readout), giving
-   * astrologers exact overlay positions. Default off shows glyphs only.
-   */
-  overlayDetailed?: boolean;
   visibleAspects?: Set<AspectCategory>;
 }
 
@@ -169,7 +183,6 @@ export function WheelSvg({
   detailed,
   advanced = false,
   overlayPlanets,
-  overlayDetailed = false,
   visibleAspects,
 }: WheelSvgProps) {
   const cx = size / 2;
@@ -177,7 +190,7 @@ export function WheelSvg({
   // The expanded wheel draws everything inside the outer ring; Advanced mode
   // adds a ring of house-cusp degree labels just OUTSIDE the rim, so it reserves
   // extra margin (28px) for them. Otherwise just a small breathing margin.
-  const rOuter = size / 2 - (detailed ? (advanced ? 28 : 14) : 4);
+  const rOuter = size / 2 - (detailed ? (advanced ? 34 : 14) : 4);
   const rZodiacInner = rOuter - (detailed ? 34 : 0);
   // Bi-wheel: when a second chart is supplied (and the wheel is big enough),
   // its planets occupy an outer ring just inside the zodiac band, and the natal
@@ -188,14 +201,28 @@ export function WheelSvg({
   const rOverlay = hasOverlay ? rZodiacInner - 18 : 0;
   // Bi-ring detail: an overlay readout ring (degree·sign·minute) just inside the
   // overlay glyphs, mirroring the natal readout. Needs extra radial room, so
-  // it's gated on a larger wheel; when on, the natal glyph ring drops further in.
-  const showOverlayReadouts = hasOverlay && overlayDetailed && size >= 575;
+  // it's the bi-wheel's third (largest) size tier.
+  const showOverlayReadouts = hasOverlay && size >= OVERLAY_READOUT_MIN;
   // The readout fan sits 40px inside the overlay glyph ring so the degree value
   // clears the planet discs with comfortable breathing room. OV_FAN is the
   // radial gap between the fan's degree / sign / minute slots — a touch wider
   // than the natal readout's 16 so the overlay trio reads roomier on the rim.
   const rOverlayReadout = showOverlayReadouts ? rOverlay - 40 : 0;
-  const OV_FAN = 18;
+  // As the (single) wheel grows, the inner aspect circle would otherwise absorb
+  // ALL the extra radius. Instead share it ~50/50: bandGrow is the extra (0 below
+  // the readout tier), spread across the zodiac→planet, planet→readout and
+  // readout→house gaps so the planets + their readout get more room — leaving the
+  // central aspect-line circle growing at roughly half its former rate. Disabled
+  // for the bi-wheel: that layout is already tight, so spreading/scaling there
+  // would overlap the overlay ring's glyphs and aspect lines — keep it compact.
+  const bandGrow =
+    detailed && !hasOverlay && size >= READOUT_MIN ? (size - READOUT_MIN) * 0.25 : 0;
+  // The readout text, sign glyph, and degree/minute fan scale up with that extra
+  // room so they actually fill it instead of staying small on the inner ring.
+  const readoutScale = 1 + bandGrow / 130;
+  const readoutFan = Math.round(16 * readoutScale);
+  const readoutFont = Math.min(17, Math.round(11 * readoutScale));
+  const OV_FAN = Math.round(18 * readoutScale);
   // Planet glyph ring, then a readout ring (degree · sign · minute) just
   // inside it — mirroring a printed natal chart.
   // The natal glyph ring drops further in when an overlay is present — the gap
@@ -207,7 +234,7 @@ export function WheelSvg({
       ? showOverlayReadouts
         ? rOverlayReadout - 41
         : rOverlay - 32
-      : rZodiacInner - 20
+      : rZodiacInner - 20 - bandGrow / 3
     : rOuter - 26;
   // Bi-wheel separator: a hairline ring drawn in the gap between the overlay
   // (outer) planet zone and the natal (inner) glyph ring, so the two charts read
@@ -219,15 +246,16 @@ export function WheelSvg({
     : 0;
   // Gap from the planet glyphs to the readout trio (the 34px base widened by
   // ~15% to give the degree value more breathing room from the planet circle).
-  const rReadout = detailed ? rPlanets - 39 : 0;
-  // The degree·sign·minute readout ring only appears in Advanced mode.
-  const showReadouts = detailed && advanced && rReadout > 30;
+  const rReadout = detailed ? rPlanets - 39 - bandGrow / 3 : 0;
+  // The degree·sign·minute readout appears once the wheel is large enough to read
+  // it — the single wheel's second size tier (no longer tied to Advanced).
+  const showReadouts = detailed && rReadout > 30 && size >= READOUT_MIN;
   // Dedicated house ring: a band just inside the planet glyphs — or inside the
   // readout ring when Advanced is on — holding the cusp spokes and house
   // numbers so nothing else overlaps them. Its two borders (houseRingOuter and
   // houseRingInner) ARE the band edges, replacing the old thin double border.
   const houseRingOuter = detailed
-    ? (showReadouts ? rReadout - 28 : rPlanets - 22)
+    ? (showReadouts ? rReadout - 28 - bandGrow / 3 : rPlanets - 22)
     : 0;
   const houseBand = detailed ? Math.min(24, Math.max(0, houseRingOuter - 12)) : 0;
   const houseRingInner = houseRingOuter - houseBand;
@@ -265,12 +293,12 @@ export function WheelSvg({
       off: ((((p.lon - angles.asc) * 180) / Math.PI) % 360 + 360) % 360,
     }));
     arr.sort((a, b) => a.off - b.off);
-    // Min angular separation that yields ~16px of arc. When the Advanced
-    // readouts are shown the trio fans inward to rReadout − 16, so we base the
-    // separation on that innermost (minutes) ring — the tightest arc — so
-    // neighbouring readouts clear there too.
+    // Min angular separation that yields ~16px of arc. When the readouts show,
+    // the trio fans inward to rReadout − 16, so base the separation on that
+    // innermost (minutes) ring — the tightest arc — so neighbouring readouts
+    // clear there too.
     const sepRadius = showReadouts
-      ? Math.max(rReadout - 16, 1)
+      ? Math.max(rReadout - readoutFan, 1)
       : Math.max(rReadout, 1);
     const sep = Math.min(20, Math.max(4, (16 * 360) / (2 * Math.PI * sepRadius)));
     for (let i = 1; i < arr.length; i++) {
@@ -329,6 +357,26 @@ export function WheelSvg({
       )}
       <circle cx={cx} cy={cy} r={rInner} className="ring" />
 
+      {/* Faint house spokes spanning the inner rings out to the zodiac band, so
+          the 12 house sectors read across the whole wheel (drawn early → behind
+          the planets, aspects, and bolder cusp marks). */}
+      {detailed &&
+        angles.cusps.map((lon, idx) => {
+          if (!Number.isFinite(lon)) return null;
+          const inner = svgPos(lon, angles.asc, rInner, cx, cy);
+          const outer = svgPos(lon, angles.asc, rZodiacInner, cx, cy);
+          return (
+            <line
+              key={`spoke-${idx}`}
+              x1={inner.x}
+              y1={inner.y}
+              x2={outer.x}
+              y2={outer.y}
+              className="house-spoke"
+            />
+          );
+        })}
+
       {detailed &&
         Array.from({ length: 12 }).map((_, i) => {
           const lon = (i * 30 * Math.PI) / 180;
@@ -383,30 +431,28 @@ export function WheelSvg({
           );
         })}
 
-      {/* Advanced: house-cusp degree + sign labels ringing the OUTSIDE of the
-          wheel, the way printed natal charts annotate each cusp. Each shows the
-          cusp's degree-within-sign and the sign glyph (e.g. "23 ♋"), so every
-          house boundary is readable in place. */}
+      {/* Advanced: house-cusp degree·minute labels ringing the OUTSIDE of the
+          wheel, the way printed natal charts annotate each cusp (e.g. "23°45'").
+          The sign is read from the zodiac band, so no sign glyph here. */}
       {detailed &&
         advanced &&
         angles.cusps.map((lon, idx) => {
           if (!Number.isFinite(lon)) return null;
           const pos = svgPos(lon, angles.asc, rOuter + 12, cx, cy);
           const lonDeg = (((lon * 180) / Math.PI) % 360 + 360) % 360;
-          const signIdx = Math.floor(lonDeg / 30);
-          const deg = Math.floor(lonDeg % 30);
+          const inSign = lonDeg % 30;
+          const deg = Math.floor(inSign);
+          const min = Math.floor((inSign - deg) * 60);
           return (
-            <g key={`cuspdeg-${idx}`} className="cusp-rim-label">
-              <text
-                x={pos.x - 1}
-                y={pos.y + 3}
-                textAnchor="end"
-                className="cusp-rim-deg"
-              >
-                {deg}°
-              </text>
-              <ZodiacGlyph sign={signIdx} x={pos.x + 7} y={pos.y} size={11} />
-            </g>
+            <text
+              key={`cuspdeg-${idx}`}
+              x={pos.x}
+              y={pos.y + 3}
+              textAnchor="middle"
+              className="cusp-rim-deg"
+            >
+              {deg}°{String(min).padStart(2, '0')}&#39;
+            </text>
           );
         })}
 
@@ -489,14 +535,14 @@ export function WheelSvg({
 
       {!detailed && (
         <>
-          <text x={6} y={cy - 4} className="angle-label">ASC</text>
-          <text x={6} y={cy + 12} className="angle-degree">{fmtLon(angles.asc)}</text>
-          <text x={size - 6} y={cy - 4} textAnchor="end" className="angle-label">DSC</text>
-          <text x={size - 6} y={cy + 12} textAnchor="end" className="angle-degree">{fmtLon(angles.dsc)}</text>
-          <text x={cx} y={12} textAnchor="middle" className="angle-label">MC</text>
-          <text x={cx} y={26} textAnchor="middle" className="angle-degree">{fmtLon(angles.mc)}</text>
-          <text x={cx} y={size - 16} textAnchor="middle" className="angle-degree">{fmtLon(angles.ic)}</text>
-          <text x={cx} y={size - 2} textAnchor="middle" className="angle-label">IC</text>
+          <text x={14} y={cy - 4} className="angle-label">As</text>
+          <text x={14} y={cy + 12} className="angle-degree">{fmtLon(angles.asc)}</text>
+          <text x={size - 14} y={cy - 4} textAnchor="end" className="angle-label">Ds</text>
+          <text x={size - 14} y={cy + 12} textAnchor="end" className="angle-degree">{fmtLon(angles.dsc)}</text>
+          <text x={cx} y={18} textAnchor="middle" className="angle-label">MC</text>
+          <text x={cx} y={32} textAnchor="middle" className="angle-degree">{fmtLon(angles.mc)}</text>
+          <text x={cx} y={size - 22} textAnchor="middle" className="angle-degree">{fmtLon(angles.ic)}</text>
+          <text x={cx} y={size - 8} textAnchor="middle" className="angle-label">IC</text>
         </>
       )}
 
@@ -579,6 +625,8 @@ export function WheelSvg({
       {planets.map((p) => {
         const pos = svgPos(lonFor(p), angles.asc, rPlanets, cx, cy);
         const r = detailed ? 11 : 9;
+        // The planet glyph/disc always keep the planet's own color — only its
+        // readout (sign · degree · minute) flags Rx/station.
         return (
           <g key={p.name}>
             <circle
@@ -651,35 +699,45 @@ export function WheelSvg({
         </g>
       )}
 
-      {/* Bi-ring detail: the overlay planets' degree·sign·minute readout, fanned
-          along the spoke just inside the overlay glyphs — the natal readout's
-          twin, so overlay positions read exactly. */}
+      {/* Bi-ring detail: the overlay planets' degree·sign·minute readout, laid out
+          fanned along the spoke just inside the overlay glyphs (degree nearest the
+          glyph, then sign, then minutes) — the natal readout's twin, so overlay
+          positions read exactly. Retrograde → red, stationary → yellow. */}
       {showOverlayReadouts &&
         overlayPlanets!.map((p) => {
           const degPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout + OV_FAN, cx, cy);
           const signPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout, cx, cy);
           const minPos = svgPos(overlayLonFor(p), angles.asc, rOverlayReadout - OV_FAN, cx, cy);
+          const sc = advanced ? statusColor(p) : null;
           const lonDeg = (((p.lon * 180) / Math.PI) % 360 + 360) % 360;
           const signIdx = Math.floor(lonDeg / 30);
           const inSign = lonDeg % 30;
           const deg = Math.floor(inSign);
           const min = Math.floor((inSign - deg) * 60);
           return (
-            <g key={`ovrdo-${p.name}`} className="planet-readout overlay-readout">
+            <g
+              key={`ovrdo-${p.name}`}
+              className="planet-readout overlay-readout"
+              style={sc ? { color: sc } : undefined}
+            >
               <text
                 x={degPos.x}
                 y={degPos.y + 3}
                 textAnchor="middle"
                 className="readout-deg"
+                fontSize={readoutFont}
+                fill={sc ?? undefined}
               >
                 {deg}°
               </text>
-              <ZodiacGlyph sign={signIdx} x={signPos.x} y={signPos.y} size={13} />
+              <ZodiacGlyph sign={signIdx} x={signPos.x} y={signPos.y} size={readoutFont + 2} />
               <text
                 x={minPos.x}
                 y={minPos.y + 3}
                 textAnchor="middle"
                 className="readout-min"
+                fontSize={readoutFont}
+                fill={sc ?? undefined}
               >
                 {String(min).padStart(2, '0')}&#39;
               </text>
@@ -687,38 +745,45 @@ export function WheelSvg({
           );
         })}
 
-      {/* Degree · sign · minute readout. Each value gets its own radial slot
-          (degree nearest the glyph, then sign, then minutes), so the trio
-          fans out along the spoke — laying out horizontally on the sides and
-          vertically at the top/bottom instead of always stacking vertically.
-          This mirrors how a natal wheel arranges each planet's position and
-          keeps neighbouring readouts from overlapping. */}
+      {/* Degree · sign · minute readout: each value gets its own radial slot
+          (degree nearest the glyph, then sign, then minutes), fanning along the
+          spoke — the traditional natal-chart arrangement. Retrograde → red,
+          stationary → yellow. */}
       {showReadouts &&
         planets.map((p) => {
-          const degPos = svgPos(lonFor(p), angles.asc, rReadout + 16, cx, cy);
+          const degPos = svgPos(lonFor(p), angles.asc, rReadout + readoutFan, cx, cy);
           const signPos = svgPos(lonFor(p), angles.asc, rReadout, cx, cy);
-          const minPos = svgPos(lonFor(p), angles.asc, rReadout - 16, cx, cy);
+          const minPos = svgPos(lonFor(p), angles.asc, rReadout - readoutFan, cx, cy);
+          const sc = advanced ? statusColor(p) : null;
           const lonDeg = (((p.lon * 180) / Math.PI) % 360 + 360) % 360;
           const signIdx = Math.floor(lonDeg / 30);
           const inSign = lonDeg % 30;
           const deg = Math.floor(inSign);
           const min = Math.floor((inSign - deg) * 60);
           return (
-            <g key={`rdo-${p.name}`} className="planet-readout">
+            <g
+              key={`rdo-${p.name}`}
+              className="planet-readout"
+              style={sc ? { color: sc } : undefined}
+            >
               <text
                 x={degPos.x}
                 y={degPos.y + 3}
                 textAnchor="middle"
                 className="readout-deg"
+                fontSize={readoutFont}
+                fill={sc ?? undefined}
               >
                 {deg}°
               </text>
-              <ZodiacGlyph sign={signIdx} x={signPos.x} y={signPos.y} size={14} />
+              <ZodiacGlyph sign={signIdx} x={signPos.x} y={signPos.y} size={readoutFont + 3} />
               <text
                 x={minPos.x}
                 y={minPos.y + 3}
                 textAnchor="middle"
                 className="readout-min"
+                fontSize={readoutFont}
+                fill={sc ?? undefined}
               >
                 {String(min).padStart(2, '0')}&#39;
               </text>
