@@ -57,10 +57,8 @@ export const minorStepMs = (u: TimeUnit): number =>
 
 export interface OverlayLayer {
   kind: OverlayKind;
-  /** Compact dynamic measure for the HUD readout (no mode word, since the
-   *  dropdown already names the mode): "Age 32.0" / "30.2°". null when the mode
-   *  has nothing extra worth showing (transits — the date is in the bar already;
-   *  synastry — the partner is named in its picker). */
+  /** Label shown in the timeline bar's nub: "Transits" / "Age 32.0" /
+   *  "Sun 30.2°". null for synastry, which has no timeline bar. */
   measure: string | null;
   /** Full spelled-out label for the roomy expanded-view caption, e.g.
    *  "Solar Arc · 30.2°" or "Transits · 2026-05-10 14:30 UTC". */
@@ -117,7 +115,7 @@ export function buildOverlay(
       const jd = epochMsToJD(targetDate);
       return {
         kind: mode,
-        measure: null,
+        measure: 'Transits',
         labelFull: `Transits · ${fmtDateTimeUTC(targetDate)} UTC`,
         jd,
         positions: getPlanetPositions(jd, nodeType),

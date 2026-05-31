@@ -20,3 +20,21 @@ export async function geocode(
   if (!res.ok) throw new Error(`Geocoder error: ${res.status}`);
   return (await res.json()) as GeocodeResult[];
 }
+
+// Reverse-geocodes a map coordinate to a "City, Region, Country" label via our
+// edge function (functions/api/reverse-geocode.ts). Coordinates are rounded to
+// ~110 m to match the server cache key. Returns null when the point has no
+// addressable place (e.g. open ocean).
+export async function reverseGeocode(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const res = await fetch(
+    `/api/reverse-geocode?lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}`,
+    { signal },
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as { label?: string | null };
+  return data.label ?? null;
+}

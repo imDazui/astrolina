@@ -177,9 +177,9 @@
 }
 
 /* The Parans / Local Space toggles sit under Lines without their own heading, so
-   add the breathing room a section title would otherwise provide. */
+   add a little breathing room a section title would otherwise provide. */
 .sidebar .line-type-grid + .technique-list {
-  margin-top: 14px;
+  margin-top: 7px;
 }
 
 .tech-toggle {
@@ -325,4 +325,14 @@
   font-size: 11px;
   line-height: 1.4;
   color: var(--text-faint);
+}
+
+/* House-system dropdown (reuses the .thud-select look), full width in the panel. */
+.calc-select {
+  display: flex;
+  width: 100%;
+  margin-top: 2px;
+}
+.calc-select .thud-select {
+  width: 100%;
 }

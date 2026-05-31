@@ -37,25 +37,41 @@
   border-color: rgba(var(--map-accent-rgb), 0.55);
 }
 
-/* Prominent dynamic measure (Age / Angle) for progressed & solar-arc, as a pill
-   floating just ABOVE the bar. Absolutely positioned so it doesn't add to the
-   bar's height. Accent-tinted, so it tracks the map-state color. */
+/* The overlay label (Transits / Progressed Age / Sun Angle) drawn as a NUB that
+   protrudes from the top of the bar and flares into it with a concave fillet on
+   each side, so it reads as part of the bar. Bar-colored fill + accent text; the
+   side fillets are pseudo-elements carved out with a radial-gradient. It overlaps
+   the bar by 1px so the two merge seamlessly. */
 .thud-measure {
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% - 1px);
   left: 50%;
   transform: translateX(-50%);
-  width: fit-content;
-  padding: 3px 16px 4px;
-  background: rgba(var(--accent-rgb), 0.14);
-  border: 1px solid rgba(var(--accent-rgb), 0.4);
-  border-radius: 999px;
+  padding: 3px 18px 5px;
+  background: rgba(var(--bg-panel), 0.94);
+  border-radius: 9px 9px 0 0;
   color: var(--accent);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.03em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.thud-measure::before,
+.thud-measure::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+}
+.thud-measure::before {
+  left: -9px;
+  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), 0.94) 9.5px);
+}
+.thud-measure::after {
+  right: -9px;
+  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), 0.94) 9.5px);
 }
 
 .thud-row {
@@ -195,7 +211,7 @@
 .thud-stepsize {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
   margin-left: 2px;
 }
 

@@ -1,6 +1,9 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { fetchGeocode } from './functions/_shared/geocodeSource';
+import {
+  fetchGeocode,
+  fetchReverseGeocode,
+} from './functions/_shared/geocodeSource';
 
 // Dev-only: serve /api/geocode locally (the Pages Function isn't running under
 // `vite`), reusing the same Nominatim fetch the edge function uses.
@@ -27,22 +30,58 @@ function geocodeDevApi(): Plugin {
   };
 }
 
+// Dev-only: serve /api/reverse-geocode locally, mirroring the Pages Function.
+function reverseGeocodeDevApi(): Plugin {
+  return {
+    name: 'reverse-geocode-dev-api',
+    configureServer(server) {
+      server.middlewares.use('/api/reverse-geocode', async (req, res) => {
+        try {
+          const url = new URL(req.url ?? '', 'http://localhost');
+          const lat = Number(url.searchParams.get('lat'));
+          const lng = Number(url.searchParams.get('lng'));
+          const label =
+            Number.isFinite(lat) && Number.isFinite(lng)
+              ? await fetchReverseGeocode(lat, lng)
+              : null;
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({ label }));
+        } catch {
+          res.statusCode = 502;
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({ error: 'reverse_geocode_failed' }));
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), geocodeDevApi()],
+  plugins: [react(), geocodeDevApi(), reverseGeocodeDevApi()],
   resolve: {
     dedupe: ['react', 'react-dom'],
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-dom/client'],
+    // The Swiss Ephemeris package loads its WASM via a dynamic import of the
+    // emscripten glue + a locateFile hook; let Vite serve it as-is rather than
+    // pre-bundling (which mangles the wasm/glue resolution).
+    exclude: ['@swisseph/browser'],
   },
   build: {
     rollupOptions: {
       output: {
-        // Group all of astronomia (lib + the per-file VSOP87B data modules,
-        // imported by subpath) and maplibre into their own cacheable chunks.
+        // Group Swiss Ephemeris, maplibre, and the offline country polygons
+        // into their own cacheable chunks.
         manualChunks(id) {
           if (id.includes('node_modules/maplibre-gl')) return 'maplibre';
-          if (id.includes('node_modules/astronomia')) return 'astronomia';
+          if (id.includes('node_modules/@swisseph')) return 'swisseph';
+          if (
+            id.includes('node_modules/world-atlas') ||
+            id.includes('node_modules/topojson-client')
+          ) {
+            return 'geo-country';
+          }
           return undefined;
         },
       },

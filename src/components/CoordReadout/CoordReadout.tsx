@@ -45,9 +45,9 @@ function fmtAngle(lonRad: number): { deg: string; signIdx: number; ms: string } 
 }
 
 const ANGLE_ROWS: { key: string; label: string; pick: (a: RelocatedAngles) => number }[] = [
-  { key: 'asc', label: 'Asc', pick: (a) => a.asc },
+  { key: 'asc', label: 'As', pick: (a) => a.asc },
   { key: 'mc', label: 'Mc', pick: (a) => a.mc },
-  { key: 'dsc', label: 'Dsc', pick: (a) => a.dsc },
+  { key: 'dsc', label: 'Ds', pick: (a) => a.dsc },
   { key: 'ic', label: 'Ic', pick: (a) => a.ic },
 ];
 

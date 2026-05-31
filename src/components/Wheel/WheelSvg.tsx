@@ -533,19 +533,6 @@ export function WheelSvg({
         />
       )}
 
-      {!detailed && (
-        <>
-          <text x={14} y={cy - 4} className="angle-label">As</text>
-          <text x={14} y={cy + 12} className="angle-degree">{fmtLon(angles.asc)}</text>
-          <text x={size - 14} y={cy - 4} textAnchor="end" className="angle-label">Ds</text>
-          <text x={size - 14} y={cy + 12} textAnchor="end" className="angle-degree">{fmtLon(angles.dsc)}</text>
-          <text x={cx} y={18} textAnchor="middle" className="angle-label">MC</text>
-          <text x={cx} y={32} textAnchor="middle" className="angle-degree">{fmtLon(angles.mc)}</text>
-          <text x={cx} y={size - 22} textAnchor="middle" className="angle-degree">{fmtLon(angles.ic)}</text>
-          <text x={cx} y={size - 8} textAnchor="middle" className="angle-label">IC</text>
-        </>
-      )}
-
       {/* The expanded wheel intentionally omits the ASC/MC/DSC/IC degree
           callouts — those positions are listed in the sidebar. Advanced mode
           instead shows a degree scale on the rim (drawn with the zodiac band
@@ -553,9 +540,19 @@ export function WheelSvg({
 
       {detailed &&
         filteredAspects.map((a, i) => {
+          const opacity = 0.35 + (1 - a.orb / 8) * 0.45;
+          // A conjunction's two endpoints nearly coincide, so a chord collapses to
+          // an invisible dot — mark it with a small disc at its longitude instead.
+          if (a.category === 'conjunction') {
+            let mid = (a.lonA + a.lonB) / 2;
+            if (Math.abs(a.lonA - a.lonB) > Math.PI) mid += Math.PI;
+            const pos = svgPos(mid, angles.asc, rAspectRing, cx, cy);
+            return (
+              <circle key={`asp-${i}`} cx={pos.x} cy={pos.y} r={3} fill={a.color} opacity={opacity} />
+            );
+          }
           const posA = svgPos(a.lonA, angles.asc, rAspectRing, cx, cy);
           const posB = svgPos(a.lonB, angles.asc, rAspectRing, cx, cy);
-          const opacity = 0.35 + (1 - a.orb / 8) * 0.45;
           return (
             <line
               key={`asp-${i}`}
@@ -573,9 +570,19 @@ export function WheelSvg({
       {/* Bi-wheel cross-aspect lines (overlay ↔ natal), dashed. */}
       {hasOverlay &&
         filteredCrossAspects.map((a, i) => {
+          const opacity = 0.4 + (1 - a.orb / 8) * 0.4;
+          // Cross-aspect conjunction: a small ring at its longitude (the chord
+          // would be invisibly short), distinct from the natal filled disc.
+          if (a.category === 'conjunction') {
+            let mid = (a.lonA + a.lonB) / 2;
+            if (Math.abs(a.lonA - a.lonB) > Math.PI) mid += Math.PI;
+            const pos = svgPos(mid, angles.asc, rAspectRing, cx, cy);
+            return (
+              <circle key={`xasp-${i}`} cx={pos.x} cy={pos.y} r={3.5} fill="none" stroke={a.color} strokeWidth={1} opacity={opacity} />
+            );
+          }
           const posA = svgPos(a.lonA, angles.asc, rAspectRing, cx, cy);
           const posB = svgPos(a.lonB, angles.asc, rAspectRing, cx, cy);
-          const opacity = 0.4 + (1 - a.orb / 8) * 0.4;
           return (
             <line
               key={`xasp-${i}`}
@@ -624,7 +631,9 @@ export function WheelSvg({
 
       {planets.map((p) => {
         const pos = svgPos(lonFor(p), angles.asc, rPlanets, cx, cy);
-        const r = detailed ? 11 : 9;
+        // The non-detailed minimap draws larger planet discs/glyphs (they're the
+        // only thing on that simplified wheel, so there's room).
+        const r = detailed ? 11 : 13;
         // The planet glyph/disc always keep the planet's own color — only its
         // readout (sign · degree · minute) flags Rx/station.
         return (
@@ -641,7 +650,7 @@ export function WheelSvg({
               planet={p.name}
               x={pos.x}
               y={pos.y}
-              size={detailed ? 16 : 13}
+              size={detailed ? 16 : 19.5}
               color={PLANET_COLORS[p.name]}
             />
           </g>

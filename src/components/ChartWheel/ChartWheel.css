@@ -21,6 +21,38 @@
   max-width: calc(100vw - 32px);
 }
 
+/* In-place enlarge via the mini-wheel resize button — a 75%-larger window. */
+.chart-wheel.enlarged {
+  width: 424px;
+  padding: 12px 22px 16px;
+  max-width: calc(100vw - 32px);
+}
+
+/* Resize toggle in the wheel's top-right corner. */
+.chart-wheel-resize {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: rgba(var(--tint), 0.06);
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 5px;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.chart-wheel-resize:hover {
+  background: rgba(var(--tint), 0.12);
+  border-color: rgba(var(--tint), 0.26);
+  color: var(--text-strong);
+}
+
 /* Pinned (orange) / natal-pinned (green) / hover (blue) all draw their border
    from the shared --map-accent source (set on <html> per pin state), so the
    minimap matches the bars and edge glow without re-listing the palette. */

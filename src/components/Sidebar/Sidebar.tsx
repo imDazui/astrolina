@@ -49,7 +49,12 @@ const COORD_SYSTEMS: { value: CoordSystem; label: string; hint: string }[] = [
 ];
 
 const HOUSE_SYSTEMS: { value: HouseSystem; label: string; hint: string }[] = [
-  { value: 'placidus', label: 'Placidus', hint: 'Semi-arc time division (Solar Fire default)' },
+  { value: 'placidus', label: 'Placidus', hint: 'Semi-arc time division (the common modern default)' },
+  { value: 'koch', label: 'Koch', hint: 'Semi-arc on the birth latitude (GOH)' },
+  { value: 'regiomontanus', label: 'Regiomontanus', hint: 'Equal divisions of the celestial equator' },
+  { value: 'campanus', label: 'Campanus', hint: 'Equal divisions of the prime vertical' },
+  { value: 'porphyry', label: 'Porphyry', hint: 'Each quadrant trisected in ecliptic longitude' },
+  { value: 'alcabitus', label: 'Alcabitus', hint: 'Ancient semi-arc on the diurnal / nocturnal arcs' },
   { value: 'whole', label: 'Whole Sign', hint: 'Each house is a whole sign from the rising sign' },
   { value: 'equal', label: 'Equal', hint: '30° houses measured from the Ascendant' },
 ];
@@ -282,29 +287,7 @@ export function Sidebar({
           <p className="calc-hint">
             {coordSystem === 'mundo'
               ? 'Lines use each body’s true position in the sky. Most affects Pluto and the Moon.'
-              : 'Bodies are projected onto the ecliptic before drawing lines (Solar Maps’ default).'}
-          </p>
-
-          <h2>House system</h2>
-          <ul className="theme-list">
-            {HOUSE_SYSTEMS.map(({ value, label, hint }) => (
-              <li key={value}>
-                <button
-                  type="button"
-                  className={`theme-option ${houseSystem === value ? 'active' : ''}`}
-                  onClick={() => setHouseSystem(value)}
-                  title={hint}
-                >
-                  <span className="radio">
-                    {houseSystem === value ? '●' : '○'}
-                  </span>
-                  <span className="label">{label}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          <p className="calc-hint">
-            Sets the house cusps in the expanded wheel. The angles are the same in every system.
+              : 'Bodies are projected onto the ecliptic before drawing lines (a common ACG default).'}
           </p>
 
           <h2>Lunar node</h2>
@@ -327,6 +310,25 @@ export function Sidebar({
             {nodeType === 'true'
               ? 'True node follows the Moon’s instantaneous orbit; it oscillates ±~1.5° around the mean and can briefly turn direct.'
               : 'Mean node is the smoothed average; it always moves retrograde at a steady rate.'}
+          </p>
+
+          <h2>House system</h2>
+          <span className="thud-select-wrap calc-select">
+            <select
+              className="thud-select"
+              value={houseSystem}
+              onChange={(e) => setHouseSystem(e.target.value as HouseSystem)}
+            >
+              {HOUSE_SYSTEMS.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <span className="thud-select-caret">▾</span>
+          </span>
+          <p className="calc-hint">
+            {HOUSE_SYSTEMS.find((h) => h.value === houseSystem)?.hint}
           </p>
         </div>
       )}

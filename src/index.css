@@ -2,9 +2,7 @@
    relative to this file (src/), so they point into ./fonts. */
 @font-face {
   font-family: 'Noto Sans Symbols';
-  src:
-    url('./fonts/subset-NotoSansSymbols-Regular.woff2') format('woff2'),
-    url('./fonts/subset-NotoSansSymbols-Regular.woff') format('woff');
+  src: url('./fonts/subset-NotoSansSymbols-Regular.woff2') format('woff2');
   font-weight: normal;
   font-style: normal;
   font-display: swap;

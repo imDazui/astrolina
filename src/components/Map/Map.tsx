@@ -7,16 +7,17 @@ import {
   useState,
 } from 'react';
 import maplibregl, { type ExpressionSpecification } from 'maplibre-gl';
-import type { FeatureCollection, LineString } from 'geojson';
-import type { LineProps } from '../../lib/astro/lines';
+import type { FeatureCollection, LineString, Point } from 'geojson';
+import type { LineProps, ZenithProps } from '../../lib/astro/lines';
 import type { ParanProps } from '../../lib/astro/parans';
 import type { LocalSpaceProps } from '../../lib/astro/localSpace';
 import {
   BASEMAP_STYLE_URLS,
   LABEL_HALO_COLORS,
+  ZENITH_DISC_COLORS,
   type Theme,
 } from '../../lib/theme';
-import { ensureGlyphImages, GLYPH_IMAGE_PREFIX } from './glyphImages';
+import { ensureGlyphImages, GLYPH_IMAGE_PREFIX, ZENITH_GLYPH_PREFIX } from './glyphImages';
 import { applyDetailToggles } from './basemapStyle';
 import {
   computeLineBadges,
@@ -181,6 +182,8 @@ interface MapProps {
   lines: FeatureCollection<LineString, LineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
+  /** Planet-glyph stamps at each body's zenith (sub-planetary) point, on its MC line. */
+  zenith: FeatureCollection<Point, ZenithProps>;
   /** Second, time/relationship overlay rendered dashed + dimmed over the base. */
   overlay?: OverlayData | null;
   pin?: { lat: number; lng: number } | null;
@@ -207,12 +210,15 @@ interface MapData {
   lines: FeatureCollection<LineString, LineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
+  zenith: FeatureCollection<Point, ZenithProps>;
   overlay?: OverlayData | null;
 }
 
 export interface MapHandle {
   /** Recenter the map on a coordinate, easing to a usable zoom if zoomed out. */
   flyTo: (lat: number, lng: number) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
 }
 
 // Directional arrows chained ALONG a horizon (ASC/DSC) line — '→→→' that follow
@@ -258,6 +264,7 @@ function setupCustomLayers(
   map: maplibregl.Map,
   haloColor: string,
   measureColor: string,
+  zenithFill: string,
 ) {
   map.addSource('parans', { type: 'geojson', data: EMPTY_FC() });
   map.addLayer({
@@ -432,6 +439,36 @@ function setupCustomLayers(
   addHorizonArrows(map, 'acg-lines-ov-arrows-dsc', 'acg-lines-ov', 'DSC', '←');
   // Overlay glyph + angle labels are also drawn as edge badges, not along the line.
 
+  // ── Zenith stamps: the planet glyph at each body's sub-planetary point (where
+  // it is directly overhead) — on its MC line, at latitude = declination. Drawn
+  // above the lines so the glyph reads on top of the meridian.
+  map.addSource('acg-zenith', { type: 'geojson', data: EMPTY_FC() });
+  // A ring around each stamp, bordered in the planet's color, over an inner fill
+  // that matches the glyph's halo/glow (a themed disc color) so the glyph reads
+  // on any basemap. Drawn under the glyph.
+  map.addLayer({
+    id: 'acg-zenith-disc',
+    source: 'acg-zenith',
+    type: 'circle',
+    paint: {
+      'circle-radius': 13,
+      'circle-color': zenithFill,
+      'circle-stroke-color': ['get', 'color'],
+      'circle-stroke-width': 1.5,
+    },
+  });
+  map.addLayer({
+    id: 'acg-zenith-layer',
+    source: 'acg-zenith',
+    type: 'symbol',
+    layout: {
+      'icon-image': ['concat', ZENITH_GLYPH_PREFIX, ['get', 'planet']] as unknown as ExpressionSpecification,
+      'icon-size': 1,
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+  });
+
   // ── Measurement tool: a dashed great-circle segment from the click origin to
   // the cursor, with a disc at each end. Drawn on top of everything else.
   map.addSource('measure', { type: 'geojson', data: EMPTY_FC() });
@@ -464,9 +501,11 @@ function pushData(map: maplibregl.Map, data: MapData) {
   const acg = map.getSource('acg-lines') as maplibregl.GeoJSONSource | undefined;
   const par = map.getSource('parans') as maplibregl.GeoJSONSource | undefined;
   const ls = map.getSource('local-space') as maplibregl.GeoJSONSource | undefined;
+  const zen = map.getSource('acg-zenith') as maplibregl.GeoJSONSource | undefined;
   if (acg) acg.setData(data.lines);
   if (par) par.setData(data.parans);
   if (ls) ls.setData(data.localSpace);
+  if (zen) zen.setData(data.zenith);
 
   const acgOv = map.getSource('acg-lines-ov') as
     | maplibregl.GeoJSONSource
@@ -487,6 +526,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lines,
   parans,
   localSpace,
+  zenith,
   overlay,
   pin,
   pinType,
@@ -509,18 +549,31 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     flyTo: (lat: number, lng: number) => {
       const map = mapRef.current;
       if (!map) return;
+      // The expanded chart sidebar is left-docked and overlays the map; while
+      // open it publishes its width as --es-width on <html>. Shift the target
+      // right so the pin lands where the nav/timeline bars center
+      // (left: calc(50% + --es-width/4)) instead of behind the panel.
+      const esWidth =
+        parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue(
+            '--es-width',
+          ),
+        ) || 0;
       map.flyTo({
         center: [lng, lat],
         zoom: Math.max(map.getZoom(), 4),
+        offset: [esWidth / 4, 0],
         essential: true,
       });
     },
+    zoomIn: () => mapRef.current?.zoomIn(),
+    zoomOut: () => mapRef.current?.zoomOut(),
   }), []);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const onClickRef = useRef(onClick);
   onClickRef.current = onClick;
-  const dataRef = useRef<MapData>({ lines, parans, localSpace, overlay });
-  dataRef.current = { lines, parans, localSpace, overlay };
+  const dataRef = useRef<MapData>({ lines, parans, localSpace, zenith, overlay });
+  dataRef.current = { lines, parans, localSpace, zenith, overlay };
   const themeRef = useRef(theme);
   // Read inside the (once-bound) load/style.load handlers so they always paint
   // the measure layers with the latest map-state accent.
@@ -584,6 +637,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       new maplibregl.NavigationControl({ showCompass: false }),
       'top-right',
     );
+    // Surface the +/− zoom hotkeys in the nav buttons' hover tooltips.
+    const zoomInBtn = map.getContainer().querySelector('.maplibregl-ctrl-zoom-in');
+    const zoomOutBtn = map.getContainer().querySelector('.maplibregl-ctrl-zoom-out');
+    zoomInBtn?.setAttribute('title', 'Zoom in (+)');
+    zoomInBtn?.setAttribute('aria-label', 'Zoom in (+)');
+    zoomOutBtn?.setAttribute('title', 'Zoom out (-)');
+    zoomOutBtn?.setAttribute('aria-label', 'Zoom out (-)');
     map.addControl(
       new maplibregl.AttributionControl({ compact: false }),
       'bottom-right',
@@ -608,12 +668,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       await ensureGlyphImages(
         map,
         themeRef.current === 'dark' ? '' : LABEL_HALO_COLORS[themeRef.current],
+        ZENITH_DISC_COLORS[themeRef.current],
       );
       applyDetailToggles(map, detailRef.current);
       setupCustomLayers(
         map,
         LABEL_HALO_COLORS[themeRef.current],
         measureColorRef.current,
+        ZENITH_DISC_COLORS[themeRef.current],
       );
       pushData(map, dataRef.current);
       computeBadges();
@@ -641,9 +703,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     themeRef.current = theme;
     map.setStyle(BASEMAP_STYLE_URLS[theme]);
     map.once('style.load', async () => {
-      await ensureGlyphImages(map, theme === 'dark' ? '' : LABEL_HALO_COLORS[theme]);
+      await ensureGlyphImages(map, theme === 'dark' ? '' : LABEL_HALO_COLORS[theme], ZENITH_DISC_COLORS[theme]);
       applyDetailToggles(map, detailRef.current);
-      setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current);
+      setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current, ZENITH_DISC_COLORS[theme]);
       pushData(map, dataRef.current);
       computeBadges();
     });
@@ -781,7 +843,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const map = mapRef.current;
     if (!map) return;
     if (map.isStyleLoaded() && map.getSource('acg-lines')) {
-      pushData(map, { lines, parans, localSpace, overlay });
+      pushData(map, { lines, parans, localSpace, zenith, overlay });
       computeBadges();
     } else {
       map.once('load', () => {
@@ -789,7 +851,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         computeBadges();
       });
     }
-  }, [lines, parans, localSpace, overlay, computeBadges]);
+  }, [lines, parans, localSpace, zenith, overlay, computeBadges]);
 
   // Toggle basemap road / river visibility live (theme reloads reapply via the
   // style.load handler above).

@@ -51,8 +51,8 @@ function Longitude({ lon, advanced }: { lon: number; advanced: boolean }) {
 }
 
 const MONTHS = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
 function fmtChartDate(c: StoredChart): string {
@@ -69,13 +69,9 @@ interface ExpandedChartSidebarProps {
   planets: EclipticPosition[];
   overlayPlanets?: EclipticPosition[] | null;
   overlayLabel?: string | null;
-  /** The synastry partner chart, when in synastry mode — shown as an overlay
-   *  identity banner (name + birth data) since this is where chart data lives. */
-  overlayPartner?: StoredChart | null;
   /** Planets toggled on in the Map Filter; hidden ones are dropped everywhere. */
   visiblePlanets: Set<PlanetName>;
   onClose: () => void;
-  onRecenterPin: () => void;
   /** Fired while the panel is being drag-resized, so the map can pause hover. */
   onResizingChange?: (resizing: boolean) => void;
   onSelectChart: (id: string) => void;
@@ -168,10 +164,8 @@ export function ExpandedChartSidebar({
   planets,
   overlayPlanets,
   overlayLabel,
-  overlayPartner,
   visiblePlanets,
   onClose,
-  onRecenterPin,
   onResizingChange,
   onSelectChart,
   onNewChart,
@@ -286,14 +280,6 @@ export function ExpandedChartSidebar({
     };
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   // The wheel diameter fits the panel width (the sidebar scrolls vertically,
   // so width is the constraint), floored at MIN_WHEEL so it never gets squished.
   const wheelPaneRef = useRef<HTMLDivElement>(null);
@@ -361,19 +347,25 @@ export function ExpandedChartSidebar({
               type="button"
               className="es-close-btn"
               onClick={onClose}
-              title="Collapse (Esc)"
-              aria-label="Close expanded view"
+              title="Hide (B)"
+              aria-label="Hide expanded view"
             >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path
-                  d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M9 3v18" />
+                <path d="M16 15l-3-3 3-3" />
               </svg>
-              <span>Collapse</span>
+              <span>Hide</span>
             </button>
           </div>
         </div>
@@ -381,19 +373,6 @@ export function ExpandedChartSidebar({
           <p className="es-meta">
             {fmtChartDate(chart)} · {chart.birthplace.label}
           </p>
-        )}
-        {overlayPartner && (
-          <div className="es-synastry">
-            <span className="es-synastry-tag">
-              <span className="es-overlay-dot" /> Overlay
-            </span>
-            <span className="es-synastry-body">
-              <span className="es-synastry-name">{overlayPartner.name}</span>
-              <span className="es-synastry-meta">
-                {fmtChartDate(overlayPartner)} · {overlayPartner.birthplace.label}
-              </span>
-            </span>
-          </div>
         )}
         {(() => {
           const displayPoint =
@@ -422,32 +401,6 @@ export function ExpandedChartSidebar({
                 {label} {displayPoint.lat.toFixed(3)}°,{' '}
                 {displayPoint.lng.toFixed(3)}°
               </span>
-              {pinned && (
-                <button
-                  type="button"
-                  className="es-recenter-btn"
-                  onClick={onRecenterPin}
-                  title="Center map on pin"
-                  aria-label="Center map on pin"
-                >
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M8 1.5c-2.5 0-4.5 2-4.5 4.5 0 3.2 4.5 8.5 4.5 8.5s4.5-5.3 4.5-8.5c0-2.5-2-4.5-4.5-4.5z"
-                      stroke="currentColor"
-                      strokeWidth="1.4"
-                      strokeLinejoin="round"
-                    />
-                    <circle cx="8" cy="6" r="1.6" fill="currentColor" />
-                  </svg>
-                  <span>Center</span>
-                </button>
-              )}
             </div>
           );
         })()}
@@ -466,7 +419,7 @@ export function ExpandedChartSidebar({
             {anglesOpen && (
               <ul className="es-angle-list">
                 <li>
-                  <span className="es-name">ASC</span>
+                  <span className="es-name">As</span>
                   <span className="es-lon"><Longitude lon={angles.asc} advanced={advanced} /></span>
                 </li>
                 <li>
@@ -474,7 +427,7 @@ export function ExpandedChartSidebar({
                   <span className="es-lon"><Longitude lon={angles.mc} advanced={advanced} /></span>
                 </li>
                 <li>
-                  <span className="es-name">DSC</span>
+                  <span className="es-name">Ds</span>
                   <span className="es-lon"><Longitude lon={angles.dsc} advanced={advanced} /></span>
                 </li>
                 <li>
@@ -505,7 +458,9 @@ export function ExpandedChartSidebar({
               <span className="es-name">{PLANET_DISPLAY[p.name]}</span>
               <span className="es-lon">
                 <Longitude lon={p.lon} advanced={advanced} />
-                {advanced && p.retrograde ? (
+                {advanced && p.stationary ? (
+                  <span className="es-station" title="Stationary">S</span>
+                ) : advanced && p.retrograde ? (
                   <span className="es-rx" title="Retrograde">℞</span>
                 ) : null}
               </span>

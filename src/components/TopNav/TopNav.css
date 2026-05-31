@@ -71,6 +71,48 @@
   color: var(--text-muted);
 }
 
+/* Birth location shown in the secondary bar when no tool is active — same island
+   + chrome as the measure readout, which reclaims it while measuring. */
+.topnav-location {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(340px, 60vw);
+  font-size: 11px;
+  color: var(--text);
+}
+.topnav-location-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* When a pin is set, the location pill is a button that recenters the map
+   (same as the top-nav status pill). */
+.topnav-location-btn {
+  padding: 0;
+  background: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+.topnav-location-btn:hover .topnav-location-text {
+  color: var(--text-strong);
+}
+/* Fade the readout text in when a non-natal pin upgrades from country to the
+   full address (a keyed remount in TopNav replays this on each change). */
+.topnav-location-fade {
+  animation: topnav-loc-fade 220ms ease;
+}
+@keyframes topnav-loc-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* One compact row: name · [sidebar | divider | status] · [ruler overlay view],
    all adjacent with small uniform gaps — no slack between sections. Generous side
    padding gives the far-left/right controls breathing room from the edges. */
@@ -100,6 +142,8 @@
   max-width: 0;
   margin-right: -12px; /* also absorb the row gap so nothing is left behind */
   pointer-events: none;
+  /* Snap the name out fast; the slide keeps its slower max-width timing. */
+  transition: opacity 0.12s ease, max-width 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .topnav-center {
@@ -141,11 +185,11 @@
   background: rgba(var(--tint), 0.08);
   border-color: rgba(var(--tint), 0.24);
 }
-/* Pressed/enabled look while the sidebar is open. */
+/* Pressed/enabled look while the sidebar is open — neutral (no map-state accent). */
 .topnav-expand.active {
-  border-color: rgba(var(--accent-rgb), 0.55);
-  background: rgba(var(--accent-rgb), 0.14);
-  color: var(--accent);
+  border-color: rgba(var(--tint), 0.3);
+  background: rgba(var(--tint), 0.12);
+  color: var(--text-strong);
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.22);
 }
 .topnav-expand:disabled {
@@ -224,6 +268,7 @@ button.topnav-status:hover {
   height: 7px;
   border-radius: 50%;
   background: var(--accent);
+  flex-shrink: 0;
 }
 
 /* ── Dropdown menus (Tools / Overlay / View) ───────────────────── */
@@ -266,6 +311,18 @@ button.topnav-status:hover {
 .navmenu-trigger.active .navmenu-caret {
   color: var(--accent);
 }
+/* "Steady" triggers (View) keep a neutral open/active look instead of the
+   map-state accent (gray/orange/green/blue). */
+.navmenu-trigger.navmenu-steady.open,
+.navmenu-trigger.navmenu-steady.active {
+  border-color: rgba(var(--tint), 0.3);
+  background: rgba(var(--tint), 0.08);
+  color: var(--text-strong);
+}
+.navmenu-trigger.navmenu-steady.open .navmenu-caret,
+.navmenu-trigger.navmenu-steady.active .navmenu-caret {
+  color: var(--text-faint);
+}
 
 .navmenu-panel {
   position: absolute;
@@ -306,6 +363,20 @@ button.topnav-status:hover {
 .navmenu-item.on {
   color: var(--accent);
 }
+/* Checkmark toggles (the View menu) keep normal text color when on — only the
+   ✓ marker signals the state, not an accent tint. */
+.navmenu-item.navmenu-check.on {
+  color: var(--text-strong);
+}
+
+/* Single-key shortcut hint, right-aligned in a menu item. */
+.navmenu-key {
+  margin-left: auto;
+  padding-left: 16px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
 
 .navmenu-marker {
   width: 12px;
@@ -331,14 +402,4 @@ button.topnav-status:hover {
   padding: 6px 8px;
   font-size: 11px;
   color: var(--text-faint);
-}
-
-.navmenu-partner {
-  padding: 4px 6px 2px;
-}
-.navmenu-partner .thud-select-wrap {
-  width: 100%;
-}
-.navmenu-partner .thud-select {
-  width: 100%;
 }

@@ -1,26 +1,26 @@
+// Astronomical engine — Swiss Ephemeris (JPL-grade), via the @swisseph/browser
+// WASM build. This module is the single source of truth for every celestial
+// quantity: planet/asteroid/node/Lilith positions, sidereal time, obliquity,
+// houses, and Julian Day. Nothing here is approximated or hand-integrated — if
+// Swiss provides it, we read it from Swiss.
+//
+// The WASM needs a one-time async init (`initEphemeris`) before any calc runs;
+// `src/main.tsx` awaits it before the app renders, so every function below stays
+// synchronous for its React `useMemo` consumers. Swiss returns DEGREES; we
+// convert to radians at this boundary and keep the rest of the app in radians.
 import {
-  julian,
-  planetposition,
-  elliptic,
-  solar,
-  moonposition,
-  pluto,
-  sidereal,
-  nutation,
-  coord,
-} from 'astronomia';
-// Import only the eight VSOP87B planet tables we actually use, by subpath.
-// (Importing the `astronomia/data` barrel would reference every dataset —
-// including the unused vsop87D tables and the 4.9 MB ELP lunar series — and only
-// stays small via fragile object-property tree-shaking.)
-import vsop87Bearth from 'astronomia/data/vsop87Bearth';
-import vsop87Bmercury from 'astronomia/data/vsop87Bmercury';
-import vsop87Bvenus from 'astronomia/data/vsop87Bvenus';
-import vsop87Bmars from 'astronomia/data/vsop87Bmars';
-import vsop87Bjupiter from 'astronomia/data/vsop87Bjupiter';
-import vsop87Bsaturn from 'astronomia/data/vsop87Bsaturn';
-import vsop87Buranus from 'astronomia/data/vsop87Buranus';
-import vsop87Bneptune from 'astronomia/data/vsop87Bneptune';
+  SwissEphemeris,
+  Planet,
+  LunarPoint,
+  Asteroid,
+  HouseSystem as SweHouse,
+  CalculationFlag,
+  CalendarType,
+} from '@swisseph/browser';
+// Vite emits the wasm as a fingerprinted asset and hands us its URL; we pass it
+// to init() explicitly (the package's import.meta.url fallback is unreliable
+// under Vite chunking + static hosting).
+import wasmUrl from '@swisseph/browser/dist/swisseph.wasm?url';
 import type { BirthData } from './birthData';
 
 export type PlanetName =
@@ -36,6 +36,7 @@ export type PlanetName =
   | 'Pluto'
   | 'NorthNode'
   | 'SouthNode'
+  | 'Lilith'
   | 'Chiron'
   | 'Ceres'
   | 'Pallas'
@@ -58,6 +59,7 @@ export const TRADITIONAL_PLANETS: PlanetName[] = [
 export const EXTRA_BODIES: PlanetName[] = [
   'NorthNode',
   'SouthNode',
+  'Lilith',
   'Chiron',
   'Ceres',
   'Pallas',
@@ -80,6 +82,7 @@ export const PLANET_DISPLAY: Record<PlanetName, string> = {
   Pluto: 'Pluto',
   NorthNode: 'N Node',
   SouthNode: 'S Node',
+  Lilith: 'Lilith',
   Chiron: 'Chiron',
   Ceres: 'Ceres',
   Pallas: 'Pallas',
@@ -100,6 +103,7 @@ export const PLANET_CODES: Record<PlanetName, string> = {
   Pluto: 'Pl',
   NorthNode: 'NN',
   SouthNode: 'SN',
+  Lilith: 'Li',
   Chiron: 'Ch',
   Ceres: 'Cr',
   Pallas: 'Pa',
@@ -120,6 +124,7 @@ export const PLANET_COLORS: Record<PlanetName, string> = {
   Pluto: '#a85040',
   NorthNode: '#7adbb3',
   SouthNode: '#dc8a7a',
+  Lilith: '#7a5a9e',
   Chiron: '#d4a374',
   Ceres: '#6cb8a8',
   Pallas: '#8a8ed4',
@@ -136,13 +141,13 @@ export interface PlanetPosition {
 export interface EclipticPosition {
   name: PlanetName;
   lon: number;
-  // Optional advanced fields, populated by toEclipticPositions when the
+  // Optional advanced fields, populated by getEclipticPositions when the
   // expanded sidebar's "Advanced" mode wants declination / speed / retrograde.
   lat?: number;          // ecliptic latitude, radians
   dec?: number;          // equatorial declination, radians
   speed?: number;        // ecliptic longitude motion, degrees/day (negative = Rx)
   retrograde?: boolean;
-  stationary?: boolean;  // motion reverses within ±1 day (near a station)
+  stationary?: boolean;  // near a station (instantaneous speed ≈ 0)
 }
 
 export interface RelocatedAngles {
@@ -151,190 +156,108 @@ export interface RelocatedAngles {
   dsc: number;
   ic: number;
   /**
-   * The 12 Placidus house cusps in ecliptic longitude (radians), index 0 =
-   * cusp 1 … index 11 = cusp 12. Cusps 1/4/7/10 equal asc/ic/dsc/mc exactly.
-   * Placidus is undefined inside the polar circles; there the semi-arc cosine
-   * is clamped so the wheel degrades gracefully instead of producing NaN.
+   * The 12 house cusps in ecliptic longitude (radians), index 0 = cusp 1 …
+   * index 11 = cusp 12, as returned by Swiss Ephemeris for the chosen house
+   * system. Cusps 1/4/7/10 equal asc/ic/dsc/mc for quadrant systems; for
+   * whole-sign / equal the angles float off the cusps (handled by Swiss).
    */
   cusps: number[];
 }
 
-const earth = new planetposition.Planet(vsop87Bearth);
-const mercury = new planetposition.Planet(vsop87Bmercury);
-const venus = new planetposition.Planet(vsop87Bvenus);
-const mars = new planetposition.Planet(vsop87Bmars);
-const jupiter = new planetposition.Planet(vsop87Bjupiter);
-const saturn = new planetposition.Planet(vsop87Bsaturn);
-const uranus = new planetposition.Planet(vsop87Buranus);
-const neptune = new planetposition.Planet(vsop87Bneptune);
+// ── Swiss Ephemeris init (one-time, async) ────────────────────────────────────
+// A module-level promise singleton: the WASM module + the self-hosted .se1 data
+// files are loaded exactly once. React StrictMode's double-invoke is harmless
+// because the promise is cached. After this resolves, every calc below is sync.
+let swe: SwissEphemeris | null = null;
+let initPromise: Promise<void> | null = null;
 
-const DEG2RAD = Math.PI / 180;
-const J2000 = 2451545.0;
-const OBLIQUITY_J2000 = 23.4392911 * DEG2RAD;
+// JPL-grade Swiss data we self-host under public/ephe/ (covers 1800–2399 AD):
+// planets (sepl), Moon (semo), and the main-belt asteroids incl. Chiron (seas).
+const EPHE_FILES = ['sepl_18.se1', 'semo_18.se1', 'seas_18.se1'].map((name) => ({
+  name,
+  url: `${import.meta.env.BASE_URL}ephe/${name}`,
+}));
 
-// Mean orbital elements at J2000 (heliocentric ecliptic, mean equinox of J2000).
-// Source: JPL HORIZONS / Minor Planet Center. Adequate to ~0.1° for ±200 years.
-interface OrbitalElements {
-  a: number;      // semi-major axis, AU
-  e: number;      // eccentricity
-  i: number;      // inclination, degrees
-  node: number;   // longitude of ascending node Ω, degrees
-  peri: number;   // argument of perihelion ω, degrees
-  M0: number;     // mean anomaly at epoch, degrees
-  n: number;      // mean motion, degrees/day
-  epoch: number;  // epoch JD (J2000 for all of ours)
-}
-
-const MINOR_BODY_ELEMENTS: Record<string, OrbitalElements> = {
-  Ceres:  { a: 2.7691651, e: 0.0760091, i: 10.59407, node:  80.30553, peri:  73.59764, M0:  95.989, n: 0.2140874, epoch: J2000 },
-  Pallas: { a: 2.7720833, e: 0.2299960, i: 34.83975, node: 173.08006, peri: 309.93047, M0:  33.018, n: 0.2137462, epoch: J2000 },
-  Juno:   { a: 2.6694780, e: 0.2570304, i: 12.98166, node: 169.85291, peri: 247.75126, M0:  33.408, n: 0.2262273, epoch: J2000 },
-  Vesta:  { a: 2.3617934, e: 0.0886205, i:  7.14043, node: 103.91254, peri: 151.19853, M0:  24.474, n: 0.2716493, epoch: J2000 },
-  Chiron: { a: 13.670893, e: 0.3823020, i:  6.93680, node: 209.37981, peri: 339.49532, M0: 102.926, n: 0.0195778, epoch: J2000 },
-};
-
-function solveKepler(M: number, e: number): number {
-  let E = M;
-  for (let i = 0; i < 8; i++) {
-    E = E - (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+export function initEphemeris(
+  onStage?: (stage: 'planets' | 'moon' | 'asteroids') => void,
+): Promise<void> {
+  if (!initPromise) {
+    initPromise = (async () => {
+      const inst = new SwissEphemeris();
+      await inst.init(wasmUrl);
+      // Load the .se1 files one at a time so the loading screen can report each
+      // step (semo, the lunar file, is by far the largest). Each call fetches the
+      // file into the WASM virtual FS and re-points the ephemeris path; the
+      // SwissEphemeris flag then finds them.
+      onStage?.('planets');
+      await inst.loadEphemerisFiles([EPHE_FILES[0]]); // sepl — planets
+      onStage?.('moon');
+      await inst.loadEphemerisFiles([EPHE_FILES[1]]); // semo — Moon
+      onStage?.('asteroids');
+      await inst.loadEphemerisFiles([EPHE_FILES[2]]); // seas — asteroids
+      swe = inst;
+    })();
   }
-  return E;
+  return initPromise;
 }
 
-// Heliocentric J2000 ecliptic cartesian coords (AU) for a body with orbital elements.
-function heliocentricFromElements(
-  elem: OrbitalElements,
-  jd: number,
-): { x: number; y: number; z: number } {
-  const M = ((elem.M0 + elem.n * (jd - elem.epoch)) * DEG2RAD) % (2 * Math.PI);
-  const E = solveKepler(M, elem.e);
-  const xp = elem.a * (Math.cos(E) - elem.e);
-  const yp = elem.a * Math.sqrt(1 - elem.e * elem.e) * Math.sin(E);
-  const r = Math.sqrt(xp * xp + yp * yp);
-  const v = Math.atan2(yp, xp);
-
-  const i = elem.i * DEG2RAD;
-  const omega = elem.node * DEG2RAD;
-  const w = elem.peri * DEG2RAD;
-  const u = v + w;
-
-  const x = r * (Math.cos(omega) * Math.cos(u) - Math.sin(omega) * Math.sin(u) * Math.cos(i));
-  const y = r * (Math.sin(omega) * Math.cos(u) + Math.cos(omega) * Math.sin(u) * Math.cos(i));
-  const z = r * Math.sin(u) * Math.sin(i);
-  return { x, y, z };
+function eph(): SwissEphemeris {
+  if (!swe) {
+    throw new Error('Ephemeris not initialized — await initEphemeris() first');
+  }
+  return swe;
 }
 
-// Earth's heliocentric J2000 ecliptic cartesian coords (AU).
-function earthHelio(jd: number): { x: number; y: number; z: number } {
-  const { lon, lat, range } = earth.position(jd);
-  const x = range * Math.cos(lat) * Math.cos(lon);
-  const y = range * Math.cos(lat) * Math.sin(lon);
-  const z = range * Math.sin(lat);
-  return { x, y, z };
-}
+// ── Constants, flags, body mapping ────────────────────────────────────────────
+const DEG2RAD = Math.PI / 180;
+const TWO_PI = 2 * Math.PI;
 
-// Convert geocentric ecliptic cartesian -> apparent RA/dec (J2000 mean equator).
-function eclCartToRaDec(
-  x: number,
-  y: number,
-  z: number,
-): { ra: number; dec: number } {
-  // Rotate by -obliquity around the x-axis: ecliptic -> equatorial
-  const cosE = Math.cos(OBLIQUITY_J2000);
-  const sinE = Math.sin(OBLIQUITY_J2000);
-  const xe = x;
-  const ye = y * cosE - z * sinE;
-  const ze = y * sinE + z * cosE;
-  let ra = Math.atan2(ye, xe);
-  if (ra < 0) ra += 2 * Math.PI;
-  const dec = Math.atan2(ze, Math.sqrt(xe * xe + ye * ye));
-  return { ra, dec };
-}
-
-function minorBodyRaDec(name: keyof typeof MINOR_BODY_ELEMENTS, jd: number): { ra: number; dec: number } {
-  const helio = heliocentricFromElements(MINOR_BODY_ELEMENTS[name], jd);
-  const e = earthHelio(jd);
-  return eclCartToRaDec(helio.x - e.x, helio.y - e.y, helio.z - e.z);
-}
-
-// Mean lunar north node (ecliptic longitude, degrees → returned as RA/dec).
-// Standard formula: Ω = 125.04452 − 0.0529538083 · d, where d = JD − J2000.
-function meanNodeRaDec(jd: number, isSouth: boolean): { ra: number; dec: number } {
-  const d = jd - J2000;
-  let lonDeg = 125.04452 - 0.0529538083 * d;
-  if (isSouth) lonDeg += 180;
-  lonDeg = ((lonDeg % 360) + 360) % 360;
-  const lon = lonDeg * DEG2RAD;
-  // Node lies on the ecliptic by definition (lat = 0).
-  const x = Math.cos(lon);
-  const y = Math.sin(lon);
-  const z = 0;
-  return eclCartToRaDec(x, y, z);
-}
+// Use the self-hosted Swiss data (not the built-in Moshier fallback) for every
+// body, and always request instantaneous speed. FLAG_EQ adds the equatorial
+// flag so the position comes back as RA/dec in the longitude/latitude fields.
+const FLAG_ECL = CalculationFlag.SwissEphemeris | CalculationFlag.Speed;
+const FLAG_EQ = FLAG_ECL | CalculationFlag.Equatorial;
 
 // Lunar node convention: the smoothed long-term average ('mean') or the
 // instantaneous osculating node ('true', which oscillates ±~1.5° around the
-// mean with a ~173-day period). Most desktop tools default to true.
+// mean with a ~173-day period). Both are native Swiss points.
 export type NodeType = 'mean' | 'true';
 
-// Moon's ecliptic position (astronomia lon/lat radians, range km) → ecliptic
-// cartesian. Units are arbitrary here — only the direction matters downstream.
-function moonEclCart(jd: number): { x: number; y: number; z: number } {
-  const { lon, lat, range } = moonposition.position(jd);
-  return {
-    x: range * Math.cos(lat) * Math.cos(lon),
-    y: range * Math.cos(lat) * Math.sin(lon),
-    z: range * Math.sin(lat),
-  };
-}
+const nodeId = (t: NodeType) => (t === 'true' ? LunarPoint.TrueNode : LunarPoint.MeanNode);
 
-// True (osculating) lunar node: the ascending node of the Moon's instantaneous
-// orbit. The orbit plane is fixed by the angular momentum h = r × v; the line of
-// nodes lies along ẑ × h, so the ascending node's ecliptic longitude is
-// Ω = atan2(hx, −hy). We get the Moon's velocity from a centered finite
-// difference of its astronomia ecliptic position. The node is on the ecliptic
-// (lat 0), so it converts to RA/dec exactly like the mean node — keeping the two
-// node modes frame-consistent.
-function trueNodeRaDec(jd: number, isSouth: boolean): { ra: number; dec: number } {
-  const h = 0.02; // days (~29 min) — small enough for an instantaneous velocity
-  const r = moonEclCart(jd);
-  const rm = moonEclCart(jd - h);
-  const rp = moonEclCart(jd + h);
-  const vx = (rp.x - rm.x) / (2 * h);
-  const vy = (rp.y - rm.y) / (2 * h);
-  const vz = (rp.z - rm.z) / (2 * h);
-  const hx = r.y * vz - r.z * vy;
-  const hy = r.z * vx - r.x * vz;
-  let lon = Math.atan2(hx, -hy);
-  if (isSouth) lon += Math.PI;
-  lon = ((lon % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-  return eclCartToRaDec(Math.cos(lon), Math.sin(lon), 0);
-}
+// PlanetName → Swiss body id. SouthNode is handled separately (Swiss has no
+// south-node body — it is the antipode of the north node). NorthNode resolves
+// via nodeId() because it depends on the mean/true convention.
+const BODY_ID: Record<Exclude<PlanetName, 'SouthNode'>, number> = {
+  Sun: Planet.Sun,
+  Moon: Planet.Moon,
+  Mercury: Planet.Mercury,
+  Venus: Planet.Venus,
+  Mars: Planet.Mars,
+  Jupiter: Planet.Jupiter,
+  Saturn: Planet.Saturn,
+  Uranus: Planet.Uranus,
+  Neptune: Planet.Neptune,
+  Pluto: Planet.Pluto,
+  NorthNode: LunarPoint.MeanNode, // overridden per nodeType in sampleBody
+  Lilith: LunarPoint.MeanApogee, // Black Moon Lilith (mean lunar apogee)
+  Chiron: Asteroid.Chiron,
+  Ceres: Asteroid.Ceres,
+  Pallas: Asteroid.Pallas,
+  Juno: Asteroid.Juno,
+  Vesta: Asteroid.Vesta,
+};
 
-export function birthDataToJD(b: BirthData): number {
-  const utcHour = b.hour + b.minute / 60 - b.tzOffset;
-  const dayFraction = b.day + utcHour / 24;
-  const cal = new julian.CalendarGregorian(b.year, b.month, dayFraction);
-  return cal.toJD();
-}
+const norm2pi = (a: number) => ((a % TWO_PI) + TWO_PI) % TWO_PI;
 
-export function gmstRadians(jd: number): number {
-  const secs = sidereal.mean(jd);
-  return ((secs / 86400) * 2 * Math.PI) % (2 * Math.PI);
-}
-
-function moonEquatorial(jd: number): { ra: number; dec: number } {
-  const { lon, lat } = moonposition.position(jd);
-  const [dpsi, deps] = nutation.nutation(jd);
-  const epsilon = nutation.meanObliquity(jd) + deps;
-  const ecl = new coord.Ecliptic(lon + dpsi, lat);
-  const eq = ecl.toEquatorial(epsilon);
-  return { ra: eq.ra, dec: eq.dec };
-}
+// ── Coordinate helpers (pure geometry, used on DERIVED positions) ─────────────
+// These transform already-computed positions (solar-arc shifting, zodiaco
+// projection) — they are NOT ephemeris lookups, so they stay hand-rolled.
 
 export function obliquity(jd: number): number {
-  const [, deps] = nutation.nutation(jd);
-  return nutation.meanObliquity(jd) + deps;
+  // SE_ECL_NUT (body -1): longitude holds the TRUE obliquity of date (degrees).
+  const nut = eph().calculatePosition(jd, Planet.EclipticNutation, CalculationFlag.SwissEphemeris);
+  return nut.longitude * DEG2RAD;
 }
 
 export function raDecToEclipticLon(ra: number, dec: number, eps: number): number {
@@ -342,7 +265,7 @@ export function raDecToEclipticLon(ra: number, dec: number, eps: number): number
     Math.sin(ra) * Math.cos(eps) + Math.tan(dec) * Math.sin(eps),
     Math.cos(ra),
   );
-  return (lon + 2 * Math.PI) % (2 * Math.PI);
+  return norm2pi(lon);
 }
 
 function raDecToEclipticLat(ra: number, dec: number, eps: number): number {
@@ -351,9 +274,9 @@ function raDecToEclipticLat(ra: number, dec: number, eps: number): number {
   );
 }
 
-// Ecliptic spherical (lon, lat) -> equatorial RA/dec for a given obliquity.
-// Same rotation as eclCartToRaDec but parameterised by `eps` so the solar-arc
-// round-trip below uses one consistent obliquity in both directions.
+// Ecliptic spherical (lon, lat) → equatorial RA/dec for a given obliquity.
+// Used by the south-node antipode, the zodiaco projection, and the solar-arc
+// round-trip (one consistent `eps` in both directions).
 function eclipticToRaDec(
   lon: number,
   lat: number,
@@ -368,7 +291,7 @@ function eclipticToRaDec(
   const ye = y * cosE - z * sinE;
   const ze = y * sinE + z * cosE;
   let ra = Math.atan2(ye, xe);
-  if (ra < 0) ra += 2 * Math.PI;
+  if (ra < 0) ra += TWO_PI;
   const dec = Math.atan2(ze, Math.sqrt(xe * xe + ye * ye));
   return { ra, dec };
 }
@@ -412,47 +335,140 @@ export function projectOntoEcliptic(
   });
 }
 
-export function toEclipticPositions(
-  positions: PlanetPosition[],
+// ── Core sampling ─────────────────────────────────────────────────────────────
+interface BodySample {
+  name: PlanetName;
+  ra: number; // radians (equatorial)
+  dec: number;
+  lon: number; // radians (ecliptic)
+  lat: number;
+  speed: number; // ecliptic longitude motion, degrees/day
+}
+
+// Sample one body in both the ecliptic and equatorial frames, plus its speed —
+// everything downstream needs, straight from Swiss. Two calc calls per body.
+function sampleBody(jd: number, name: PlanetName, nodeType: NodeType): BodySample {
+  if (name === 'SouthNode') {
+    // The south node is the antipode of the north node (on the ecliptic, lat 0).
+    const nn = sampleBody(jd, 'NorthNode', nodeType);
+    const lon = norm2pi(nn.lon + Math.PI);
+    const eps = obliquity(jd);
+    const { ra, dec } = eclipticToRaDec(lon, 0, eps);
+    return { name, ra, dec, lon, lat: 0, speed: nn.speed };
+  }
+  const id = name === 'NorthNode' ? nodeId(nodeType) : BODY_ID[name];
+  const ecl = eph().calculatePosition(jd, id, FLAG_ECL); // lon/lat + speed
+  const equ = eph().calculatePosition(jd, id, FLAG_EQ); // RA in .longitude, dec in .latitude
+  return {
+    name,
+    ra: norm2pi(equ.longitude * DEG2RAD),
+    dec: equ.latitude * DEG2RAD,
+    lon: norm2pi(ecl.longitude * DEG2RAD),
+    lat: ecl.latitude * DEG2RAD,
+    speed: ecl.longitudeSpeed,
+  };
+}
+
+// A body is "stationary" when its instantaneous ecliptic-longitude speed is near
+// zero (within ~a day of a station). The luminaries and the nodes never station,
+// so they are excluded (the mean node's steady ~0.05°/day retrograde would
+// otherwise trip the threshold).
+function stationaryFlag(speed: number, name: PlanetName): boolean {
+  if (name === 'Sun' || name === 'Moon' || name === 'NorthNode' || name === 'SouthNode') {
+    return false;
+  }
+  return Math.abs(speed) < 0.05; // degrees/day
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+export function birthDataToJD(b: BirthData): number {
+  // JD at 0h UT of the civil date, then add the fractional UT hour. Going via
+  // 0h keeps the hour argument in range and stays exact for any tz offset
+  // (including negative / >24h UT hours from large east/west offsets).
+  const jd0 = eph().julianDay(b.year, b.month, b.day, 0, CalendarType.Gregorian);
+  return jd0 + (b.hour + b.minute / 60 - b.tzOffset) / 24;
+}
+
+export function gmstRadians(jd: number): number {
+  // ARMC at longitude 0 is Greenwich apparent sidereal time (degrees). This is
+  // apparent (vs the old mean) sidereal time — ≤~0.004° different and consistent
+  // with the apparent RA the bodies are computed in. House system is irrelevant
+  // to ARMC, which depends only on jd and longitude.
+  const h = eph().calculateHouses(jd, 0, 0, SweHouse.WholeSign);
+  return norm2pi(h.armc * DEG2RAD);
+}
+
+export function getPlanetPositions(
+  jd: number,
+  nodeType: NodeType = 'mean',
+): PlanetPosition[] {
+  return PLANET_NAMES.map((name) => {
+    const s = sampleBody(jd, name, nodeType);
+    return { name, ra: s.ra, dec: s.dec };
+  });
+}
+
+// Ecliptic positions for the chart wheel, straight from Swiss — exact longitude,
+// latitude, declination, and instantaneous speed (no finite differences).
+export function getEclipticPositions(
   jd: number,
   nodeType: NodeType = 'mean',
 ): EclipticPosition[] {
-  const eps = obliquity(jd);
-  // Sample one day either side to derive ecliptic-longitude speed (°/day) and to
-  // detect a station: a body is stationary when its motion REVERSES within ±1 day.
-  // The sign-change test catches stations for slow outer planets too, where a
-  // fixed small-speed cutoff would misfire (their mean motion is already tiny).
-  // nodeType is forwarded so the node rows match the node convention.
-  const before = getPlanetPositions(jd - 1, nodeType);
-  const after = getPlanetPositions(jd + 1, nodeType);
-  const wrap = (d: number) => {
-    if (d > Math.PI) return d - 2 * Math.PI;
-    if (d < -Math.PI) return d + 2 * Math.PI;
-    return d;
-  };
-  return positions.map((p, i) => {
-    const lon = raDecToEclipticLon(p.ra, p.dec, eps);
-    const lat = raDecToEclipticLat(p.ra, p.dec, eps);
-    const lonBefore = raDecToEclipticLon(before[i].ra, before[i].dec, eps);
-    const lonAfter = raDecToEclipticLon(after[i].ra, after[i].dec, eps);
-    const dBefore = wrap(lon - lonBefore); // motion over the prior day
-    const dAfter = wrap(lonAfter - lon); // motion over the next day
-    const speed = (wrap(lonAfter - lonBefore) * 180) / Math.PI / 2;
+  return PLANET_NAMES.map((name) => {
+    const s = sampleBody(jd, name, nodeType);
     return {
-      name: p.name,
-      lon,
-      lat,
-      dec: p.dec,
-      speed,
-      retrograde: speed < 0,
-      stationary: dBefore !== 0 && dAfter !== 0 && dBefore > 0 !== dAfter > 0,
+      name,
+      lon: s.lon,
+      lat: s.lat,
+      dec: s.dec,
+      speed: s.speed,
+      retrograde: s.speed < 0,
+      stationary: stationaryFlag(s.speed, name),
     };
   });
 }
 
+// Ecliptic longitude/latitude for DERIVED positions (solar-arc shifts, overlay
+// bi-wheels) where the input is a {ra,dec} that is not a direct Swiss lookup, so
+// it must be converted geometrically. Speed/retrograde are meaningless for these
+// and intentionally omitted; the overlay wheel only reads `lon`.
+export function toEclipticPositions(
+  positions: PlanetPosition[],
+  jd: number,
+): EclipticPosition[] {
+  const eps = obliquity(jd);
+  return positions.map((p) => ({
+    name: p.name,
+    lon: raDecToEclipticLon(p.ra, p.dec, eps),
+    lat: raDecToEclipticLat(p.ra, p.dec, eps),
+    dec: p.dec,
+  }));
+}
+
 // House-division systems offered in the wheel. The four angles (ASC/MC/DSC/IC)
-// are identical across systems; only the intermediate cusps differ.
-export type HouseSystem = 'placidus' | 'whole' | 'equal';
+// are identical across systems; only the intermediate cusps differ. All are
+// computed natively by Swiss Ephemeris.
+export type HouseSystem =
+  | 'placidus'
+  | 'whole'
+  | 'equal'
+  | 'koch'
+  | 'regiomontanus'
+  | 'campanus'
+  | 'porphyry'
+  | 'alcabitus';
+
+const HOUSE_MAP: Record<HouseSystem, SweHouse> = {
+  placidus: SweHouse.Placidus,
+  whole: SweHouse.WholeSign,
+  equal: SweHouse.Equal,
+  koch: SweHouse.Koch,
+  regiomontanus: SweHouse.Regiomontanus,
+  campanus: SweHouse.Campanus,
+  porphyry: SweHouse.Porphyrius,
+  alcabitus: SweHouse.Alcabitus,
+};
 
 export function relocate(
   jd: number,
@@ -460,114 +476,16 @@ export function relocate(
   lngDeg: number,
   system: HouseSystem = 'placidus',
 ): RelocatedAngles {
-  const eps = obliquity(jd);
-  const gmst = gmstRadians(jd);
-  const phi = (latDeg * Math.PI) / 180;
-  const lst = (gmst + (lngDeg * Math.PI) / 180 + 2 * Math.PI) % (2 * Math.PI);
-  const sinLst = Math.sin(lst);
-  const cosLst = Math.cos(lst);
-  const cosEps = Math.cos(eps);
-  const sinEps = Math.sin(eps);
-
-  let mc = Math.atan2(sinLst, cosLst * cosEps);
-  if (mc < 0) mc += 2 * Math.PI;
-
-  let asc = Math.atan2(-cosLst, sinLst * cosEps + Math.tan(phi) * sinEps);
-  if (asc < 0) asc += 2 * Math.PI;
-  let diff = ((asc - mc) + 2 * Math.PI) % (2 * Math.PI);
-  if (diff > Math.PI) asc = (asc + Math.PI) % (2 * Math.PI);
-
-  const dsc = (asc + Math.PI) % (2 * Math.PI);
-  const ic = (mc + Math.PI) % (2 * Math.PI);
-
-  const norm2pi = (a: number) => ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-  const HALF_SIGN = Math.PI / 6; // 30°
-
-  let cusps: number[];
-  if (system === 'equal') {
-    // Equal house: cusp 1 = ASC, then every 30° from it. MC floats (drawn as
-    // its own axis, not necessarily on cusp 10).
-    cusps = Array.from({ length: 12 }, (_, i) => norm2pi(asc + i * HALF_SIGN));
-  } else if (system === 'whole') {
-    // Whole-sign house: cusp 1 = 0° of the sign the ASC falls in; houses are
-    // whole signs from there.
-    const ascDeg = (asc * 180) / Math.PI;
-    const signStart = ((Math.floor(ascDeg / 30) * 30) * Math.PI) / 180;
-    cusps = Array.from({ length: 12 }, (_, i) => norm2pi(signStart + i * HALF_SIGN));
-  } else {
-    // Placidus intermediate cusps (11, 12, 8, 9) by the standard semi-arc
-    // time-division: each divides a point's diurnal semi-arc into thirds. RAMC
-    // is the local sidereal time `lst`. The remaining cusps follow by symmetry
-    // (2/3/5/6 are the antipodes of 8/9/11/12; 1/4/7/10 are the angles).
-    const tanPhi = Math.tan(phi);
-    // Right ascension (radians) → ecliptic longitude (radians), correct quadrant.
-    const raToLon = (ra: number) => norm2pi(Math.atan2(Math.sin(ra), Math.cos(ra) * cosEps));
-    // Diurnal semi-arc (radians) of the ecliptic point at longitude `lon`.
-    const semiArc = (lon: number) => {
-      const dec = Math.asin(sinEps * Math.sin(lon));
-      const c = Math.max(-1, Math.min(1, -tanPhi * Math.tan(dec)));
-      return Math.acos(c);
-    };
-    // Fixed-point solve: cusp RA = lst + dir·H where H converges to frac·DSA.
-    const solveCusp = (dir: number, frac: number) => {
-      let H = frac * (Math.PI / 2);
-      for (let i = 0; i < 25; i++) H = frac * semiArc(raToLon(lst + dir * H));
-      return raToLon(lst + dir * H);
-    };
-    const c11 = solveCusp(1, 1 / 3);
-    const c12 = solveCusp(1, 2 / 3);
-    const c9 = solveCusp(-1, 1 / 3);
-    const c8 = solveCusp(-1, 2 / 3);
-    const opp = (a: number) => norm2pi(a + Math.PI);
-    cusps = [
-      asc, opp(c8), opp(c9), ic, opp(c11), opp(c12),
-      dsc, c8, c9, mc, c11, c12,
-    ];
-  }
-
-  return { asc, mc, dsc, ic, cusps };
-}
-
-export function getPlanetPositions(
-  jd: number,
-  nodeType: NodeType = 'mean',
-): PlanetPosition[] {
-  const sun = solar.apparentEquatorialVSOP87(earth, jd);
-  const moon = moonEquatorial(jd);
-  const me = elliptic.position(mercury, earth, jd);
-  const ve = elliptic.position(venus, earth, jd);
-  const ma = elliptic.position(mars, earth, jd);
-  const ju = elliptic.position(jupiter, earth, jd);
-  const sa = elliptic.position(saturn, earth, jd);
-  const ur = elliptic.position(uranus, earth, jd);
-  const ne = elliptic.position(neptune, earth, jd);
-  const pl = pluto.astrometric(jd, earth);
-
-  const nn = nodeType === 'true' ? trueNodeRaDec(jd, false) : meanNodeRaDec(jd, false);
-  const sn = nodeType === 'true' ? trueNodeRaDec(jd, true) : meanNodeRaDec(jd, true);
-  const ch = minorBodyRaDec('Chiron', jd);
-  const cr = minorBodyRaDec('Ceres', jd);
-  const pa = minorBodyRaDec('Pallas', jd);
-  const jn = minorBodyRaDec('Juno', jd);
-  const vs = minorBodyRaDec('Vesta', jd);
-
-  return [
-    { name: 'Sun', ra: sun.ra, dec: sun.dec },
-    { name: 'Moon', ra: moon.ra, dec: moon.dec },
-    { name: 'Mercury', ra: me.ra, dec: me.dec },
-    { name: 'Venus', ra: ve.ra, dec: ve.dec },
-    { name: 'Mars', ra: ma.ra, dec: ma.dec },
-    { name: 'Jupiter', ra: ju.ra, dec: ju.dec },
-    { name: 'Saturn', ra: sa.ra, dec: sa.dec },
-    { name: 'Uranus', ra: ur.ra, dec: ur.dec },
-    { name: 'Neptune', ra: ne.ra, dec: ne.dec },
-    { name: 'Pluto', ra: pl.ra, dec: pl.dec },
-    { name: 'NorthNode', ra: nn.ra, dec: nn.dec },
-    { name: 'SouthNode', ra: sn.ra, dec: sn.dec },
-    { name: 'Chiron', ra: ch.ra, dec: ch.dec },
-    { name: 'Ceres', ra: cr.ra, dec: cr.dec },
-    { name: 'Pallas', ra: pa.ra, dec: pa.dec },
-    { name: 'Juno', ra: jn.ra, dec: jn.dec },
-    { name: 'Vesta', ra: vs.ra, dec: vs.dec },
-  ];
+  const h = eph().calculateHouses(jd, latDeg, lngDeg, HOUSE_MAP[system]);
+  const asc = norm2pi(h.ascendant * DEG2RAD);
+  const mc = norm2pi(h.mc * DEG2RAD);
+  // Swiss cusps are 1-indexed (cusps[1] = house 1); re-base to 0-indexed.
+  const cusps = Array.from({ length: 12 }, (_, i) => norm2pi(h.cusps[i + 1] * DEG2RAD));
+  return {
+    asc,
+    mc,
+    dsc: norm2pi(asc + Math.PI),
+    ic: norm2pi(mc + Math.PI),
+    cusps,
+  };
 }

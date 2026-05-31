@@ -14,7 +14,7 @@ const ENDPOINT = 'https://nominatim.openstreetmap.org/search';
 
 // Nominatim's usage policy requires an identifying User-Agent with contact
 // info. Update the contact before any heavy/production traffic.
-export const GEOCODER_UA = 'Astrocartography/1.0 (sgrosso@bell.net)';
+export const GEOCODER_UA = 'Astrolina/1.0.0 (contact@astrolina.ca)';
 
 interface NominatimItem {
   display_name: string;
@@ -62,4 +62,31 @@ export async function fetchGeocode(
     lat: Number.parseFloat(item.lat),
     lng: Number.parseFloat(item.lon),
   }));
+}
+
+const REVERSE_ENDPOINT = 'https://nominatim.openstreetmap.org/reverse';
+
+// Reverse: a single lat/lng → "City, Region, Country" label, or null when the
+// point has no addressable place (e.g. open ocean — Nominatim returns {error}).
+// zoom=10 keeps the result at town/city granularity rather than a building.
+export async function fetchReverseGeocode(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const params = new URLSearchParams({
+    format: 'jsonv2',
+    addressdetails: '1',
+    zoom: '10',
+    lat: String(lat),
+    lon: String(lng),
+  });
+  const res = await fetch(`${REVERSE_ENDPOINT}?${params.toString()}`, {
+    signal,
+    headers: { 'User-Agent': GEOCODER_UA, 'Accept-Language': 'en' },
+  });
+  if (!res.ok) throw new Error(`Reverse geocoder error: ${res.status}`);
+  const item = (await res.json()) as NominatimItem & { error?: unknown };
+  if (item.error || !item.lat) return null;
+  return buildLabel(item);
 }

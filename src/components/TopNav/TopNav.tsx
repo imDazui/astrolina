@@ -30,7 +30,6 @@ interface TopNavProps {
   // top-left window.
   current: StoredChart | null;
   charts: StoredChart[];
-  currentId: string | null;
   onSelectChart: (id: string) => void;
   onNewChart: () => void;
   onEditChart: (id: string) => void;
@@ -45,11 +44,15 @@ interface TopNavProps {
   tool: MapTool;
   setTool: (t: MapTool) => void;
   measure: MeasureInfo | null;
+  /** Reverse-geocoded name of the active map point (pin/hover); null while
+   *  measuring or with no active point (then the bar shows the birth location). */
+  locationLabel: string | null;
+  /** Fade the location text on change — only while a non-natal pin resolves its
+   *  full address; otherwise it swaps instantly. */
+  fadeLocation: boolean;
 
   overlayMode: OverlayMode;
   setOverlayMode: (m: OverlayMode) => void;
-  partnerId: string | null;
-  setPartnerId: (id: string | null) => void;
 
   showChart: boolean;
   setShowChart: (v: boolean) => void;
@@ -105,10 +108,14 @@ function fmtMeasure(m: MeasureInfo): string {
 function NavMenu({
   label,
   active,
+  className,
   children,
 }: {
   label: string;
   active?: boolean;
+  /** Extra class on the trigger (e.g. 'navmenu-steady' to opt out of the
+   *  map-state accent on open/active). */
+  className?: string;
   // Plain content, or a render-prop given a `close()` so items can dismiss the
   // menu on selection (used by Overlay).
   children: ReactNode | ((close: () => void) => ReactNode);
@@ -136,7 +143,7 @@ function NavMenu({
     <div className="navmenu" ref={ref}>
       <button
         type="button"
-        className={`navmenu-trigger ${active ? 'active' : ''} ${open ? 'open' : ''}`}
+        className={`navmenu-trigger ${className ?? ''} ${active ? 'active' : ''} ${open ? 'open' : ''}`}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
@@ -183,21 +190,25 @@ function CheckItem({
   label,
   checked,
   onToggle,
+  hint,
 }: {
   label: string;
   checked: boolean;
   onToggle: () => void;
+  /** Single-key shortcut shown on the right for discoverability. */
+  hint?: string;
 }) {
   return (
     <button
       type="button"
-      className={`navmenu-item ${checked ? 'on' : ''}`}
+      className={`navmenu-item navmenu-check ${checked ? 'on' : ''}`}
       role="menuitemcheckbox"
       aria-checked={checked}
       onClick={onToggle}
     >
       <span className="navmenu-marker check">{checked ? '✓' : ''}</span>
       <span>{label}</span>
+      {hint && <span className="navmenu-key">{hint}</span>}
     </button>
   );
 }
@@ -209,7 +220,6 @@ export function TopNav({
   onPinNatal,
   current,
   charts,
-  currentId,
   onSelectChart,
   onNewChart,
   onEditChart,
@@ -219,10 +229,10 @@ export function TopNav({
   tool,
   setTool,
   measure,
+  locationLabel,
+  fadeLocation,
   overlayMode,
   setOverlayMode,
-  partnerId,
-  setPartnerId,
   showChart,
   setShowChart,
   showCoords,
@@ -231,11 +241,19 @@ export function TopNav({
   setShowSettings,
 }: TopNavProps) {
   const overlayActive = overlayMode !== 'off';
-  const otherCharts = charts
-    .filter((c) => c.id !== currentId)
-    .sort((a, b) => a.name.localeCompare(b.name));
 
   const measuring = tool === 'measure';
+  const locationText = locationLabel ?? undefined;
+  // Fade only while waiting on a non-natal pin's full address — keying the span
+  // by the text replays the fade on each change; everything else swaps instantly.
+  const locationContent =
+    fadeLocation && locationText ? (
+      <span className="topnav-location-fade" key={locationText}>
+        {locationText}
+      </span>
+    ) : (
+      locationText
+    );
 
   return (
     <div className={`topnav-stack ${chartExpanded ? 'chart-expanded' : ''}`}>
@@ -263,7 +281,7 @@ export function TopNav({
               className={`topnav-expand ${chartExpanded ? 'active' : ''}`}
               onClick={onToggleExpand}
               disabled={!current}
-              title={chartExpanded ? 'Hide chart sidebar' : 'Show chart sidebar'}
+              title={chartExpanded ? 'Hide sidebar chart (B)' : 'Show sidebar chart (B)'}
               aria-label="Toggle chart sidebar"
               aria-pressed={chartExpanded}
             >
@@ -292,16 +310,16 @@ export function TopNav({
                 type="button"
                 className="topnav-status pinned"
                 onClick={onRecenterPin}
-                title="Center map on pin"
+                title="Center map on pin (Space)"
               >
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.4" />
                   <path
-                    d="M8 1.5c-2.5 0-4.5 2-4.5 4.5 0 3.2 4.5 8.5 4.5 8.5s4.5-5.3 4.5-8.5c0-2.5-2-4.5-4.5-4.5z"
+                    d="M8 1v3M8 12v3M1 8h3M12 8h3"
                     stroke="currentColor"
                     strokeWidth="1.4"
-                    strokeLinejoin="round"
+                    strokeLinecap="round"
                   />
-                  <circle cx="8" cy="6" r="1.6" fill="currentColor" />
                 </svg>
                 <span>{STATUS_LABEL[mapState]}</span>
               </button>
@@ -326,7 +344,7 @@ export function TopNav({
               type="button"
               className={`navmenu-trigger topnav-tool ${measuring ? 'active' : ''}`}
               onClick={() => setTool(measuring ? 'off' : 'measure')}
-              title="Measure distance"
+              title="Measure distance (T)"
               aria-label="Measure distance"
               aria-pressed={measuring}
             >
@@ -358,58 +376,31 @@ export function TopNav({
                       label={label}
                       checked={overlayMode === mode}
                       onSelect={() => {
-                        const next = overlayMode === mode ? 'off' : mode;
-                        setOverlayMode(next);
-                        // Keep the menu open when turning Synastry on, so the
-                        // partner picker it reveals is immediately reachable.
-                        if (next !== 'synastry') close();
+                        setOverlayMode(overlayMode === mode ? 'off' : mode);
+                        close();
                       }}
                     />
                   ))}
-
-                  {overlayMode === 'synastry' && (
-                    <div className="navmenu-partner">
-                      {otherCharts.length === 0 ? (
-                        <span className="navmenu-hint">Add another chart to overlay it</span>
-                      ) : (
-                        <span className="thud-select-wrap">
-                          <select
-                            className="thud-select"
-                            value={partnerId ?? ''}
-                            onChange={(e) => {
-                              setPartnerId(e.target.value || null);
-                              if (e.target.value) close();
-                            }}
-                          >
-                            <option value="">Select chart…</option>
-                            {otherCharts.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="thud-select-caret">▾</span>
-                        </span>
-                      )}
-                    </div>
-                  )}
                 </>
               )}
             </NavMenu>
 
-            <NavMenu label="View">
+            <NavMenu label="View" className="navmenu-steady">
               <CheckItem
                 label="Coordinates"
+                hint="C"
                 checked={showCoords}
                 onToggle={() => setShowCoords(!showCoords)}
               />
               <CheckItem
                 label="Minimap"
+                hint="M"
                 checked={showChart}
                 onToggle={() => setShowChart(!showChart)}
               />
               <CheckItem
                 label="Settings"
+                hint="S"
                 checked={showSettings}
                 onToggle={() => setShowSettings(!showSettings)}
               />
@@ -418,23 +409,45 @@ export function TopNav({
         </div>
       </div>
 
-      {/* Secondary bar: holds the active tool's controls/readout, keeping the
-          main bar compact. One bar per active tool. */}
-      {measuring && (
+      {/* Secondary bar: the active tool's readout while a tool is on, otherwise
+          the place name under the active map point (pin/hover), falling back to
+          the chart's birth location. One reused island. */}
+      {(measuring || locationLabel) && (
         <div className="timeline-hud topnav-toolbar" data-mapstate={mapState}>
-          {measure ? (
-            <div className="topnav-measure">
-              <span className="topnav-measure-endpoints">
-                <span className="topnav-dot" />
-                {fmtLatLng(measure.start)}
-                <span className="topnav-measure-arrow">→</span>
-                {fmtLatLng(measure.end)}
+          {measuring ? (
+            measure ? (
+              <div className="topnav-measure">
+                <span className="topnav-measure-endpoints">
+                  <span className="topnav-dot" />
+                  {fmtLatLng(measure.start)}
+                  <span className="topnav-measure-arrow">→</span>
+                  {fmtLatLng(measure.end)}
+                </span>
+                <span className="topnav-measure-dist">{fmtMeasure(measure)}</span>
+              </div>
+            ) : (
+              <span className="topnav-toolbar-hint">
+                Click and drag on the map to measure
               </span>
-              <span className="topnav-measure-dist">{fmtMeasure(measure)}</span>
-            </div>
+            )
+          ) : pinned ? (
+            <button
+              type="button"
+              className="topnav-location topnav-location-btn"
+              title="Center map on pin (Space)"
+              onClick={onRecenterPin}
+            >
+              <span className="topnav-dot" />
+              <span className="topnav-location-text">
+                {locationContent}
+              </span>
+            </button>
           ) : (
-            <span className="topnav-toolbar-hint">
-              Click and drag on the map to measure
+            <span className="topnav-location" title={locationText}>
+              <span className="topnav-dot" />
+              <span className="topnav-location-text">
+                {locationContent}
+              </span>
             </span>
           )}
         </div>

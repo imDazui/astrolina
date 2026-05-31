@@ -81,59 +81,14 @@
 }
 
 .es-close-btn:hover {
-  background: rgba(var(--accent-rgb), 0.12);
-  border-color: rgba(var(--accent-rgb), 0.5);
-  color: var(--accent);
-}
-
-.es-meta {
-  margin: 6px 0 0 0;
-  font-size: 11px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Synastry overlay identity: the partner chart whose lines are overlaid. Lives
-   here in the chart-data panel (where names/dates already are), echoing the
-   dashed overlay dot used elsewhere. */
-.es-synastry {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-  padding: 6px 10px;
-  background: rgba(var(--accent-rgb), 0.06);
-  border: 1px solid rgba(var(--accent-rgb), 0.22);
-  border-radius: 6px;
-}
-
-.es-synastry-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
-.es-synastry-body {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.es-synastry-name {
-  font-size: 12px;
-  font-weight: 600;
+  background: rgba(var(--tint), 0.1);
+  border-color: rgba(var(--tint), 0.24);
   color: var(--text-strong);
 }
 
-.es-synastry-meta {
-  font-size: 10px;
+.es-meta {
+  margin: 0;
+  font-size: 12px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -288,6 +243,28 @@
   margin-left: 4px;
   color: var(--danger);
   font-weight: 600;
+}
+
+/* Stationary marker — sibling of .es-rx, in the wheel's station yellow. */
+.es-station {
+  margin-left: 4px;
+  color: #c79a17;
+  font-weight: 600;
+}
+
+/* The expanded sidebar shows the full birth line in .es-meta, so suppress the
+   ChartSwitcher's own date/place subtitle here to avoid showing the date twice. */
+.es-switcher .meta {
+  display: none;
+}
+
+/* Larger name + add-person icon in the expanded header. */
+.es-switcher .switcher-trigger strong {
+  font-size: 15.75px;
+}
+.es-switcher .switcher-trigger .switcher-icon {
+  width: 15.75px;
+  height: 15.75px;
 }
 
 /* Advanced switch — a simple on/off toggle rather than a dropdown. */
@@ -602,7 +579,7 @@
   display: inline-block;
   width: 14px;
   height: 0;
-  border-top: 1.5px dashed var(--accent);
+  border-top: 1.5px dashed var(--map-accent);
   flex-shrink: 0;
 }
 

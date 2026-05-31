@@ -31,10 +31,15 @@ Cloudflare Pages with a single edge function for geocoding.
 
 - **Vite + React + TypeScript**
 - **MapLibre GL** with **Protomaps** vector basemaps (`.pmtiles`)
-- **astronomia** (Moshier ephemeris) for planetary positions — client-side
+- **Swiss Ephemeris** (`@swisseph/browser`, WebAssembly, AGPL-3.0) for all body
+  positions, houses, and sidereal time — client-side, with self-hosted `.se1`
+  data in `public/ephe/`
 - **tz-lookup** + **luxon** for timezone/offset resolution
 - **Cloudflare Pages** hosting; one **Pages Function** (`/api/geocode`) proxies
   and edge-caches OpenStreetMap's Nominatim
+- **Noto Sans Symbols** (subset, **SIL Open Font License 1.1**) for the
+  astrological glyphs — license + attribution in
+  [`public/fonts/`](public/fonts/) (shipped to `dist/fonts/OFL.txt`)
 
 ## Getting started
 

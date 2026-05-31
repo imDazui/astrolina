@@ -9,9 +9,109 @@
     <link rel="manifest" href="/favicon/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AstroLina</title>
+    <style>
+      /* First-paint loading screen (replaced by the React app once the Swiss
+         Ephemeris WASM + data finish loading). Inlined so it shows instantly. */
+      html, body { background: #0b0e14; margin: 0; }
+      #loading-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background: radial-gradient(130% 120% at 50% 32%, #161c2b 0%, #0b0e14 58%);
+        color: #cdd4e2;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+        opacity: 1;
+        transition: opacity 0.24s ease;
+      }
+      #loading-screen .ls-orb {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        border: 2px solid rgba(245, 184, 61, 0.85);
+        box-shadow: 0 0 26px 2px rgba(245, 184, 61, 0.22),
+          inset 0 0 14px rgba(245, 184, 61, 0.18);
+        animation: ls-pulse 2.2s ease-in-out infinite;
+      }
+      #loading-screen .ls-title {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.34em;
+        text-transform: uppercase;
+        color: #eef1f6;
+        padding-left: 0.34em;
+      }
+      #loading-screen .ls-track {
+        width: 190px;
+        height: 3px;
+        border-radius: 3px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+      }
+      #loading-screen .ls-bar {
+        height: 100%;
+        width: 0;
+        border-radius: 3px;
+        background: linear-gradient(90deg, #f5b83d, #f3cd7a);
+        transition: width 0.25s ease-out, background 0.2s;
+      }
+      #loading-screen .ls-status {
+        font-size: 11.5px;
+        letter-spacing: 0.02em;
+        color: #7c8698;
+        min-height: 15px;
+        max-width: 280px;
+        text-align: center;
+        padding: 0 16px;
+      }
+      @keyframes ls-pulse {
+        0%, 100% { transform: scale(0.9); opacity: 0.55; }
+        50% { transform: scale(1.08); opacity: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #loading-screen .ls-orb { animation: none; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="loading-screen">
+        <div class="ls-orb"></div>
+        <div class="ls-title">AstroLina</div>
+        <div class="ls-track"><div class="ls-bar" id="ls-bar"></div></div>
+        <div class="ls-status" id="ls-status">Loading…</div>
+      </div>
+    </div>
+    <script>
+      // Start the progress bar immediately at page load — so it moves while the
+      // JS bundle (incl. the map engine) downloads, not just after it runs. The
+      // bar eases asymptotically toward ~94%; main.tsx then drives the status
+      // through real stages and snaps it to 100% when the engine is ready.
+      (function () {
+        var w = window;
+        w.__load = { start: performance.now(), done: false, floor: 0 };
+        var bar = document.getElementById('ls-bar');
+        var st = document.getElementById('ls-status');
+        var taken = false;
+        w.__loadTaken = function () { taken = true; };
+        setTimeout(function () {
+          if (!taken && st) st.textContent = 'Loading map & engine…';
+        }, 2500);
+        function tick() {
+          var L = w.__load;
+          if (L.done) return;
+          var t = performance.now() - L.start;
+          var pct = Math.max(94 * (1 - Math.exp(-t / 3600)), L.floor);
+          if (bar) bar.style.width = pct.toFixed(1) + '%';
+          requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

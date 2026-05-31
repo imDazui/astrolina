@@ -75,7 +75,7 @@ export function ChartInfoPanel({
           <h3>Angles</h3>
           <ul className="cip-list cip-angles">
             <li>
-              <span className="cip-name">ASC</span>
+              <span className="cip-name">As</span>
               <span className="cip-lon">{fmtLon(angles.asc)}</span>
             </li>
             <li>
@@ -83,7 +83,7 @@ export function ChartInfoPanel({
               <span className="cip-lon">{fmtLon(angles.mc)}</span>
             </li>
             <li>
-              <span className="cip-name">DSC</span>
+              <span className="cip-name">Ds</span>
               <span className="cip-lon">{fmtLon(angles.dsc)}</span>
             </li>
             <li>

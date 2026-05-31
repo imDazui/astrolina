@@ -21,6 +21,7 @@ export const PLANET_GLYPHS: Record<PlanetName, string> = {
   Pluto: '♇' + VS_TEXT, // ♇
   NorthNode: '☊' + VS_TEXT, // ☊
   SouthNode: '☋' + VS_TEXT, // ☋
+  Lilith: '⚸' + VS_TEXT, // ⚸ Black Moon Lilith (U+26B8)
   Chiron: '⚷' + VS_TEXT, // ⚷
   Ceres: '⚳' + VS_TEXT, // ⚳
   Pallas: '⚴' + VS_TEXT, // ⚴

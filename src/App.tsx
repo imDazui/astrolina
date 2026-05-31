@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FeatureCollection, LineString } from 'geojson';
+import type { FeatureCollection, LineString, Point as GeoPoint } from 'geojson';
 import {
   Map,
   type MapHandle,
@@ -8,15 +8,19 @@ import {
 } from './components/Map/Map';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TimelineHud } from './components/TimelineHud/TimelineHud';
+import { SynastryHud } from './components/SynastryHud/SynastryHud';
 import { TopNav, type MapTool } from './components/TopNav/TopNav';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
 import { CoordReadout } from './components/CoordReadout/CoordReadout';
 import { BirthDataForm } from './components/BirthDataForm/BirthDataForm';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
-import { TEST_BIRTH } from './lib/birthData';
+import { SEED_BIRTHS } from './lib/birthData';
+import { useReverseGeocode } from './lib/atlas/useReverseGeocode';
+import { countryOf } from './lib/atlas/countryOf';
 import {
   birthDataToJD,
+  getEclipticPositions,
   getPlanetPositions,
   gmstRadians,
   projectOntoEcliptic,
@@ -28,7 +32,13 @@ import {
   type NodeType,
   type PlanetName,
 } from './lib/ephemeris';
-import { generateLines, type LineProps, type LineType } from './lib/astro/lines';
+import {
+  generateLines,
+  generateZenithStamps,
+  type LineProps,
+  type LineType,
+  type ZenithProps,
+} from './lib/astro/lines';
 import { generateParans, type ParanProps } from './lib/astro/parans';
 import { generateLocalSpace, type LocalSpaceProps } from './lib/astro/localSpace';
 import {
@@ -104,17 +114,29 @@ function filterLocalSpace(
     features: fc.features.filter((f) => planets.has(f.properties.planet)),
   };
 }
+function filterZenith(
+  fc: FeatureCollection<GeoPoint, ZenithProps>,
+  planets: Set<PlanetName>,
+  lineTypes: Set<LineType>,
+): FeatureCollection<GeoPoint, ZenithProps> {
+  // The zenith stamp is the MC line's defining point, so it follows the MC toggle.
+  if (!lineTypes.has('MC')) return { type: 'FeatureCollection', features: [] };
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.filter((f) => planets.has(f.properties.planet)),
+  };
+}
 
-const seedChart: StoredChart = {
-  ...TEST_BIRTH,
+const seedCharts: StoredChart[] = SEED_BIRTHS.map((b, i) => ({
+  ...b,
   id: newChartId(),
-  createdAt: Date.now(),
-};
+  createdAt: Date.now() + i,
+}));
 
 export default function App() {
   const [charts, setCharts] = useState<StoredChart[]>(() => {
     const loaded = loadCharts();
-    return loaded.length > 0 ? loaded : [seedChart];
+    return loaded.length > 0 ? loaded : seedCharts;
   });
   const [currentId, setCurrentId] = useState<string | null>(() => {
     const stored = loadCurrentId();
@@ -144,7 +166,10 @@ export default function App() {
   );
   const [houseSystem, setHouseSystem] = useState<HouseSystem>(() => {
     const v = localStorage.getItem('astro:house-system:v1');
-    return v === 'whole' || v === 'equal' ? v : 'placidus';
+    const valid: HouseSystem[] = [
+      'placidus', 'whole', 'equal', 'koch', 'regiomontanus', 'campanus', 'porphyry', 'alcabitus',
+    ];
+    return valid.includes(v as HouseSystem) ? (v as HouseSystem) : 'placidus';
   });
   const [nodeType, setNodeType] = useState<NodeType>(() =>
     localStorage.getItem('astro:node-type:v1') === 'mean' ? 'mean' : 'true',
@@ -195,6 +220,90 @@ export default function App() {
     applyTheme(theme);
     saveTheme(theme);
   }, [theme]);
+
+  // Global keyboard shortcuts. Space centers the map on the active pin (or drops
+  // a natal pin and centers if none is set); 'b' toggles the chart sidebar; the
+  // other letter keys toggle the View items / tools / add a chart. All are ignored
+  // while typing in a field, and Space is left alone when a button/link is focused
+  // so it keeps its native activation behavior there.
+  useEffect(() => {
+    const overlayCycle: OverlayMode[] = [
+      'off', 'transits', 'progressed', 'solar-arc', 'synastry',
+    ];
+    const isTypingField = (el: HTMLElement | null) =>
+      !!el &&
+      (el.tagName === 'INPUT' ||
+        el.tagName === 'TEXTAREA' ||
+        el.tagName === 'SELECT' ||
+        el.isContentEditable);
+    const isInteractive = (el: HTMLElement | null) =>
+      isTypingField(el) ||
+      (!!el &&
+        (el.tagName === 'BUTTON' ||
+          el.tagName === 'A' ||
+          el.closest(
+            'button, a, [role="button"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]',
+          ) !== null));
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      // Space → center the map on the active pin; if none is placed, drop a pin
+      // on the natal birthplace and center on that. Skipped when a button/link/
+      // field is focused (where Space has its own behavior).
+      if (e.key === ' ' || e.code === 'Space') {
+        if (isInteractive(el)) return;
+        if (pinned) {
+          mapRef.current?.flyTo(pinned.lat, pinned.lng);
+          e.preventDefault();
+        } else if (current) {
+          const target = {
+            lat: current.birthplace.lat,
+            lng: current.birthplace.lng,
+          };
+          setPinned(target);
+          setHover(null);
+          mapRef.current?.flyTo(target.lat, target.lng);
+          e.preventDefault();
+        }
+        return;
+      }
+      // Map zoom: plain +/− (Ctrl+/− is left to the browser, handled by the
+      // modifier guard above). Allowed with Shift, since "+" is Shift+"=".
+      if (e.key === '+' || e.key === '=') {
+        if (!isTypingField(el)) {
+          mapRef.current?.zoomIn();
+          e.preventDefault();
+        }
+        return;
+      }
+      if (e.key === '-' || e.key === '_') {
+        if (!isTypingField(el)) {
+          mapRef.current?.zoomOut();
+          e.preventDefault();
+        }
+        return;
+      }
+      if (e.shiftKey || isTypingField(el)) return;
+      switch (e.key.toLowerCase()) {
+        case 'm': setShowChart((v) => !v); break;
+        case 'c': setShowCoords((v) => !v); break;
+        case 's': setShowSettings((v) => !v); break;
+        case 'o':
+          setOverlayMode(
+            (mode) =>
+              overlayCycle[(overlayCycle.indexOf(mode) + 1) % overlayCycle.length],
+          );
+          break;
+        case 't': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
+        case 'a': setCreating(true); break;
+        case 'b': if (current) setWheelExpanded((v) => !v); break;
+        default: return;
+      }
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [current, pinned]);
 
   useEffect(() => {
     localStorage.setItem('astro:coord-system:v1', coordSystem);
@@ -261,8 +370,8 @@ export default function App() {
     [current, jd, nodeType],
   );
   const ecliptic = useMemo(
-    () => toEclipticPositions(positions, jd, nodeType),
-    [positions, jd, nodeType],
+    () => (current ? getEclipticPositions(jd, nodeType) : []),
+    [current, jd, nodeType],
   );
   const gmst = useMemo(() => gmstRadians(jd), [jd]);
 
@@ -294,6 +403,10 @@ export default function App() {
         : EMPTY_FC,
     [linePositions, gmst, current],
   );
+  const allZenith = useMemo(
+    () => generateZenithStamps(linePositions, gmst),
+    [linePositions, gmst],
+  );
 
   const lines = useMemo(
     () => filterLines(allLines, visiblePlanets, visibleLineTypes),
@@ -309,6 +422,10 @@ export default function App() {
     () =>
       showLocalSpace ? filterLocalSpace(allLocalSpace, visiblePlanets) : EMPTY_FC,
     [allLocalSpace, visiblePlanets, showLocalSpace],
+  );
+  const zenith = useMemo(
+    () => filterZenith(allZenith, visiblePlanets, visibleLineTypes),
+    [allZenith, visiblePlanets, visibleLineTypes],
   );
 
   // ── Timeline / overlay: a second chart layer (transits, secondary
@@ -362,9 +479,9 @@ export default function App() {
   const overlayEcliptic = useMemo(
     () =>
       overlayLayer
-        ? toEclipticPositions(overlayLayer.positions, overlayLayer.jd, nodeType)
+        ? toEclipticPositions(overlayLayer.positions, overlayLayer.jd)
         : null,
-    [overlayLayer, nodeType],
+    [overlayLayer],
   );
 
   const activePoint = pinned ?? hover;
@@ -380,6 +497,38 @@ export default function App() {
       : activePoint
         ? 'hover'
         : 'natal';
+
+  // Top-nav location readout — place names only (coordinates live in the optional
+  // CoordReadout, top-left):
+  //  • NON-NATAL PIN → the offline COUNTRY shows instantly, then the network
+  //    "City, Region, Country" fades in once it resolves. `fadeLocation` gates the
+  //    fade to exactly this "waiting on the address" case.
+  //  • NATAL PIN → the birthplace we already know (no fetch, no fade).
+  //  • NATAL (gray) → nothing here; the "NATAL" status pill already shows it.
+  //  • HOVER → the offline country, real-time and snappy; nothing over ocean.
+  //  Suppressed while measuring.
+  const pinnedLabel = useReverseGeocode(
+    mapTool === 'measure' || isNatalPin ? null : pinned,
+  );
+  const pinCountry = useMemo(
+    () => (pinned ? countryOf(pinned.lat, pinned.lng) : null),
+    [pinned],
+  );
+  const hoverCountry = useMemo(
+    () => (hover ? countryOf(hover.lat, hover.lng) : null),
+    [hover],
+  );
+  const locationLabel =
+    mapTool === 'measure'
+      ? null
+      : pinned
+        ? isNatalPin
+          ? (current?.birthplace.label ?? null)
+          : (pinnedLabel ?? pinCountry)
+        : hover
+          ? hoverCountry
+          : null;
+  const fadeLocation = !!pinned && !isNatalPin;
 
   // Publish the pin state to <html> so the single --map-accent source (index.css)
   // recolors the map chrome, and resolve that accent to a concrete color for the
@@ -504,6 +653,7 @@ export default function App() {
         lines={lines}
         parans={parans}
         localSpace={localSpace}
+        zenith={zenith}
         overlay={overlay}
         pin={pinned}
         pinType={isNatalPin ? 'natal' : pinned ? 'custom' : null}
@@ -565,7 +715,6 @@ export default function App() {
         onPinNatal={onPinNatal}
         current={current}
         charts={charts}
-        currentId={current?.id ?? null}
         onSelectChart={(id) => setCurrentId(id)}
         onNewChart={() => setCreating(true)}
         onEditChart={(id) => setEditingId(id)}
@@ -575,10 +724,10 @@ export default function App() {
         tool={mapTool}
         setTool={setMapTool}
         measure={measure}
+        locationLabel={locationLabel}
+        fadeLocation={fadeLocation}
         overlayMode={overlayMode}
         setOverlayMode={setOverlayMode}
-        partnerId={partnerId}
-        setPartnerId={setPartnerId}
         showChart={showChart}
         setShowChart={setShowChart}
         showCoords={showCoords}
@@ -601,6 +750,14 @@ export default function App() {
           overlayMeasure={overlayLayer?.measure ?? null}
         />
       )}
+      {overlayMode === 'synastry' && (
+        <SynastryHud
+          partner={partner}
+          charts={charts}
+          currentId={current?.id ?? null}
+          onSelectPartner={setPartnerId}
+        />
+      )}
       {showChart &&
         (wheelExpanded ? (
           <ExpandedChartSidebar
@@ -613,10 +770,8 @@ export default function App() {
             planets={ecliptic}
             overlayPlanets={overlayEcliptic}
             overlayLabel={overlayLayer?.labelFull ?? null}
-            overlayPartner={overlayMode === 'synastry' ? partner : null}
             visiblePlanets={visiblePlanets}
             onClose={() => setWheelExpanded(false)}
-            onRecenterPin={onRecenterPin}
             onResizingChange={onResizing}
             onSelectChart={(id) => setCurrentId(id)}
             onNewChart={() => setCreating(true)}
@@ -630,6 +785,7 @@ export default function App() {
             isNatalPin={isNatalPin}
             angles={angles}
             planets={ecliptic}
+            visiblePlanets={visiblePlanets}
           />
         ))}
       {(creating || editingChart) && (

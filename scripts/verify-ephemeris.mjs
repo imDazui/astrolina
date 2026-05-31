@@ -1,94 +1,79 @@
-// Quick sanity check: compute planet positions for Einstein's birth and a known reference date,
-// then print MC line longitudes. Compare against astro.com's free ACG tool / Astrodienst ephemeris.
+// Sanity check: compute body positions for known dates via Swiss Ephemeris (the
+// same engine + flags the app uses) and print MC-line longitudes. Compare against
+// astro.com's free ACG tool / Astrodienst ephemeris.
+//
+// Uses @swisseph/node (the Node build of the same Swiss Ephemeris) reading the
+// self-hosted .se1 files from public/ephe — identical numbers to the browser
+// build the app ships.
+//
+// Run: node scripts/verify-ephemeris.mjs
 import {
-  julian,
-  planetposition,
-  elliptic,
-  solar,
-  moonposition,
-  pluto,
-  sidereal,
-  nutation,
-  coord,
-} from 'astronomia';
-import data from 'astronomia/data';
+  setEphemerisPath,
+  julianDay,
+  calculatePosition,
+  calculateHouses,
+  Planet,
+  LunarPoint,
+  Asteroid,
+  CalculationFlag,
+  HouseSystem,
+  CalendarType,
+} from '@swisseph/node';
 
-const earth = new planetposition.Planet(data.vsop87Bearth);
-const mercury = new planetposition.Planet(data.vsop87Bmercury);
-const venus = new planetposition.Planet(data.vsop87Bvenus);
-const mars = new planetposition.Planet(data.vsop87Bmars);
-const jupiter = new planetposition.Planet(data.vsop87Bjupiter);
-const saturn = new planetposition.Planet(data.vsop87Bsaturn);
-const uranus = new planetposition.Planet(data.vsop87Buranus);
-const neptune = new planetposition.Planet(data.vsop87Bneptune);
+setEphemerisPath(process.cwd() + '/public/ephe');
 
+const SWISS = CalculationFlag.SwissEphemeris | CalculationFlag.Speed;
+const SWISS_EQ = SWISS | CalculationFlag.Equatorial;
+
+// Mirror ephemeris.ts birthDataToJD: JD at 0h UT + fractional UT hour.
 function jdOf(year, month, day, hour, minute, tzOffset) {
-  const utcHour = hour + minute / 60 - tzOffset;
-  const dayFraction = day + utcHour / 24;
-  return new julian.CalendarGregorian(year, month, dayFraction).toJD();
+  const jd0 = julianDay(year, month, day, 0, CalendarType.Gregorian);
+  return jd0 + (hour + minute / 60 - tzOffset) / 24;
 }
 
-function gmstRad(jd) {
-  return ((sidereal.mean(jd) / 86400) * 2 * Math.PI) % (2 * Math.PI);
+// Mirror ephemeris.ts gmstRadians: ARMC at lon 0 = Greenwich apparent sidereal
+// time (degrees).
+function gmstDeg(jd) {
+  const h = calculateHouses(jd, 0, 0, HouseSystem.WholeSign);
+  return ((h.armc % 360) + 360) % 360;
 }
 
-function moonEq(jd) {
-  const { lon, lat } = moonposition.position(jd);
-  const [dpsi, deps] = nutation.nutation(jd);
-  const eps = nutation.meanObliquity(jd) + deps;
-  return new coord.Ecliptic(lon + dpsi, lat).toEquatorial(eps);
-}
+const BODIES = [
+  ['Sun', Planet.Sun],
+  ['Moon', Planet.Moon],
+  ['Mercury', Planet.Mercury],
+  ['Venus', Planet.Venus],
+  ['Mars', Planet.Mars],
+  ['Jupiter', Planet.Jupiter],
+  ['Saturn', Planet.Saturn],
+  ['Uranus', Planet.Uranus],
+  ['Neptune', Planet.Neptune],
+  ['Pluto', Planet.Pluto],
+  // Extras (no astronomia baseline — Swiss is the reference):
+  ['NorthNode', LunarPoint.MeanNode],
+  ['Lilith', LunarPoint.MeanApogee],
+  ['Chiron', Asteroid.Chiron],
+  ['Ceres', Asteroid.Ceres],
+];
 
-function fmtDeg(rad) {
-  let d = (rad * 180) / Math.PI;
-  if (d < 0) d += 360;
-  return d.toFixed(2);
-}
-
-function fmtLng(rad, gmst) {
-  let d = ((rad - gmst) * 180) / Math.PI;
-  d = ((d + 180) % 360 + 360) % 360 - 180;
+function fmtLng(raDeg, gmst) {
+  let d = raDeg - gmst;
+  d = (((d + 180) % 360) + 360) % 360 - 180;
   return d.toFixed(2);
 }
 
 function report(label, year, month, day, hour, minute, tzOffset) {
   const jd = jdOf(year, month, day, hour, minute, tzOffset);
-  const gmst = gmstRad(jd);
+  const gmst = gmstDeg(jd);
   console.log(`\n=== ${label} ===`);
-  console.log(`JD: ${jd.toFixed(5)}    GMST: ${fmtDeg(gmst)}°`);
-
-  const sun = solar.apparentEquatorialVSOP87(earth, jd);
-  const moon = moonEq(jd);
-  const me = elliptic.position(mercury, earth, jd);
-  const ve = elliptic.position(venus, earth, jd);
-  const ma = elliptic.position(mars, earth, jd);
-  const ju = elliptic.position(jupiter, earth, jd);
-  const sa = elliptic.position(saturn, earth, jd);
-  const ur = elliptic.position(uranus, earth, jd);
-  const ne = elliptic.position(neptune, earth, jd);
-  const pl = pluto.astrometric(jd, earth);
-
-  const planets = [
-    ['Sun', sun],
-    ['Moon', moon],
-    ['Mercury', me],
-    ['Venus', ve],
-    ['Mars', ma],
-    ['Jupiter', ju],
-    ['Saturn', sa],
-    ['Uranus', ur],
-    ['Neptune', ne],
-    ['Pluto', pl],
-  ];
-  console.log('Planet    RA°      Dec°    MC-line lng°');
-  for (const [n, p] of planets) {
+  console.log(`JD: ${jd.toFixed(5)}    GMST: ${gmst.toFixed(2)}°`);
+  console.log('Body      RA°      Dec°    MC-line lng°');
+  for (const [name, id] of BODIES) {
+    const eq = calculatePosition(jd, id, SWISS_EQ); // RA in .longitude, dec in .latitude
     console.log(
-      `${n.padEnd(8)} ${fmtDeg(p.ra).padStart(7)} ${(
-        (p.dec * 180) /
-        Math.PI
-      )
+      `${name.padEnd(9)} ${eq.longitude.toFixed(2).padStart(7)} ${eq.latitude
         .toFixed(2)
-        .padStart(7)} ${fmtLng(p.ra, gmst).padStart(8)}`,
+        .padStart(7)} ${fmtLng(eq.longitude, gmst).padStart(8)}`,
     );
   }
 }
@@ -96,8 +81,12 @@ function report(label, year, month, day, hour, minute, tzOffset) {
 // Einstein: 1879-03-14 11:30 LMT (Ulm 9.9876°E → tz offset ~+0.6166h)
 report('Einstein 1879-03-14 11:30 LMT Ulm', 1879, 3, 14, 11, 30, 0.6166666666666667);
 
-// J2000.0 epoch: 2000-01-01 12:00 UTC. Sun's RA should be ~281°, GMST ~18.7° (1h14m → 18.7°)
+// J2000.0 epoch: 2000-01-01 12:00 UTC. Sun's RA should be ~281°, GMST ~280.5°.
 report('J2000.0 reference (2000-01-01 12:00 UTC)', 2000, 1, 1, 12, 0, 0);
 
-// Today-ish to sanity check current ephemeris
+// Summer solstice sanity check.
 report('2024-06-21 12:00 UTC (summer solstice)', 2024, 6, 21, 12, 0, 0);
+
+// Eastern-tz case: exercises a large UT-hour offset (Tokyo, +9, early morning →
+// the local civil day differs from the UT day). Tests birthDataToJD's 0h+frac path.
+report('Tokyo 1990-05-15 06:00 JST (tz +9)', 1990, 5, 15, 6, 0, 9);

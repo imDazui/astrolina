@@ -37,6 +37,7 @@
   font-variant-numeric: tabular-nums;
 }
 
+
 /* Placidus intermediate house cusps — fainter than the four angle axes. */
 .wheel-svg .house-cusp {
   stroke: rgba(var(--tint), 0.28);

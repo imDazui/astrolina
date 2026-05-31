@@ -1,0 +1,189 @@
+/* Bottom-center bar for an active synastry overlay. Larger + more prominent than
+   the other HUD readouts, and the place where the comparison partner is chosen:
+   the whole name + birth-line (with an inline add-person icon) is one clickable
+   trigger that opens an upward picker of the other saved charts. Accent tracks
+   the map-state color via --map-accent (set on <html> per pin state); --es-width
+   shifts it clear of the expanded sidebar. Occupies the same slot as TimelineHud,
+   which never renders in synastry mode. */
+.synastry-hud {
+  position: absolute;
+  bottom: 16px;
+  left: calc(50% + var(--es-width, 0px) / 4);
+  transform: translateX(-50%);
+  z-index: 13;
+  transition: left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100vw - var(--es-width, 0px) - 80px);
+  padding: 10px 18px;
+  background: rgba(var(--bg-panel), 0.96);
+  border: 1px solid rgba(var(--map-accent-rgb), 0.6);
+  border-radius: 13px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(7px);
+}
+
+.synastry-hud-tag {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--map-accent);
+  flex-shrink: 0;
+  padding-right: 14px;
+  border-right: 1px solid rgba(var(--map-accent-rgb), 0.28);
+}
+
+.synastry-hud-picker {
+  position: relative;
+  min-width: 0;
+}
+
+/* The whole name + birth-line + icon is the clickable trigger. */
+.synastry-hud-trigger {
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.synastry-hud-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.synastry-hud-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.synastry-hud-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  transition: color 0.12s;
+}
+
+.synastry-hud-name.is-prompt {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.synastry-hud-icon {
+  color: var(--text-faint);
+  flex-shrink: 0;
+  transition: color 0.12s, transform 0.12s;
+}
+
+.synastry-hud-trigger:hover .synastry-hud-name,
+.synastry-hud-trigger.open .synastry-hud-name {
+  color: var(--accent);
+}
+
+.synastry-hud-trigger:hover .synastry-hud-icon,
+.synastry-hud-trigger.open .synastry-hud-icon {
+  color: var(--text-strong);
+}
+
+.synastry-hud-trigger:hover .synastry-hud-icon {
+  transform: scale(1.08);
+}
+
+.synastry-hud-meta {
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Picker opens UPWARD — the bar sits at the bottom of the screen. */
+.synastry-hud-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  min-width: 240px;
+  max-width: 320px;
+  background: rgba(var(--bg-menu), 0.98);
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 10px;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.32);
+  padding: 4px;
+  z-index: 20;
+}
+
+.synastry-hud-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.synastry-hud-menu li {
+  border-radius: 6px;
+  margin-bottom: 1px;
+}
+
+.synastry-hud-menu li.active .synastry-hud-row {
+  background: rgba(var(--map-accent-rgb), 0.14);
+}
+
+.synastry-hud-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 8px 11px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 6px;
+}
+
+.synastry-hud-row:hover {
+  background: rgba(var(--tint), 0.06);
+}
+
+.synastry-hud-row-name {
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.synastry-hud-row-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.synastry-hud-empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+}

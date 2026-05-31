@@ -77,7 +77,7 @@ export function ChartSwitcher({
           </span>
           {current && (
             <span className="meta">
-              {current.birthplace.label.split(',')[0]} · {fmtBirthDate(current)}
+              {fmtBirthDate(current)} · {current.birthplace.label.split(',')[0]}
               {current.tzUncertain && (
                 <span className="uncertain" title="Pre-1970 outside US/EU — verify DST">
                   ⚠
@@ -109,9 +109,7 @@ export function ChartSwitcher({
                 >
                   <span className="chart-name">{c.name}</span>
                   <span className="chart-meta">
-                    {c.birthplace.label.split(',')[0]} ·{' '}
-                    {String(c.month).padStart(2, '0')}/
-                    {String(c.day).padStart(2, '0')}/{c.year}
+                    {fmtBirthDate(c)} · {c.birthplace.label.split(',')[0]}
                   </span>
                 </button>
                 <div className="chart-actions">
@@ -149,6 +147,7 @@ export function ChartSwitcher({
               onNew();
               setOpen(false);
             }}
+            title="Add a new chart (A)"
           >
             + New chart
           </button>

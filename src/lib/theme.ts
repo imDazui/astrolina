@@ -40,3 +40,14 @@ export const LABEL_HALO_COLORS: Record<Theme, string> = {
   light: 'rgba(255, 255, 255, 0.95)',
   vintage: 'rgba(28, 20, 12, 0.95)',
 };
+
+// Inner-fill color for the zenith stamps' disc. Mirrors the glyph halo for
+// dark/light, but glass is frosted-translucent (matching the theme's glass
+// surfaces) and vintage uses a warm parchment instead of its near-black halo, so
+// neither reads as a flat solid white/black coin.
+export const ZENITH_DISC_COLORS: Record<Theme, string> = {
+  glass: 'rgba(245, 245, 245, 0.85)',
+  dark: 'rgba(10, 10, 15, 0.95)',
+  light: 'rgba(255, 255, 255, 0.95)',
+  vintage: 'rgba(232, 222, 202, 0.92)',
+};

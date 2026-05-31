@@ -27,3 +27,23 @@ export const TEST_BIRTH: BirthData = {
     lng: 9.9876,
   },
 };
+
+// The charts a fresh install starts with, in display order; the first is the
+// selected one. Einstein doubles as a ready-made synastry partner.
+export const SEED_BIRTHS: BirthData[] = [
+  {
+    name: 'Leonardo DiCaprio',
+    year: 1974,
+    month: 11,
+    day: 11,
+    hour: 2,
+    minute: 47,
+    tzOffset: -8,
+    birthplace: {
+      label: 'Los Angeles, California, United States',
+      lat: 34.0522,
+      lng: -118.2437,
+    },
+  },
+  TEST_BIRTH,
+];

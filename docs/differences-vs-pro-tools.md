@@ -8,16 +8,14 @@ The structure: **what we don't do yet** (with the reason and the path to fix), t
 
 ## What we don't do yet
 
-### 1. Ephemeris engine: Moshier, not Swiss Ephemeris
+### 1. Ephemeris engine: Swiss Ephemeris ✓ (done)
 
-We use the Moshier engine via the MIT-licensed `astronomia` package, running entirely in the browser. Solar Fire, Astro Gold, and most of the desktop tools use Swiss Ephemeris (Astrodienst's port of JPL data).
+We now use **Swiss Ephemeris** (Astrodienst's port of JPL data) compiled to WebAssembly via `@swisseph/browser`, running entirely in the browser under the **AGPL-3.0** license — the same engine Solar Fire, Astro Gold, and the desktop tools use. The self-hosted `.se1` data files (`public/ephe/`) cover 1800–2399 AD.
 
 **Practical impact:**
-- Planet positions differ by **~1 arcsecond or less** vs Swiss Ephemeris. That's ~1/3600 of a degree — well below any orb a working astrologer reads with, and invisible at the scale astrocartography lines are interpreted.
-- For dates more than ±3000 years from now, Moshier accuracy degrades to a few arcminutes; this is irrelevant for client work.
-- **What a pro might catch:** if they pull up the same chart in Solar Fire and zoom to compare planet positions to a tenth of an arcminute, they'll see a tiny discrepancy. They won't see it on the map.
-
-**Path to fix:** swap in Swiss Ephemeris compiled to WebAssembly behind the same function signature. ~1–2 days of work, requires either AGPL acceptance (open-source SaaS) or a one-time commercial license from Astrodienst (~$750).
+- Planet, node, asteroid, Lilith, and angle positions now read from the same source of truth as the desktop tools — agreement is well under an arcsecond.
+- This single engine swap also resolved the former minor-bodies gap (§5) and unlocked the additional house systems (§4).
+- **What a pro might catch:** nothing on the ephemeris front anymore — the numbers match Solar Fire.
 
 ### 2. Atlas: tzdb-based, not ACS-grade historical curation
 
@@ -46,35 +44,28 @@ We compute all planet-to-planet parans:
 
 **Path to fix:** fixed-star parans need a star catalog (e.g., FK6 or Hipparcos with proper motion); the same meridian/horizon machinery then applies once a star's RA/dec is available.
 
-### 4. Chart wheel: Placidus / Whole Sign / Equal selectable; Koch & others not yet
+### 4. Chart wheel: Placidus, Koch, Regiomontanus, Campanus, Porphyry, Alcabitus, Whole Sign, Equal ✓
 
-The expanded (large) chart wheel draws all twelve house cusps, switchable between **Placidus**, **Whole Sign**, and **Equal** from the **Calculation** section of the sidebar (default Placidus, which matches Solar Fire and Astro Gold). The four angle axes (ASC/MC/DSC/IC) are drawn as bold diameters regardless of system; intermediate cusps that don't fall on an angle are drawn as spokes (so e.g. Equal's 4th/10th, which float off the meridian, appear correctly). The mini wheel still shows angles only, to stay legible at small size.
-
-**Practical impact:**
-- Placidus uses the standard semi-arc time-division (cusps 11/12/8/9 by iteration, the rest by symmetry); it's undefined inside the polar circles (~±66°), where the semi-arc cosine is clamped so the wheel degrades gracefully rather than rendering NaN spokes. Whole Sign keys houses to the rising sign; Equal steps 30° from the Ascendant.
-- **What a pro might catch:** practitioners who use Koch, Regiomontanus, Campanus, Porphyry, etc. can't switch to those yet — the selector covers the three most common.
-
-**Path to fix:** add the remaining systems. Porphyry is trivial (trisect the quadrants in longitude); Koch/Regiomontanus/Campanus are a few more lines of the same semi-arc machinery already in `relocate`.
-
-### 5. Minor bodies: orbital-element ephemerides, not Swiss-grade
-
-For Chiron and the four classical asteroids (Ceres, Pallas, Juno, Vesta), we use **static orbital elements at J2000** with a Kepler-equation solver, rather than Swiss Ephemeris's precomputed positions.
+The expanded (large) chart wheel draws all twelve house cusps, switchable from the **Calculation** section of the sidebar between **Placidus** (default, matching Solar Fire and Astro Gold), **Koch**, **Regiomontanus**, **Campanus**, **Porphyry**, **Alcabitus**, **Whole Sign**, and **Equal** — all computed natively by Swiss Ephemeris. The four angle axes (ASC/MC/DSC/IC) are drawn as bold diameters regardless of system; intermediate cusps that don't fall on an angle are drawn as spokes (so e.g. Equal's 4th/10th, which float off the meridian, appear correctly). The mini wheel still shows angles only, to stay legible at small size.
 
 **Practical impact:**
-- Accurate to **~0.1°** for ±200 years around J2000 — fine for any living client's birth chart.
-- Swiss Ephemeris is accurate to ~1 arcsecond. The 0.1° difference would only be visible if a pro pulled up the same chart side-by-side in Solar Fire.
-- **What a pro might catch:** Chiron specifically is in a chaotic orbit (centaur), so over decades the simple Kepler model drifts more than the major planets would. For an 1850 birth chart, Chiron could be off by several tenths of a degree.
+- Covers the systems the overwhelming majority of Western practitioners use. Polar-circle behaviour for the quadrant systems is handled by Swiss Ephemeris directly.
+- **What a pro might catch:** a few rarer systems (Vehlow, Meridian/axial, Morinus, Polich/Page) aren't in the selector yet — Swiss can compute them, so each is a one-line addition to the house-system map in `relocate`.
 
-**Path to fix:** swap to Swiss Ephemeris (same swap that fixes the planets — both benefit from one change).
+### 5. Minor bodies: Swiss-grade ✓ (done)
 
-### 6. Not implemented: fixed stars, Lilith, Transpluto, other hypotheticals
+Chiron and the four classical asteroids (Ceres, Pallas, Juno, Vesta) now read from Swiss Ephemeris's precomputed positions (the `seas_18.se1` asteroid file) — the same swap that put the planets on Swiss.
 
-Still missing:
+**Practical impact:**
+- Accurate to ~1 arcsecond, including for Chiron's chaotic centaur orbit, where the old static-orbital-element model drifted several tenths of a degree on older charts. A side-by-side with Solar Fire now matches.
+
+### 6. Not implemented: fixed stars, Transpluto, other hypotheticals
+
+**Black Moon Lilith** (mean apogee) is now included alongside the nodes and asteroids — toggle it on in the sidebar. Still missing:
 
 - **Fixed stars** (Regulus, Algol, Spica, etc.) — wanted by traditional and Bernadette Brady–trained practitioners. Need a star catalog (FK6 or Hipparcos) with proper motion.
-- **Black Moon Lilith** (mean or true) — moon's apogee point. Trivial to add (~10 lines for mean).
-- **Transpluto** and other hypothetical bodies (Vulcan, Cupido, Hades, etc.) — deliberately omitted because there's no consensus ephemeris. Different schools publish different positions.
-- **Centaurs beyond Chiron** (Pholus, Nessus, Chariklo) — same orbital-element approach would work; not enough demand to justify yet.
+- **Transpluto** and other hypothetical bodies (Vulcan, Cupido, Hades, etc.) — deliberately omitted because there's no consensus ephemeris. Different schools publish different positions. (Swiss Ephemeris does expose the Uranian/fictitious points, so these are now a small addition if demand appears.)
+- **Centaurs beyond Chiron** (Pholus, Nessus, Chariklo) — Swiss computes Pholus directly; the others need their asteroid-number data files. Not enough demand to justify yet.
 
 ### 7. Not implemented (and explicitly deferred to v2)
 
@@ -97,7 +88,7 @@ No install, no Windows-only restriction, no "Mac users open Astro Gold, PC users
 
 ### 2. Live drag-relocation with the relocated wheel inline
 
-Astro Gold pioneered live drag-relocation on the map — it's their headline feature. We match it, plus we show the **relocated chart wheel updating in real time next to the map**. In the desktop tools, viewing the relocated wheel requires switching to a separate window (or opening Solar Fire). Eliminating that switch is one of the main goals of this product.
+Astro Gold pioneered live drag-relocation on the map — it's their headline feature. We match it, plus we show the **relocated chart wheel updating in real time next to the map**. In the desktop tools, viewing the relocated wheel requires switching to a separate window (or opening Solar Fire). Eliminating that switch is one of the main goals of this product. As you move the point, its **place name** is surfaced in the top bar too — the country resolves instantly offline while you hover (bundled boundary polygons, no network), and a placed pin reverse-geocodes to the full *city · region · country* — so it's always clear where on Earth the relocated chart is being cast.
 
 ### 3. Modern visual design
 
@@ -123,6 +114,6 @@ A single overlay slot sits on top of the natal map and can show **transits**, **
 
 ## Honest summary for a pro audience
 
-> "It's a web-based astrocartography tool for practitioners. The map and the live drag-relocation already match or beat Astro Gold's interactivity, and you can geocode any birthplace, resolve its timezone, and import charts in bulk from astro.com-style text or CSV. We compute the ten classical planets, plus the lunar nodes (mean or true, your choice), Chiron, and the four main asteroids (Ceres, Pallas, Juno, Vesta). The planets use VSOP87 / Meeus (accurate to ~1 arcsecond, invisible on the map); the minor bodies use static orbital elements (accurate to ~0.1° within ±200 years of J2000). You can overlay transits, secondary progressions, and solar-arc directions on the map, scrub or animate them over time, overlay a second chart for relationship work, draw the full set of planet-to-planet parans, and switch lines between in-mundo and in-zodiaco. We don't yet have fixed stars (or fixed-star parans), Lilith, house systems beyond Placidus / Whole Sign / Equal, Swiss-grade ephemeris, or a hand-curated ACS-grade atlas (we geocode and resolve timezones via tzdb, just not the proprietary historical records) — those are on the roadmap. If your workflow leans on those, you'll still want your existing tool open. If it leans on the ten planets + asteroids/Chiron/nodes, parans, local space, a relocated wheel, transits/progressions, and relationship maps, this can already replace the map portion of your workflow on any device."
+> "It's a web-based astrocartography tool for practitioners. The map and the live drag-relocation already match or beat Astro Gold's interactivity, and you can geocode any birthplace, resolve its timezone, and import charts in bulk from astro.com-style text or CSV. We compute the ten classical planets, plus the lunar nodes (mean or true, your choice), Black Moon Lilith, Chiron, and the four main asteroids (Ceres, Pallas, Juno, Vesta) — all with Swiss Ephemeris (the same JPL-derived engine as Solar Fire / Astro Gold), running in the browser under AGPL. You can overlay transits, secondary progressions, and solar-arc directions on the map, scrub or animate them over time, overlay a second chart for relationship work, draw the full set of planet-to-planet parans, and switch lines between in-mundo and in-zodiaco. We don't yet have fixed stars (or fixed-star parans) or a hand-curated ACS-grade atlas (we geocode and resolve timezones via tzdb, just not the proprietary historical records) — those are on the roadmap. If your workflow leans on those, you'll still want your existing tool open. If it leans on the ten planets + asteroids/Chiron/nodes, parans, local space, a relocated wheel, transits/progressions, and relationship maps, this can already replace the map portion of your workflow on any device."
 
 Concrete, specific, and doesn't oversell.

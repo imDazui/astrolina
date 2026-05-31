@@ -1,0 +1,149 @@
+import { useEffect, useRef, useState } from 'react';
+import type { StoredChart } from '../../lib/chartLibrary';
+import './SynastryHud.css';
+
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+// Full date + time, e.g. "14 March 1879 · 11:30".
+function fmtDate(c: StoredChart): string {
+  return `${c.day} ${MONTHS[c.month - 1]} ${c.year} · ${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`;
+}
+
+// Date only — for the compact picker rows.
+function fmtShort(c: StoredChart): string {
+  return `${c.day} ${MONTHS[c.month - 1]} ${c.year}`;
+}
+
+interface SynastryHudProps {
+  /** The chart currently being compared, or null until one is chosen. */
+  partner: StoredChart | null;
+  /** All saved charts; the picker lists every chart except the current one. */
+  charts: StoredChart[];
+  /** The active chart's id — excluded from the partner candidates. */
+  currentId: string | null;
+  /** Choose (or clear) the comparison partner. */
+  onSelectPartner: (id: string | null) => void;
+}
+
+/**
+ * Bottom-center bar shown whenever the synastry overlay is active. It both shows
+ * the comparison partner and *is* where the partner is chosen: the whole name +
+ * birth-line (with an inline add-person icon) is one clickable trigger that opens
+ * an upward picker of the other saved charts — mirroring the chart switcher in
+ * the expanded sidebar. (The Overlay top-nav menu only toggles the mode.)
+ */
+export function SynastryHud({
+  partner,
+  charts,
+  currentId,
+  onSelectPartner,
+}: SynastryHudProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const candidates = charts
+    .filter((c) => c.id !== currentId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <div className="synastry-hud" ref={ref}>
+      <span className="synastry-hud-tag">Synastry</span>
+      <div className="synastry-hud-picker">
+        <button
+          type="button"
+          className={`synastry-hud-trigger ${open ? 'open' : ''}`}
+          onClick={() => setOpen((v) => !v)}
+          title="Choose comparison chart"
+          aria-label="Choose comparison chart"
+          aria-expanded={open}
+        >
+          <span className="synastry-hud-label">
+            <span className="synastry-hud-name-row">
+              <span
+                className={`synastry-hud-name ${partner ? '' : 'is-prompt'}`}
+              >
+                {partner ? partner.name : 'Choose a chart to compare'}
+              </span>
+              <svg
+                className="synastry-hud-icon"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9.5" cy="7" r="4" />
+                <path d="M22 11h-6" />
+                <path d="M19 8v6" />
+              </svg>
+            </span>
+            {partner && (
+              <span className="synastry-hud-meta">
+                {fmtDate(partner)} · {partner.birthplace.label}
+              </span>
+            )}
+          </span>
+        </button>
+        {open && (
+          <div className="synastry-hud-menu">
+            {candidates.length === 0 ? (
+              <div className="synastry-hud-empty">
+                Add another chart (top-left) to compare it here.
+              </div>
+            ) : (
+              <ul>
+                {candidates.map((c) => (
+                  <li
+                    key={c.id}
+                    className={c.id === partner?.id ? 'active' : ''}
+                  >
+                    <button
+                      type="button"
+                      className="synastry-hud-row"
+                      onClick={() => {
+                        onSelectPartner(c.id);
+                        setOpen(false);
+                      }}
+                    >
+                      <span className="synastry-hud-row-name">{c.name}</span>
+                      <span className="synastry-hud-row-meta">
+                        {fmtShort(c)} · {c.birthplace.label.split(',')[0]}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

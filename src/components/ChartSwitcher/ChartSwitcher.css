@@ -50,12 +50,12 @@
   flex-shrink: 0;
 }
 
-.switcher-trigger:hover strong,
-.switcher-trigger:hover .switcher-icon {
+.switcher-trigger:hover strong {
   color: var(--accent);
 }
 
 .switcher-trigger:hover .switcher-icon {
+  color: var(--text-strong);
   transform: scale(1.08);
 }
 

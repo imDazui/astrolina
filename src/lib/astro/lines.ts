@@ -1,4 +1,4 @@
-import type { Feature, FeatureCollection, LineString } from 'geojson';
+import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
 import { PLANET_CODES, PLANET_COLORS, type PlanetName, type PlanetPosition } from '../ephemeris';
 
 const RAD2DEG = 180 / Math.PI;
@@ -86,6 +86,31 @@ export function generateLines(
     features.push(...horizonLine(p, gmst, 'DSC'));
   }
 
+  return { type: 'FeatureCollection', features };
+}
+
+export interface ZenithProps {
+  planet: PlanetName;
+  color: string;
+}
+
+// The zenith / sub-planetary point: the single spot on Earth where a planet is
+// exactly overhead (altitude 90°). It sits on the planet's MC line, at the
+// latitude equal to its declination, and longitude where local sidereal time
+// equals the planet's RA — i.e. the same longitude as the MC line. One stamp per
+// body, rendered as the planet glyph on the map.
+export function generateZenithStamps(
+  positions: PlanetPosition[],
+  gmst: number,
+): FeatureCollection<Point, ZenithProps> {
+  const features: Feature<Point, ZenithProps>[] = positions.map((p) => ({
+    type: 'Feature',
+    properties: { planet: p.name, color: PLANET_COLORS[p.name] },
+    geometry: {
+      type: 'Point',
+      coordinates: [normLng((p.ra - gmst) * RAD2DEG), p.dec * RAD2DEG],
+    },
+  }));
   return { type: 'FeatureCollection', features };
 }
 

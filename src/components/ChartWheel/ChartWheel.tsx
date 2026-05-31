@@ -1,5 +1,6 @@
-import type { EclipticPosition, RelocatedAngles } from '../../lib/ephemeris';
-import { WheelSvg } from '../Wheel/WheelSvg';
+import { useState } from 'react';
+import type { EclipticPosition, PlanetName, RelocatedAngles } from '../../lib/ephemeris';
+import { WheelSvg, type AspectCategory } from '../Wheel/WheelSvg';
 import './ChartWheel.css';
 
 interface Point {
@@ -16,12 +17,24 @@ interface ChartWheelProps {
   isNatalPin: boolean;
   angles: RelocatedAngles | null;
   planets: EclipticPosition[];
+  /** Map Filter visibility — planets toggled off are hidden in the wheel too. */
+  visiblePlanets: Set<PlanetName>;
 }
 
 // 25% smaller than the original 280 — the glyphs/labels keep their absolute px
 // sizes (set in WheelSvg / WheelSvg.css), so only the wheel tightens, staying
 // readable.
 const COMPACT_SIZE = 210;
+// 75% larger when the in-place enlarge toggle is on.
+const ENLARGED_SIZE = Math.round(COMPACT_SIZE * 1.75);
+
+// Diagonal expand arrow: points NE (up-right) to enlarge, SW (down-left) to shrink.
+const ENLARGE_ICON = 'M4 12L12 4M12 4H8M12 4V8';
+const SHRINK_ICON = 'M12 4L4 12M4 12H8M4 12V8';
+
+// An empty visible-aspect set suppresses every aspect (inner) line, so the
+// enlarged wheel takes the detailed look but without the aspect web.
+const NO_ASPECTS: Set<AspectCategory> = new Set();
 
 export function ChartWheel({
   point,
@@ -29,7 +42,10 @@ export function ChartWheel({
   isNatalPin,
   angles,
   planets,
+  visiblePlanets,
 }: ChartWheelProps) {
+  const [enlarged, setEnlarged] = useState(false);
+  const shownPlanets = planets.filter((p) => visiblePlanets.has(p.name));
   const wheelClass = isNatalPin
     ? 'natal-pinned'
     : pinned
@@ -39,14 +55,39 @@ export function ChartWheel({
         : '';
 
   return (
-    <aside className={`chart-wheel ${wheelClass}`}>
+    <aside className={`chart-wheel ${wheelClass} ${enlarged ? 'enlarged' : ''}`}>
+      {angles && (
+        <button
+          type="button"
+          className="chart-wheel-resize"
+          onClick={() => setEnlarged((v) => !v)}
+          title={enlarged ? 'Shrink wheel' : 'Enlarge wheel'}
+          aria-label="Toggle wheel size"
+          aria-pressed={enlarged}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d={enlarged ? SHRINK_ICON : ENLARGE_ICON} />
+          </svg>
+        </button>
+      )}
       {angles ? (
         <div className="chart-wheel-svg-wrap">
           <WheelSvg
-            size={COMPACT_SIZE}
+            size={enlarged ? ENLARGED_SIZE : COMPACT_SIZE}
             angles={angles}
-            planets={planets}
-            detailed={false}
+            planets={shownPlanets}
+            detailed={enlarged}
+            visibleAspects={NO_ASPECTS}
           />
         </div>
       ) : (

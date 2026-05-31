@@ -1,58 +1,50 @@
-import { julian, sidereal, nutation } from 'astronomia';
+// Verify relocated angles (ASC/MC) via Swiss Ephemeris houses — the same engine
+// the app uses. Compare against published chart data / astro.com.
+//
+// Run: node scripts/verify-relocate.mjs
+import {
+  setEphemerisPath,
+  julianDay,
+  calculateHouses,
+  HouseSystem,
+  CalendarType,
+} from '@swisseph/node';
+
+setEphemerisPath(process.cwd() + '/public/ephe');
 
 function jdOf(y, m, d, h, min, tz) {
-  const utcH = h + min / 60 - tz;
-  const df = d + utcH / 24;
-  return new julian.CalendarGregorian(y, m, df).toJD();
+  const jd0 = julianDay(y, m, d, 0, CalendarType.Gregorian);
+  return jd0 + (h + min / 60 - tz) / 24;
 }
 
-function gmstRad(jd) {
-  return ((sidereal.mean(jd) / 86400) * 2 * Math.PI) % (2 * Math.PI);
+function gmstDeg(jd) {
+  const h = calculateHouses(jd, 0, 0, HouseSystem.WholeSign);
+  return ((h.armc % 360) + 360) % 360;
 }
 
-function obliquity(jd) {
-  const [, deps] = nutation.nutation(jd);
-  return nutation.meanObliquity(jd) + deps;
+// Mirror ephemeris.ts relocate(): Swiss houses → asc/mc (degrees).
+function relocate(jd, latDeg, lngDeg, system = HouseSystem.Placidus) {
+  const h = calculateHouses(jd, latDeg, lngDeg, system);
+  return { asc: h.ascendant, mc: h.mc, cusp1: h.cusps[1] };
 }
 
-function relocate(jd, latDeg, lngDeg) {
-  const eps = obliquity(jd);
-  const gmst = gmstRad(jd);
-  const phi = (latDeg * Math.PI) / 180;
-  const lst = (gmst + (lngDeg * Math.PI) / 180 + 2 * Math.PI) % (2 * Math.PI);
-  const sinLst = Math.sin(lst);
-  const cosLst = Math.cos(lst);
-  const cosEps = Math.cos(eps);
-  const sinEps = Math.sin(eps);
-
-  let mc = Math.atan2(sinLst, cosLst * cosEps);
-  if (mc < 0) mc += 2 * Math.PI;
-
-  let asc = Math.atan2(-cosLst, sinLst * cosEps + Math.tan(phi) * sinEps);
-  if (asc < 0) asc += 2 * Math.PI;
-  let diff = ((asc - mc) + 2 * Math.PI) % (2 * Math.PI);
-  if (diff > Math.PI) asc = (asc + Math.PI) % (2 * Math.PI);
-
-  return { asc, mc };
-}
-
-const SIGNS = ['Ari','Tau','Gem','Can','Leo','Vir','Lib','Sco','Sag','Cap','Aqu','Pis'];
-function fmt(rad) {
-  const d = ((rad * 180) / Math.PI + 360) % 360;
+const SIGNS = ['Ari', 'Tau', 'Gem', 'Can', 'Leo', 'Vir', 'Lib', 'Sco', 'Sag', 'Cap', 'Aqu', 'Pis'];
+function fmt(deg) {
+  const d = ((deg % 360) + 360) % 360;
   const sign = SIGNS[Math.floor(d / 30)];
   const inS = d % 30;
-  const deg = Math.floor(inS);
-  const min = Math.floor((inS - deg) * 60);
-  return `${deg}°${String(min).padStart(2, '0')}' ${sign}`;
+  const dd = Math.floor(inS);
+  const mm = Math.floor((inS - dd) * 60);
+  return `${dd}°${String(mm).padStart(2, '0')}' ${sign}`;
 }
 
 // Einstein 1879-03-14 11:30 LMT Ulm (9.9876E, 48.4011N, tz +0.6167)
-// Published: ASC ~ 5° Cancer, MC ~ 14° Pisces  (depends on source)
+// Published: ASC ~ 11-12° Cancer, MC ~ 13-14° Pisces (depends on source)
 const jd = jdOf(1879, 3, 14, 11, 30, 0.6166666666666667);
 console.log('JD:', jd);
-console.log('GMST°:', (gmstRad(jd) * 180 / Math.PI).toFixed(3));
+console.log('GMST°:', gmstDeg(jd).toFixed(3));
 const r = relocate(jd, 48.4011, 9.9876);
-console.log('Ulm  ASC:', fmt(r.asc), '  MC:', fmt(r.mc));
+console.log('Ulm  ASC:', fmt(r.asc), '  MC:', fmt(r.mc), '  (cusp1 == asc?', Math.abs(r.cusp1 - r.asc) < 1e-6, ')');
 
 // Same time, but New York (40.71N, -74.01W)
 const r2 = relocate(jd, 40.71, -74.01);
