@@ -3,11 +3,14 @@ import {
   PLANET_COLORS,
   PLANET_DISPLAY,
   type EclipticPosition,
+  type HorizontalCoords,
   type PlanetName,
   type RelocatedAngles,
 } from '../../lib/ephemeris';
 import type { StoredChart } from '../../lib/chartLibrary';
+import type { LineType } from '../../lib/astro/lines';
 import { fmtLat, fmtLng } from '../../lib/coordFormat';
+import { formatUtcOffset } from '../../lib/atlas/timezone';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
@@ -25,6 +28,43 @@ const SIGN_NAMES = [
   'Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
   'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces',
 ];
+
+// Astrology's conventional luminary-first ordering: Moon, Sun, then outward from
+// the Sun (Mercury → Pluto), with the calculated points last. Drives the planet
+// list's two-column flow (Moon/Sun, Mercury/Venus, Mars/Jupiter, …).
+const PLANET_ORDER: PlanetName[] = [
+  'Moon', 'Sun',
+  'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto',
+  'NorthNode', 'SouthNode', 'Lilith', 'Chiron', 'Ceres', 'Pallas', 'Juno', 'Vesta',
+];
+function planetRank(name: PlanetName): number {
+  const i = PLANET_ORDER.indexOf(name);
+  return i === -1 ? PLANET_ORDER.length : i;
+}
+
+// The Sun's maximum declination (Earth's obliquity, 23°26'). A body past this on
+// either side is "out of bounds" — astrologically notable, so the readout flags
+// it (pink past the limit, dark pink within).
+const OOB_DEC_DEG = 23 + 26 / 60;
+function decClass(decRad: number): string {
+  return Math.abs((decRad * 180) / Math.PI) > OOB_DEC_DEG
+    ? 'es-dec-oob'
+    : 'es-dec-in';
+}
+
+const RAD2DEG = 180 / Math.PI;
+
+// Degrees → "DD°MM'" (degrees + arcminutes), signed when asked. Used for every
+// numeric column of the Advanced planet table (speed, latitude, RA, declination,
+// azimuth, altitude). Azimuth/RA pass signed=false (they read 0–360).
+function fmtDM(deg: number, signed = false): string {
+  const sign = deg < 0 ? '-' : signed ? '+' : '';
+  const abs = Math.abs(deg);
+  let d = Math.floor(abs);
+  let m = Math.round((abs - d) * 60);
+  if (m === 60) { m = 0; d += 1; }
+  return `${sign}${d}°${pad2(m)}'`;
+}
 
 // Longitude readout for the planet/angle rows: "23°17'" (with arc-seconds in
 // Advanced) followed by the sign glyph and full sign name — e.g. 23°17' ♑ Capricorn.
@@ -53,6 +93,23 @@ function Longitude({ lon, advanced }: { lon: number; advanced: boolean }) {
   );
 }
 
+// Compact zodiacal longitude for the Advanced table's narrow column: degree,
+// sign glyph, arcminute — e.g. 23°♑17' (the conventional "23 Cap 17" notation).
+function SignLon({ lon }: { lon: number }) {
+  const lonDeg = ((lon * 180) / Math.PI + 360) % 360;
+  let signIdx = Math.floor(lonDeg / 30);
+  const inSign = lonDeg % 30;
+  let d = Math.floor(inSign);
+  let m = Math.round((inSign - d) * 60);
+  if (m === 60) { m = 0; d += 1; }
+  if (d === 30) { d = 0; signIdx = (signIdx + 1) % 12; }
+  return (
+    <>
+      {d}°<ZodiacGlyph sign={signIdx} size={11} />{pad2(m)}&#39;
+    </>
+  );
+}
+
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -74,6 +131,10 @@ interface ExpandedChartSidebarProps {
   overlayLabel?: string | null;
   /** Planets toggled on in the Map Filter; hidden ones are dropped everywhere. */
   visiblePlanets: Set<PlanetName>;
+  /** Line-type toggles from the Map Filter; gate which angles show in the wheel + list. */
+  visibleLineTypes: Set<LineType>;
+  /** Per-body RA + azimuth/altitude for the Advanced table, keyed by planet. */
+  advancedCoords: Map<PlanetName, HorizontalCoords>;
   onClose: () => void;
   /** Fired while the panel is being drag-resized, so the map can pause hover. */
   onResizingChange?: (resizing: boolean) => void;
@@ -86,9 +147,6 @@ interface ExpandedChartSidebarProps {
 const WIDTH_KEY = 'astro:expanded-sidebar-width:v1';
 const ASPECTS_KEY = 'astro:visible-aspects:v1';
 const ADVANCED_KEY = 'astro:advanced:v1';
-// Shared with CoordReadout in the non-expanded view, so the Angles dropdown
-// remembers its open/closed state across both layouts.
-const SHOW_ANGLES_KEY = 'astro:coord-show-angles:v1';
 const DEFAULT_WIDTH = 720;
 const MIN_WIDTH = 480;
 // The drag handle won't take the panel past ~70% of the viewport (leaving the map
@@ -114,34 +172,6 @@ const ASPECT_GLYPHS: Record<string, string> = {
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
-}
-
-// Signed declination, deg/min: "+12°34'" or "-05°02'"
-function fmtDec(decRad: number): string {
-  const decDeg = (decRad * 180) / Math.PI;
-  const sign = decDeg >= 0 ? '+' : '-';
-  const abs = Math.abs(decDeg);
-  const d = Math.floor(abs);
-  let m = Math.round((abs - d) * 60);
-  let dd = d;
-  if (m === 60) { m = 0; dd += 1; }
-  return `${sign}${pad2(dd)}°${pad2(m)}'`;
-}
-
-// Daily motion, signed for retrograde, in degrees + arcminutes (matching the
-// declination format above) so it never reads as a decimal/percentage. The Sun
-// moves ~0°59'/day, the Moon ~13°11'/day.
-function fmtSpeed(degPerDay: number): string {
-  const sign = degPerDay < 0 ? '-' : '+';
-  const abs = Math.abs(degPerDay);
-  const d = Math.floor(abs);
-  let m = Math.round((abs - d) * 60);
-  let dd = d;
-  if (m === 60) {
-    m = 0;
-    dd += 1;
-  }
-  return `${sign}${dd}°${pad2(m)}'/d`;
 }
 
 // Aspect orb as "0°12'" — seconds rarely meaningful for orbs.
@@ -175,6 +205,8 @@ export function ExpandedChartSidebar({
   overlayPlanets,
   overlayLabel,
   visiblePlanets,
+  visibleLineTypes,
+  advancedCoords,
   onClose,
   onResizingChange,
   onSelectChart,
@@ -228,20 +260,30 @@ export function ExpandedChartSidebar({
     localStorage.setItem(ADVANCED_KEY, advanced ? '1' : '0');
   }, [advanced]);
 
-  // Angles dropdown shares its boolean with the non-expanded CoordReadout.
-  const [anglesOpen, setAnglesOpen] = useState<boolean>(
-    () => localStorage.getItem(SHOW_ANGLES_KEY) === '1',
-  );
-  useEffect(() => {
-    localStorage.setItem(SHOW_ANGLES_KEY, anglesOpen ? '1' : '0');
-  }, [anglesOpen]);
-
   // Respect the Map Filter's planet toggles across every area of the expanded
-  // view (planet list, wheel, aspects, overlay aspects). Order is preserved
-  // from the incoming arrays (PLANET_NAMES order).
-  const shownPlanets = planets.filter((p) => visiblePlanets.has(p.name));
+  // view (planet list, wheel, aspects, overlay aspects), and present them in the
+  // conventional luminary-first order (Moon, Sun, Mercury, …).
+  const shownPlanets = planets
+    .filter((p) => visiblePlanets.has(p.name))
+    .sort((a, b) => planetRank(a.name) - planetRank(b.name));
   const shownOverlay =
     overlayPlanets?.filter((p) => visiblePlanets.has(p.name)) ?? null;
+
+  // The four chart angles, gated by the Map Filter's line-type toggles. Same set
+  // feeds the wheel labels (visibleAngles) and the data list below it (shownAngles).
+  const visibleAngles = new Set<'As' | 'Ds' | 'Mc' | 'Ic'>();
+  if (visibleLineTypes.has('ASC')) visibleAngles.add('As');
+  if (visibleLineTypes.has('DSC')) visibleAngles.add('Ds');
+  if (visibleLineTypes.has('MC')) visibleAngles.add('Mc');
+  if (visibleLineTypes.has('IC')) visibleAngles.add('Ic');
+  const shownAngles = angles
+    ? ([
+        { type: 'MC', code: 'Mc', name: 'Midheaven', lon: angles.mc, color: 'var(--cool)' },
+        { type: 'IC', code: 'Ic', name: 'Imum Coeli', lon: angles.ic, color: 'var(--cool)' },
+        { type: 'ASC', code: 'As', name: 'Ascendant', lon: angles.asc, color: 'var(--accent)' },
+        { type: 'DSC', code: 'Ds', name: 'Descendant', lon: angles.dsc, color: 'var(--accent)' },
+      ] as const).filter((a) => visibleLineTypes.has(a.type))
+    : [];
 
   // Bold state title for the wheel's top-left corner (always shown when a chart is
   // up). Coloured by the live map state via --map-accent — neutral natal, blue
@@ -410,9 +452,21 @@ export function ExpandedChartSidebar({
           </div>
         </div>
         {chart && (
-          <p className="es-meta">
-            {fmtChartDate(chart)} · {chart.birthplace.label}
-          </p>
+          <div className="es-meta">
+            <span className="es-meta-when">
+              {fmtChartDate(chart)}
+              <span className="es-meta-tz">{formatUtcOffset(chart.tzOffset)}</span>
+              {chart.tzUncertain && (
+                <span
+                  className="es-meta-warn"
+                  title="Pre-1970 timezone outside US/EU: verify DST against an atlas"
+                >
+                  ⚠
+                </span>
+              )}
+            </span>
+            <span className="es-meta-where">{chart.birthplace.label}</span>
+          </div>
         )}
         {(() => {
           const displayPoint =
@@ -429,13 +483,8 @@ export function ExpandedChartSidebar({
                 ? ''
                 : 'natal';
           const hasPin = isNatalPin || pinned;
-          const label = isNatalPin
-            ? 'Pinned at natal'
-            : pinned
-              ? 'Pinned at'
-              : point
-                ? 'Relocated to'
-                : 'Located at natal';
+          // The chart-state name (NATAL CHART / PINNED CHART / …) already shows in
+          // the wheel's top-left corner, so here we show just the pin + coordinates.
           return (
             <div className={`es-relocated ${stateClass}`}>
               <span className="es-relocated-text">
@@ -456,101 +505,13 @@ export function ExpandedChartSidebar({
                     <circle cx="12" cy="10" r="3" />
                   </svg>
                 )}
-                {label} {fmtLat(displayPoint.lat)} {fmtLng(displayPoint.lng)}
+                {fmtLat(displayPoint.lat)} {fmtLng(displayPoint.lng)}
               </span>
             </div>
           );
         })()}
 
-        {angles && (
-          <div className="es-angles">
-            <button
-              type="button"
-              className="es-angles-toggle"
-              onClick={() => setAnglesOpen((v) => !v)}
-              aria-expanded={anglesOpen}
-            >
-              <span>Angles</span>
-              <span className="es-angles-chevron">{anglesOpen ? '▾' : '▸'}</span>
-            </button>
-            {anglesOpen && (
-              <ul className="es-angle-list">
-                {/* Each angle gets the planet-row treatment: a colored code marker
-                    (matching the wheel/map angle colours — As/Ds gold, Mc/Ic blue),
-                    its full name, then the degree·sign longitude. */}
-                {/* Two per row to save space: MC/IC on top, As/Ds below. */}
-                {(
-                  [
-                    { code: 'MC', name: 'Midheaven', lon: angles.mc, color: 'var(--cool)' },
-                    { code: 'IC', name: 'Imum Coeli', lon: angles.ic, color: 'var(--cool)' },
-                    { code: 'As', name: 'Ascendant', lon: angles.asc, color: 'var(--accent)' },
-                    { code: 'Ds', name: 'Descendant', lon: angles.dsc, color: 'var(--accent)' },
-                  ] as const
-                ).map(({ code, name, lon, color }) => (
-                  <li key={code}>
-                    <div className="es-row-main">
-                      <span className="es-glyph es-angle-code" style={{ color }}>
-                        {code}
-                      </span>
-                      <span className="es-name">{name}</span>
-                      <span className="es-lon">
-                        <Longitude lon={lon} advanced={advanced} />
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
       </section>
-
-      {angles && shownPlanets.length > 0 && (() => {
-        // Fill the two columns row-by-row: item 0 top-left, item 1 top-right,
-        // item 2 left (row 2), item 3 right (row 2)… So even indices go left,
-        // odd go right. Stays balanced and compact as planets are toggled off.
-        const leftCol = shownPlanets.filter((_, i) => i % 2 === 0);
-        const rightCol = shownPlanets.filter((_, i) => i % 2 === 1);
-        const renderRow = (p: EclipticPosition) => (
-          <li key={p.name} className={advanced ? 'advanced' : ''}>
-            <div className="es-row-main">
-              <span
-                className="es-glyph"
-                style={{ color: PLANET_COLORS[p.name] }}
-              >
-                <PlanetGlyph planet={p.name} size={13} />
-              </span>
-              <span className="es-name">{PLANET_DISPLAY[p.name]}</span>
-              <span className="es-lon">
-                <Longitude lon={p.lon} advanced={advanced} />
-                {advanced && p.stationary ? (
-                  <span className="es-station" title="Stationary">S</span>
-                ) : advanced && p.retrograde ? (
-                  <span className="es-rx" title="Retrograde">℞</span>
-                ) : null}
-              </span>
-            </div>
-            {advanced && p.dec !== undefined && p.speed !== undefined && (
-              <div className="es-row-extra">
-                dec {fmtDec(p.dec)} · {fmtSpeed(p.speed)}
-              </div>
-            )}
-          </li>
-        );
-        return (
-        <section className="es-section es-section-details">
-          <div className="es-planets-col">
-            <h3>Planets</h3>
-            <div className="es-planet-cols">
-              <ul className="es-planet-list">{leftCol.map(renderRow)}</ul>
-              {rightCol.length > 0 && (
-                <ul className="es-planet-list">{rightCol.map(renderRow)}</ul>
-              )}
-            </div>
-          </div>
-        </section>
-        );
-      })()}
 
       <section className="es-section es-section-wheel">
         {/* Use the wheel's empty top corners: the chart-state title (left, always)
@@ -579,6 +540,7 @@ export function ExpandedChartSidebar({
               advanced={advanced}
               overlayPlanets={shownOverlay}
               visibleAspects={visibleAspects}
+              visibleAngles={visibleAngles}
               interactive
             />
           ) : (
@@ -607,6 +569,143 @@ export function ExpandedChartSidebar({
           </div>
         )}
       </section>
+
+      {/* Planets, now below the wheel. */}
+      {angles && (shownPlanets.length > 0 || shownAngles.length > 0) && (() => {
+        // Simple view: two columns, row-by-row (even left, odd right).
+        const leftCol = shownPlanets.filter((_, i) => i % 2 === 0);
+        const rightCol = shownPlanets.filter((_, i) => i % 2 === 1);
+        const renderRow = (p: EclipticPosition) => (
+          <li key={p.name}>
+            <div className="es-row-main">
+              <span
+                className="es-glyph"
+                style={{ color: PLANET_COLORS[p.name] }}
+              >
+                <PlanetGlyph planet={p.name} size={13} />
+              </span>
+              <span className="es-name">{PLANET_DISPLAY[p.name]}</span>
+              <span className="es-lon">
+                <Longitude lon={p.lon} advanced={advanced} />
+              </span>
+            </div>
+          </li>
+        );
+        // Advanced view: one planet per row across labelled coordinate columns.
+        // Geocentric columns come straight off the body; RA/Azimuth/Altitude come
+        // from advancedCoords (computed for the relocated observer).
+        const renderAdvRow = (p: EclipticPosition) => {
+          const hc = advancedCoords.get(p.name);
+          const decCls = p.dec !== undefined ? decClass(p.dec) : '';
+          return (
+            <tr key={p.name}>
+              <td className="es-adv-point">
+                <span className="es-glyph" style={{ color: PLANET_COLORS[p.name] }}>
+                  <PlanetGlyph planet={p.name} size={13} />
+                </span>
+                <span className="es-name">{PLANET_DISPLAY[p.name]}</span>
+                {p.stationary ? (
+                  <span className="es-station" title="Stationary">S</span>
+                ) : p.retrograde ? (
+                  <span className="es-rx" title="Retrograde">℞</span>
+                ) : null}
+              </td>
+              <td className="es-adv-num es-adv-lon">
+                <SignLon lon={p.lon} />
+              </td>
+              <td className="es-adv-num">
+                {p.speed !== undefined ? fmtDM(p.speed, true) : '—'}
+              </td>
+              <td className="es-adv-num">
+                {p.lat !== undefined ? fmtDM(p.lat * RAD2DEG, true) : '—'}
+              </td>
+              <td className="es-adv-num">{hc ? fmtDM(hc.ra * RAD2DEG) : '—'}</td>
+              <td
+                className={`es-adv-num ${decCls}`}
+                title={
+                  decCls === 'es-dec-oob'
+                    ? 'Out of bounds: beyond the Sun’s 23°26′ declination'
+                    : undefined
+                }
+              >
+                {p.dec !== undefined ? fmtDM(p.dec * RAD2DEG, true) : '—'}
+              </td>
+              <td className="es-adv-num">{hc ? fmtDM(hc.az * RAD2DEG) : '—'}</td>
+              <td className="es-adv-num">
+                {hc ? fmtDM(hc.alt * RAD2DEG, true) : '—'}
+              </td>
+            </tr>
+          );
+        };
+        return (
+          <section className="es-section es-section-details">
+            <div className="es-planets-col">
+              {shownPlanets.length > 0 && (
+                <>
+                  <h3>Planets</h3>
+                  {advanced ? (
+                    <div className="es-adv-scroll">
+                      <table className="es-adv-table">
+                        <thead>
+                          <tr>
+                            <th className="es-adv-point">Point</th>
+                            <th className="es-adv-num">Longitude</th>
+                            <th className="es-adv-num">Speed</th>
+                            <th className="es-adv-num">Latitude</th>
+                            <th className="es-adv-num">Rt.Asc.</th>
+                            <th className="es-adv-num">Decl.</th>
+                            <th className="es-adv-num">Azi(0°N)</th>
+                            <th className="es-adv-num">Alti.</th>
+                          </tr>
+                        </thead>
+                        <tbody>{shownPlanets.map(renderAdvRow)}</tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="es-planet-cols">
+                      <ul className="es-planet-list">{leftCol.map(renderRow)}</ul>
+                      {rightCol.length > 0 && (
+                        <ul className="es-planet-list">{rightCol.map(renderRow)}</ul>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+              {/* The chart angles get the same treatment as the planets —
+                  acronym, name + longitude, two per row (Mc/Ic, As/Ds) — gated
+                  by the line-type filter. */}
+              {shownAngles.length > 0 && (() => {
+                const aLeft = shownAngles.filter((_, i) => i % 2 === 0);
+                const aRight = shownAngles.filter((_, i) => i % 2 === 1);
+                const renderAngle = ({ code, name, lon, color }: (typeof shownAngles)[number]) => (
+                  <li key={code} className={advanced ? 'advanced' : ''}>
+                    <div className="es-row-main">
+                      <span className="es-glyph es-angle-code" style={{ color }}>
+                        {code}
+                      </span>
+                      <span className="es-name">{name}</span>
+                      <span className="es-lon">
+                        <Longitude lon={lon} advanced={advanced} />
+                      </span>
+                    </div>
+                  </li>
+                );
+                return (
+                  <>
+                    <h3 className="es-angles-h3">Angles</h3>
+                    <div className="es-planet-cols">
+                      <ul className="es-planet-list">{aLeft.map(renderAngle)}</ul>
+                      {aRight.length > 0 && (
+                        <ul className="es-planet-list">{aRight.map(renderAngle)}</ul>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </section>
+        );
+      })()}
 
       {angles && advanced && (() => {
         const aspects = computeAspects(shownPlanets)

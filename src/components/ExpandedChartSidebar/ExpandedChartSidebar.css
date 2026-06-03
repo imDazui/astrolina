@@ -32,6 +32,11 @@
   border-top: 1px solid rgba(var(--tint), 0.06);
 }
 
+/* No divider above the wheel — it sits directly under the header block. */
+.es-section + .es-section-wheel {
+  border-top: none;
+}
+
 /* --- Section 1: header --- */
 
 .es-section-header {
@@ -88,9 +93,33 @@
 
 .es-meta {
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
   font-size: 12px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* Date + time, with the UTC offset (and a DST-uncertain ⚠ if needed) beside it. */
+.es-meta-when {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.es-meta-tz {
+  color: var(--text-faint);
+}
+
+.es-meta-warn {
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.es-meta-where {
+  color: var(--text-muted);
 }
 
 /* Plain line-style pin (replaces the 📌 emoji) — inherits the row's state color. */
@@ -160,39 +189,6 @@
   color: var(--text);
 }
 
-/* --- Angles dropdown (header) — mirrors CoordReadout's collapsible --- */
-
-.es-angles {
-  margin-top: 8px;
-}
-
-.es-angles-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  color: var(--text-faint);
-  font: inherit;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color 0.12s;
-}
-
-.es-angles-toggle:hover {
-  color: var(--text-strong);
-}
-
-.es-angles-chevron {
-  font-size: 11px;
-  line-height: 1;
-  display: inline-block;
-  transform: scale(1.3);
-}
-
 /* --- Section 2: planets + angles --- */
 
 .es-section-details {
@@ -208,15 +204,23 @@
   color: var(--text-muted);
 }
 
-.es-planet-list,
-.es-angle-list {
+/* "Angles" sits under the planet list — a hairline + breathing room separate the
+   two groups (only spaced when planets precede it). */
+.es-planet-cols + .es-angles-h3 {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(var(--tint), 0.06);
+}
+
+.es-planet-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-/* Two explicit columns: Sun→Neptune on the left; Pluto then the minor
-   bodies on the right. Manual split, so it holds regardless of list height. */
+/* Two explicit columns, filled row-by-row from the luminary-first order so each
+   row pairs neighbours: Moon/Sun, Mercury/Venus, Mars/Jupiter, … (and Mc/Ic,
+   As/Ds for the angles). Manual split, so it holds regardless of list height. */
 .es-planet-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -239,13 +243,15 @@
   gap: 6px;
 }
 
-.es-row-extra {
-  margin-top: 1px;
-  padding-left: 22px;
-  font-size: 9px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-  letter-spacing: 0.02em;
+/* Declination, colored by the out-of-bounds line (the Sun's 23°26' max): past
+   it reads pink (the notable case); within it reads a darker pink. */
+.es-dec-oob {
+  color: #ff8ad1;
+  font-weight: 600;
+}
+
+.es-dec-in {
+  color: #b5638b;
 }
 
 .es-rx {
@@ -259,6 +265,57 @@
   margin-left: 4px;
   color: #c79a17;
   font-weight: 600;
+}
+
+/* --- Advanced planet table: one body per row, labelled coordinate columns ---
+   No visible column rules ("invisible lines"); a hairline under the header plus
+   tabular figures carry the alignment. Scrolls sideways if the panel is too
+   narrow to fit all eight columns. */
+.es-adv-scroll {
+  overflow-x: auto;
+}
+
+.es-adv-table {
+  /* Shrink-wrap to content so the numeric columns stay snug (a full-width table
+     would scatter them with big gaps); .es-adv-scroll handles narrow panels. */
+  width: auto;
+  border-collapse: collapse;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+
+.es-adv-table th {
+  padding: 0 0 5px;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(var(--tint), 0.1);
+}
+
+.es-adv-table td {
+  padding: 3px 0;
+  white-space: nowrap;
+}
+
+/* Column spacing without vertical rules: pad the left of every cell past the first. */
+.es-adv-table th + th,
+.es-adv-table td + td {
+  padding-left: 14px;
+}
+
+.es-adv-num {
+  text-align: right;
+}
+
+.es-adv-table td.es-adv-point {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
 }
 
 /* The expanded sidebar shows the full birth line in .es-meta, so suppress the
@@ -335,30 +392,7 @@
   background: rgba(var(--accent-rgb), 0.7);
 }
 
-/* Angles list inside the header dropdown — the same row treatment as the planet
-   list (colored code marker + name + longitude), two per row to save space:
-   MC/IC on top, As/Ds below. */
-.es-angle-list {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 14px;
-  margin-top: 6px;
-}
-
-.es-angle-list li {
-  display: flex;
-  flex-direction: column;
-  padding: 3px 0;
-  font-size: 11px;
-  border-bottom: 1px solid rgba(var(--tint), 0.04);
-}
-
 .es-planet-list li:last-child {
-  border-bottom: none;
-}
-
-/* The 2-up grid's last row is its final two cells (As / Ds). */
-.es-angle-list li:nth-last-child(-n + 2) {
   border-bottom: none;
 }
 
@@ -374,6 +408,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: 16px;
   line-height: 1;
   color: var(--text);
 }

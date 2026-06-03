@@ -141,7 +141,7 @@ export function ChartManager({
         aria-label="Charts"
       >
         <header className="cm-header">
-          <h2>Charts</h2>
+          <h2>Birth charts</h2>
           <button
             type="button"
             className="cm-close"

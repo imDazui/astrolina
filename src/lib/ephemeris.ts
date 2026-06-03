@@ -597,6 +597,48 @@ export function toEclipticPositions(
   }));
 }
 
+// Equatorial RA + horizontal (azimuth/altitude) coordinates for each body, as
+// seen from one observer location at the chart's instant. RA/dec are geocentric
+// (same everywhere); azimuth (from north, clockwise) and altitude depend on the
+// observer's latitude and local sidereal time. Feeds the expanded sidebar's
+// Advanced planet table. Pass gmst = gmstRadians(jd), eps = obliquity(jd).
+export interface HorizontalCoords {
+  ra: number;   // right ascension, radians (0..2π)
+  az: number;   // azimuth from north, radians (0 = N, clockwise)
+  alt: number;  // altitude above the horizon, radians (negative = below)
+}
+
+export function getHorizontalCoords(
+  ecliptic: EclipticPosition[],
+  gmst: number,
+  eps: number,
+  obsLatDeg: number,
+  obsLngDeg: number,
+): Map<PlanetName, HorizontalCoords> {
+  const lst = norm2pi(gmst + obsLngDeg * DEG2RAD);
+  const phi = obsLatDeg * DEG2RAD;
+  const sinPhi = Math.sin(phi);
+  const cosPhi = Math.cos(phi);
+  const out = new Map<PlanetName, HorizontalCoords>();
+  for (const p of ecliptic) {
+    const { ra, dec } = eclipticToRaDec(p.lon, p.lat ?? 0, eps);
+    const H = lst - ra; // local hour angle
+    const alt = Math.asin(
+      sinPhi * Math.sin(dec) + cosPhi * Math.cos(dec) * Math.cos(H),
+    );
+    // Azimuth measured from north, increasing clockwise (matches the local-space
+    // bearing in localSpace.ts).
+    const az = norm2pi(
+      Math.atan2(
+        -Math.sin(H),
+        Math.tan(dec) * cosPhi - Math.cos(H) * sinPhi,
+      ),
+    );
+    out.set(p.name, { ra, az, alt });
+  }
+  return out;
+}
+
 // House-division systems offered in the wheel. The four angles (ASC/MC/DSC/IC)
 // are identical across systems; only the intermediate cusps differ. All are
 // computed natively by Swiss Ephemeris.

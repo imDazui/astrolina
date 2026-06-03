@@ -307,6 +307,11 @@ interface WheelSvgProps {
   overlayPlanets?: EclipticPosition[] | null;
   visibleAspects?: Set<AspectCategory>;
   /**
+   * Which of the four angle labels (As/Ds/Mc/Ic) to draw, mirroring the Map
+   * Filter's line-type toggles. Omitted → all four (the minimap shows the lot).
+   */
+  visibleAngles?: Set<'As' | 'Ds' | 'Mc' | 'Ic'>;
+  /**
    * Enable novice hover hints: a responsive scale on the planet discs + rim
    * signs, the four angle labels (As/Ds/Mc/Ic), and a floating tag naming each
    * one. Opt-in so the minimap stays static — only the expanded sidebar sets it.
@@ -322,6 +327,7 @@ export function WheelSvg({
   advanced = false,
   overlayPlanets,
   visibleAspects,
+  visibleAngles,
   interactive = false,
 }: WheelSvgProps) {
   // Hovered hint (interactive mode only). Hooks run unconditionally; when the
@@ -1057,6 +1063,9 @@ export function WheelSvg({
       {interactive &&
         detailed &&
         ANGLE_HINTS.map(({ key, title, sub }) => {
+          // Honour the Map Filter's line-type toggles: hide an angle's label
+          // when its line is switched off (undefined set → show all four).
+          if (visibleAngles && !visibleAngles.has(key)) return null;
           const lon =
             key === 'As'
               ? angles.asc

@@ -24,6 +24,7 @@ import {
   birthDataToJD,
   eclipticLonOfRA,
   getEclipticPositions,
+  getHorizontalCoords,
   getPlanetPositions,
   gmstRadians,
   obliquity,
@@ -728,6 +729,15 @@ export default function App() {
     [jd, activePoint, current, birthAngles, houseSystem],
   );
 
+  // Per-body RA + azimuth/altitude for the Advanced planet table, computed for
+  // the same observer location as the relocated angles (active point, else natal).
+  const advancedCoords = useMemo(() => {
+    // `Map` is the MapLibre component here, so lean on the helper (empty ecliptic
+    // → empty result) rather than a `new Map()` literal for the no-chart case.
+    const obs = activePoint ?? current?.birthplace;
+    return getHorizontalCoords(obs ? ecliptic : [], gmst, eps, obs?.lat ?? 0, obs?.lng ?? 0);
+  }, [activePoint, current, ecliptic, gmst, eps]);
+
   const togglePlanet = useCallback((p: PlanetName) => {
     setVisiblePlanets((prev) => {
       const next = new Set(prev);
@@ -1022,6 +1032,8 @@ export default function App() {
           overlayPlanets={overlayEcliptic}
           overlayLabel={overlayLayer?.labelFull ?? null}
           visiblePlanets={visiblePlanets}
+          visibleLineTypes={visibleLineTypes}
+          advancedCoords={advancedCoords}
           onClose={() => setWheelExpanded(false)}
           onResizingChange={onResizing}
           onSelectChart={selectChart}
