@@ -286,10 +286,10 @@ export function TopNav({
     <div className={`topnav-stack ${chartExpanded ? 'chart-expanded' : ''}`}>
       <div className="timeline-hud topnav" data-mapstate={mapState}>
         <div className="topnav-row">
-          {/* Left: client name + add-person (the chart switcher), then the chart-
-              sidebar "Bar" toggle. Both collapse away while the expanded sidebar is
-              open — it has its own close button, and on small screens this side sits
-              under the panel anyway — leaving the bar flush with the centre pill. */}
+          {/* Left: client name (the chart switcher) then the sidebar toggle, pinned
+              flush-right against the centre pill. While the expanded sidebar is open
+              the name drops out (the panel already shows it), but the toggle stays as
+              a close button so the sidebar is dismissable from the bar too. */}
           <div className="topnav-left">
             <div className="topnav-chart">
               <ChartSwitcher
@@ -302,34 +302,33 @@ export function TopNav({
                 compact
               />
             </div>
-            {!chartExpanded && (
-              <TipButton
-                type="button"
-                className="topnav-expand"
-                onClick={onToggleExpand}
-                disabled={!current}
-                aria-label="Show chart sidebar"
-                tip="Show sidebar chart"
-                hotkey="B"
+            <TipButton
+              type="button"
+              className={`topnav-expand ${chartExpanded ? 'active' : ''}`}
+              onClick={onToggleExpand}
+              disabled={!current}
+              aria-label={chartExpanded ? 'Hide chart sidebar' : 'Show chart sidebar'}
+              aria-pressed={chartExpanded}
+              tip={chartExpanded ? 'Hide sidebar chart' : 'Show sidebar chart'}
+              hotkey="B"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
               >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <path d="M9 3v18" />
-                  {/* Chevron points out of the panel — the open-sidebar convention. */}
-                  <path d="m14 9 3 3-3 3" />
-                </svg>
-              </TipButton>
-            )}
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M9 3v18" />
+                {/* Chevron points out to open the panel, in to close it. */}
+                <path d={chartExpanded ? 'm16 9-3 3 3 3' : 'm14 9 3 3-3 3'} />
+              </svg>
+            </TipButton>
           </div>
 
           {/* Center: the fixed-width status pill (reserves the widest "NATAL PIN"
@@ -411,7 +410,7 @@ export function TopNav({
                   <RadioItem
                     label="None"
                     hint="Just the natal chart, with no time technique applied."
-                    hotkey="O"
+                    hotkey="N"
                     checked={overlayMode === 'off'}
                     onSelect={() => {
                       setOverlayMode('off');

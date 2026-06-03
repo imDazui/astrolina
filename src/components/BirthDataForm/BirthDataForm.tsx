@@ -116,9 +116,9 @@ export function BirthDataForm({
   const [minute, setMinute] = useState(initial?.minute ?? 0);
 
   const dayMax = daysInMonth(year, month);
-  useEffect(() => {
-    if (day > dayMax) setDay(dayMax);
-  }, [day, dayMax]);
+  // Clamp the day when a month/year change shrinks the month (e.g. Jan 31 → Feb).
+  // Done during render so an out-of-range day never reaches a paint.
+  if (day > dayMax) setDay(dayMax);
 
   const [locationQuery, setLocationQuery] = useState(
     initial?.birthplace.label ?? '',
@@ -145,6 +145,9 @@ export function BirthDataForm({
   useEffect(() => {
     if (selectedPlace && locationQuery === selectedPlace.label) return;
     if (locationQuery.trim().length < 2) {
+      // Clearing stale suggestions belongs in this debounce/abort effect (it owns
+      // the async search lifecycle); it can't be derived during render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSuggestions([]);
       return;
     }

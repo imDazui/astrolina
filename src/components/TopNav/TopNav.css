@@ -139,32 +139,43 @@
   padding: 7px 28px;
 }
 
-/* Left zone: the chart switcher (name) then the icon-only sidebar toggle, flush left. */
+/* Left zone: a [flexible name area | sidebar toggle] grid that fills the left track.
+   The toggle is the right boundary (flush against the centre status pill); the
+   name/birth is centred in the space to its left, so it reads balanced rather than
+   crammed against the toggle. */
 .topnav-left {
-  justify-self: start;
+  justify-self: stretch;
   min-width: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
   gap: 12px;
 }
-/* The name is capped so a long one can't crowd the bar. NOTE: no overflow:hidden
-   here — it would clip the switcher's drop-down menu (which opens below the bar). */
+/* The name sits centred in its sub-track, capped so a long one can't crowd the bar.
+   NOTE: no overflow:hidden here — it would clip the switcher's drop-down menu (which
+   opens below the bar). */
 .topnav-chart {
+  justify-self: center;
   min-width: 0;
   max-width: 240px;
   display: flex;
   align-items: center;
 }
 
-/* With the sidebar open, the whole left zone (the name + the now-hidden "Bar" toggle)
-   drops out and the row becomes a compact two-column grid, so the centre pill sits
-   flush against the bar's left edge. The sidebar carries its own close button, and
-   on small screens this side is under the panel anyway. */
-.topnav-stack.chart-expanded .topnav-left {
+/* With the sidebar open it already shows the name + DOB in its own header, so the
+   bar's chart switcher drops out. The now-empty name sub-track collapses and the left
+   column shrinks to just the toggle, closing the gap so the bar stays compact and
+   clears room for the sidebar to slide further out. The toggle stays — now a close
+   button — so the panel is dismissable from the bar too. */
+.topnav-stack.chart-expanded .topnav-chart {
   display: none;
 }
+.topnav-stack.chart-expanded .topnav-left {
+  justify-self: start;
+  grid-template-columns: auto;
+}
 .topnav-stack.chart-expanded .topnav-row {
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto auto 1fr;
 }
 
 .topnav-center {

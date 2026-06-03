@@ -274,8 +274,10 @@ export default function App() {
   // while typing in a field, and Space is left alone when a button/link is focused
   // so it keeps its native activation behavior there.
   useEffect(() => {
+    // 'o' cycles through the overlays only (never lands on None); 'n' clears to None.
+    // From None, indexOf is -1 so the first 'o' lands on the first overlay (transits).
     const overlayCycle: OverlayMode[] = [
-      'off', 'transits', 'progressed', 'solar-arc', 'primary-directions', 'synastry',
+      'transits', 'progressed', 'solar-arc', 'primary-directions', 'synastry',
     ];
     const isTypingField = (el: HTMLElement | null) =>
       !!el &&
@@ -341,6 +343,7 @@ export default function App() {
               overlayCycle[(overlayCycle.indexOf(mode) + 1) % overlayCycle.length],
           );
           break;
+        case 'n': setOverlayMode('off'); break;
         case 't': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
         case 'a': setCreating(true); break;
         case 'b': if (current) setWheelExpanded((v) => !v); break;
@@ -407,9 +410,9 @@ export default function App() {
     overlayMode === 'progressed' ||
     overlayMode === 'solar-arc' ||
     overlayMode === 'primary-directions';
-  useEffect(() => {
-    if (!isTimeMode && playing) setPlaying(false);
-  }, [isTimeMode, playing]);
+  // Adjusted during render (not in an effect) so we never paint a frame that's
+  // still "playing" after the overlay has left a time mode.
+  if (!isTimeMode && playing) setPlaying(false);
 
   useEffect(() => {
     saveCharts(charts);
@@ -646,6 +649,9 @@ export default function App() {
     const root = document.documentElement;
     root.setAttribute('data-mapstate', coordSource);
     const resolved = getComputedStyle(root).getPropertyValue('--map-accent').trim();
+    // Reading the resolved CSS variable needs the committed DOM, so this color
+    // can't be derived during render — the effect + setState is the correct tool.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (resolved) setMeasureColor(resolved);
   }, [coordSource, theme]);
 

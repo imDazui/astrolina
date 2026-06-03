@@ -262,9 +262,12 @@ export function ExpandedChartSidebar({
   // flash the pane's horizontal scrollbar. We suppress that overflow while
   // dragging (see .expanded-sidebar.dragging .es-wheel-pane).
   const [dragging, setDragging] = useState(false);
-  // Latest callback, read inside the once-bound mouseup handler below.
+  // Latest callback, read inside the once-bound mouseup handler below. Refreshed
+  // after each commit (not during render) so the handler sees the current prop.
   const onResizingChangeRef = useRef(onResizingChange);
-  onResizingChangeRef.current = onResizingChange;
+  useEffect(() => {
+    onResizingChangeRef.current = onResizingChange;
+  });
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {

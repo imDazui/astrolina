@@ -118,7 +118,9 @@ function fmtTick(ms: number, unit: TimeUnit): string {
 }
 
 // datetime-local <-> epoch ms, interpreting the control's value as UTC (to match
-// buildOverlay, which treats the target moment as UTC).
+// buildOverlay, which treats the target moment as UTC). The transit/progressed
+// moment is entered and shown in UTC so it lines up 1:1 with the desktop tools when
+// they're set to UT/GMT — no zone conversion to get wrong.
 function toDatetimeLocalUTC(ms: number): string {
   const d = new Date(ms);
   return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
@@ -245,12 +247,15 @@ export function TimelineHud({
   overlayMeasure,
 }: TimelineHudProps) {
   const current = charts.find((c) => c.id === currentId) ?? null;
-  const birthMs = current ? birthDateUTCms(current) : Date.now();
+  // Read "now" once at mount: calling Date.now() during render makes render
+  // impure, and a ±50-year slider doesn't care about sub-second drift.
+  const [nowMs] = useState(() => Date.now());
+  const birthMs = current ? birthDateUTCms(current) : nowMs;
   const sliderMin =
-    overlayMode === 'transits' ? Date.now() - 50 * YEAR_MS : birthMs;
+    overlayMode === 'transits' ? nowMs - 50 * YEAR_MS : birthMs;
   const sliderMax =
     overlayMode === 'transits'
-      ? Date.now() + 50 * YEAR_MS
+      ? nowMs + 50 * YEAR_MS
       : birthMs + 100 * YEAR_MS;
 
   const clamp = (ms: number) => Math.min(Math.max(ms, sliderMin), sliderMax);
@@ -261,9 +266,14 @@ export function TimelineHud({
   // amount — the ruler still draws its fixed mini-notches.
   const stepBase = STEP_UNIT[stepUnit];
   const [stepCount, setStepCount] = useState(stepBase.count);
-  useEffect(() => {
-    setStepCount(STEP_UNIT[stepUnit].count);
-  }, [stepUnit]);
+  // Reset the override to the scale's default when the unit changes. Tracked
+  // during render (comparing the previous unit) rather than in an effect, so
+  // there's no extra commit with a stale count.
+  const [countUnit, setCountUnit] = useState(stepUnit);
+  if (countUnit !== stepUnit) {
+    setCountUnit(stepUnit);
+    setStepCount(stepBase.count);
+  }
   const stepMs =
     Number.isFinite(stepCount) && stepCount > 0
       ? stepCount * stepBase.baseMs
@@ -383,7 +393,9 @@ export function TimelineHud({
               if (v) setTargetDate(fromDatetimeLocalUTC(v));
             }}
           />
-          <span className="thud-utc">UTC</span>
+          <span className="thud-utc" title="Transit / progressed moment, in UTC">
+            UTC
+          </span>
         </span>
 
         <label className="thud-mode thud-unit">

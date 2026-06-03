@@ -1,3 +1,8 @@
+/* This module co-locates a few pure helpers (aspect math, longitude formatting,
+   sign labels) with the WheelSvg component. react-refresh would rather they live
+   in their own file, but that only affects dev hot-reload (a full reload instead
+   of a hot-swap when editing this file), and the helpers belong with the wheel. */
+/* eslint-disable react-refresh/only-export-components */
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import {
   PLANET_COLORS,

@@ -824,9 +824,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   }), []);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const onClickRef = useRef(onClick);
-  onClickRef.current = onClick;
   const dataRef = useRef<MapData>({ lines, parans, localSpace, localSpaceOrigin, zenith, ecliptic, overlay });
-  dataRef.current = { lines, parans, localSpace, localSpaceOrigin, zenith, ecliptic, overlay };
   const themeRef = useRef(theme);
   // Current projection mode, read inside the once-bound load/style.load handlers
   // (setStyle resets projection, so it must be re-applied after each style load).
@@ -834,10 +832,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // Read inside the (once-bound) load/style.load handlers so they always paint
   // the measure layers with the latest map-state accent.
   const measureColorRef = useRef(measureColor);
-  measureColorRef.current = measureColor;
   // Current detail toggles, read inside the (once-bound) load/style.load handlers.
   const detailRef = useRef({ showRoads, showRivers, showLabels });
-  detailRef.current = { showRoads, showRivers, showLabels };
+  // The map's load/style.load/click handlers are bound once and never rebound;
+  // refresh these refs after each commit (not during render) so those async
+  // handlers always read the latest props.
+  useEffect(() => {
+    onClickRef.current = onClick;
+    dataRef.current = { lines, parans, localSpace, localSpaceOrigin, zenith, ecliptic, overlay };
+    measureColorRef.current = measureColor;
+    detailRef.current = { showRoads, showRivers, showLabels };
+  });
 
   // Edge badges: glyph + angle code per ACG line, anchored where the line exits
   // the viewport. Recomputed (rAF-throttled) on every map move + when data changes.
