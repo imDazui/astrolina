@@ -1,4 +1,4 @@
-# AstroLina
+# AstroLina Cartography
 
 <p align="center">
   <a href="https://astrolina.org">
@@ -179,3 +179,7 @@ to relicense the project in the future).
   calculation conventions (ephemeris, lines, parans, house cusps, geodetic,
   directions) are in
   [`docs/calculation-methods.md`](docs/calculation-methods.md).
+
+## Contact
+
+For licensing or general inquiries please email [contact@astrolina.org](mailto:contact@astrolina.org).
