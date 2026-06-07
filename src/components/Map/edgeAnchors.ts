@@ -24,6 +24,10 @@ export interface LineBadge {
   lineType: LineType;
   /** Overlay tag (e.g. "Tr") for overlay lines; empty for natal. */
   prefix: string;
+  /** This badge's line in screen space (its longest visible run, projected). Lets the
+   *  placement step slide the label ALONG the line to keep it ON the (curved) line
+   *  instead of detaching it when dodging the screen edge / a HUD panel. */
+  line?: { x: number; y: number }[];
 }
 
 interface Pt {
@@ -77,6 +81,18 @@ function clipSeg(a: Pt, b: Pt, r: Rect): { t0: number; t1: number } | null {
   return { t0, t1 };
 }
 
+// Re-wrap a longitude (possibly UNWRAPPED past ±180 — horizon curves run continuous
+// across the antimeridian, see dateline.ts) into the ±180 band centred on the camera's
+// CURRENT world copy. map.project() in 2D Mercator is a pure affine map of the RAW
+// longitude (mercatorXfromLng = (180+lng)/360, no wrap), so feeding it the stored coords
+// projects them into whatever copy they were authored in — off-screen when the camera
+// sits in a different copy. Re-wrapping first lands every vertex on the copy MapLibre
+// actually draws. On the globe the projection is periodic in longitude, so this is a
+// no-op there.
+function lngToVisibleCopy(lng: number, centerLng: number): number {
+  return lng - 360 * Math.round((lng - centerLng) / 360);
+}
+
 // The on-screen portion of segment a→b, clipped to the (inset) viewport: its `near`
 // end (closer to a) and `far` end (closer to b), or null if the segment misses the
 // screen entirely. Lets a radial LS label stay visible by anchoring to whichever end
@@ -98,38 +114,28 @@ export function clipSegmentToView(
   return { near: at(c.t0), far: at(c.t1) };
 }
 
-// The two screen points farthest apart in a small set — the visual "ends" of a
-// line's on-screen presence once its fragments are pooled together.
-function farthestPair(pts: Pt[]): Pt[] {
-  if (pts.length <= 2) return pts;
-  let best: Pt[] = [pts[0], pts[1]];
-  let bestD = -1;
-  for (let i = 0; i < pts.length; i++) {
-    for (let j = i + 1; j < pts.length; j++) {
-      const dx = pts[i].x - pts[j].x;
-      const dy = pts[i].y - pts[j].y;
-      const d = dx * dx + dy * dy;
-      if (d > bestD) {
-        bestD = d;
-        best = [pts[i], pts[j]];
-      }
-    }
-  }
-  return best;
-}
-
 interface LineGroup {
   color: string;
   planet: PlanetName;
   lineType: LineType;
   prefix: string;
-  ends: Pt[];
+  // The two ends (or single end) of the LONGEST on-screen run seen so far, plus that
+  // run's squared end-to-end pixel extent and its full projected polyline. We label the
+  // most-visible contiguous run rather than the farthest-apart pair across all runs, so
+  // the badge pair always belongs to ONE visible segment and never mixes a mid-section
+  // end with an apex/nadir end from a different fragment. bestLine is kept so the
+  // placement step can slide a label along the line to a clear, on-screen spot.
+  bestEnds: Pt[];
+  bestExtent: number;
+  bestLine: Pt[];
 }
 
-// Pool one contiguous, fully-visible run's on-screen ends into its line group: the
-// leading vertex if it's already inside the rect, each viewport entry/exit crossing
-// (Liang–Barsky), and the trailing vertex if inside — i.e. the ends of the part of
-// this run that's actually on screen.
+// Find one contiguous, on-screen run's ends — the leading vertex if it's already inside
+// the rect, each viewport entry/exit crossing (Liang–Barsky), and the trailing vertex if
+// inside — then keep them as the group's labelled ends IF this run spans more on-screen
+// than any earlier run for the same line. Labelling the longest visible run (rather than
+// pooling every run and taking the global farthest pair) keeps the badge pair on a single
+// visible segment.
 function addRunEnds(
   pts: Pt[],
   rect: Rect,
@@ -158,18 +164,28 @@ function addRunEnds(
   if (anchors.length === 0) return;
   let g = groups.get(key);
   if (!g) {
-    g = { color, planet, lineType, prefix, ends: [] };
+    g = { color, planet, lineType, prefix, bestEnds: [], bestExtent: -1, bestLine: [] };
     groups.set(key, g);
   }
-  g.ends.push(anchors[0]);
-  if (anchors.length > 1) g.ends.push(anchors[anchors.length - 1]);
+  const ends =
+    anchors.length > 1 ? [anchors[0], anchors[anchors.length - 1]] : [anchors[0]];
+  const extent =
+    ends.length > 1
+      ? (ends[0].x - ends[1].x) ** 2 + (ends[0].y - ends[1].y) ** 2
+      : 0;
+  if (extent > g.bestExtent) {
+    g.bestExtent = extent;
+    g.bestEnds = ends;
+    g.bestLine = pts;
+  }
 }
 
-// Up to two badges per LOGICAL line: the two ends of its on-screen portion. A
-// horizon curve that crosses the dateline arrives split into several features
-// sharing planet+lineType — we pool their on-screen ends and label the overall
-// extremes, so one line reads as one pair of labels rather than a pair per
-// fragment (which matters now badges show at every zoom, world view included).
+// Up to two badges per LOGICAL line: the two ends of its longest on-screen run. Each
+// vertex is re-wrapped to the camera's current world copy before projection (stored
+// ASC/DSC longitudes run past ±180 across the antimeridian, and map.project does NOT
+// wrap), so the projected polyline coincides with the basemap copy MapLibre draws and a
+// label tracks the visible arc instead of clamping to the curve's apex/nadir. One label
+// pair per line at every zoom, world view included.
 export function computeLineBadges(
   map: MlMap,
   features: Feature<LineString, LineProps>[],
@@ -183,6 +199,18 @@ export function computeLineBadges(
   if (rect.maxX <= rect.minX || rect.maxY <= rect.minY) return [];
 
   const groups = new Map<string, LineGroup>();
+
+  // map.project() is a pure affine map of the RAW longitude (it does not wrap to the
+  // visible world copy), so re-wrap every vertex toward the camera centre before
+  // projecting. worldPx is the on-screen pixel width of 360° — used to break a run
+  // wherever a re-wrapped segment would jump a whole world (the lone seam at
+  // centerLng±180). On the globe there are no world copies (the projection is periodic
+  // and occlusion handles the far side), so the guard is disabled (worldPx = ∞).
+  const centerLng = map.getCenter().lng;
+  const isFlat = map.getProjection()?.type !== 'globe';
+  const worldPx = isFlat
+    ? Math.abs(map.project([centerLng + 360, 0]).x - map.project([centerLng, 0]).x)
+    : Infinity;
 
   features.forEach((f) => {
     const coords = f.geometry.coordinates;
@@ -198,24 +226,29 @@ export function computeLineBadges(
     // Split the projected polyline into contiguous runs of VISIBLE vertices. On a
     // globe, occluded / behind-camera points project to bogus pixels, so we break
     // the run at any such vertex rather than connecting a front point to a far-side
-    // one — each run pools its own on-screen ends, so a label hugs the visible
-    // terminator and never anchors to the back of the globe. In 2D nothing is
-    // occluded and every point projects finitely ⇒ one run ⇒ identical to before.
+    // one, so a label hugs the visible terminator and never anchors to the back of the
+    // globe. In 2D nothing is occluded; there the run breaks only at the world seam
+    // (the worldPx jump guard below).
     let run: Pt[] = [];
     const flushRun = () => {
       addRunEnds(run, rect, groups, key, color, planet, lineType, prefix);
       run = [];
     };
     const pushCoord = (c: number[]) => {
-      if (isOccluded(map, c[0], c[1])) {
+      const lng = lngToVisibleCopy(c[0], centerLng);
+      if (isOccluded(map, lng, c[1])) {
         flushRun();
         return;
       }
-      const p = map.project([c[0], c[1]]);
+      const p = map.project([lng, c[1]]);
       if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
         flushRun();
         return;
       }
+      // A re-wrapped segment that jumps a whole world straddles the seam at centerLng±180:
+      // break the run there so clipSeg never sees a spurious full-width segment.
+      const prev = run.length ? run[run.length - 1] : null;
+      if (prev && Math.abs(p.x - prev.x) > worldPx / 2) flushRun();
       run.push({ x: p.x, y: p.y });
     };
 
@@ -227,7 +260,7 @@ export function computeLineBadges(
   const out: LineBadge[] = [];
   let gi = 0;
   groups.forEach((g) => {
-    farthestPair(g.ends).forEach((pt, ei) => {
+    g.bestEnds.forEach((pt, ei) => {
       out.push({
         key: `${isOverlay ? 'ov' : 'n'}-${gi}-${ei}`,
         x: pt.x,
@@ -236,6 +269,7 @@ export function computeLineBadges(
         planet: g.planet,
         lineType: g.lineType,
         prefix: g.prefix,
+        line: g.bestLine,
       });
     });
     gi++;
@@ -244,10 +278,17 @@ export function computeLineBadges(
   return out;
 }
 
-// Keep each badge clear of the HUD panels by pushing it PERPENDICULAR to the edge
-// it's anchored to — past the panel's inner edge — while keeping its along-edge
-// (line-crossing) coordinate. So a top-edge label slides DOWN to hug the bottom of
-// the top bar and tracks the line across it, instead of snapping to the bar's end.
+// Place each line badge ON its line, fully on screen and clear of the HUD panels. The
+// anchor from computeLineBadges sits where the line meets the (inset) viewport — often
+// right at the edge, or behind a panel like the bottom timeline / minimap. Rather than
+// clamp x and y independently or shove the badge PERPENDICULAR off the panel (both
+// DETACH the label from an angled/curved line, because the line has moved by the time
+// you arrive at the clamped spot), we slide ALONG the line to the nearest projected
+// point that's a valid badge spot. A label therefore always sits on its own line, so
+// it's unambiguous which line it belongs to. Straight vertical lines are unaffected
+// (sliding along a vertical line only moves y) — which is why they were never the
+// problem. If no point on the visible run is clear (the whole run hides behind panels),
+// fall back to an axis clamp so the label is at least fully on screen.
 export function dodgeBadges(
   badges: LineBadge[],
   rects: AvoidRect[],
@@ -255,11 +296,74 @@ export function dodgeBadges(
   h: number,
   inset: number,
 ): LineBadge[] {
-  if (rects.length === 0) return badges;
   const HW = 32; // generous half-width / -height estimate for a badge
   const HH = 11;
-  const GAP = 6;
+  const GAP = 6; // breathing room kept between a badge box and a panel
+  const minX = inset + HW;
+  const maxX = w - inset - HW;
+  const minY = inset + HH;
+  const maxY = h - inset - HH;
+  if (maxX <= minX || maxY <= minY) return badges; // viewport too small to place safely
+  // A badge box centred at (x,y) comes within GAP of panel r? (panel inflated by GAP, so
+  // a "clear" spot keeps a small cushion and absorbs badge-width underestimation.)
+  const onPanel = (x: number, y: number) =>
+    rects.some(
+      (r) =>
+        x + HW > r.left - GAP &&
+        x - HW < r.right + GAP &&
+        y + HH > r.top - GAP &&
+        y - HH < r.bottom + GAP,
+    );
+  // Valid spot: the whole badge box is inside the safe rect and clears every panel.
+  const ok = (x: number, y: number) =>
+    x >= minX && x <= maxX && y >= minY && y <= maxY && !onPanel(x, y);
+
   return badges.map((b) => {
+    if (ok(b.x, b.y)) return b; // already on screen, on its line, clear of panels
+    const line = b.line;
+    if (line && line.length) {
+      // Nearest point ALONG the line to the original anchor that is a valid spot — i.e.
+      // where the line emerges past the edge / panel. Walk each segment continuously
+      // (run vertices can be ~100px apart when zoomed in) so the label lands smoothly on
+      // the line rather than snapping to a coarse vertex.
+      const acc: { pt: { x: number; y: number } | null; d: number } = {
+        pt: null,
+        d: Infinity,
+      };
+      const consider = (x: number, y: number) => {
+        if (!ok(x, y)) return;
+        const dx = x - b.x;
+        const dy = y - b.y;
+        const d = dx * dx + dy * dy;
+        if (d < acc.d) {
+          acc.d = d;
+          acc.pt = { x, y };
+        }
+      };
+      for (let i = 0; i < line.length - 1; i++) {
+        const a = line[i];
+        const c = line[i + 1];
+        // Cheap reject: a segment with both endpoints off the same side of the safe rect
+        // can't contain a valid spot. Prunes the (many) fully off-screen segments.
+        if (
+          (a.x < minX && c.x < minX) ||
+          (a.x > maxX && c.x > maxX) ||
+          (a.y < minY && c.y < minY) ||
+          (a.y > maxY && c.y > maxY)
+        )
+          continue;
+        const steps = Math.max(1, Math.ceil(Math.hypot(c.x - a.x, c.y - a.y) / 8));
+        for (let s = 0; s <= steps; s++) {
+          const t = s / steps;
+          consider(a.x + (c.x - a.x) * t, a.y + (c.y - a.y) * t);
+        }
+      }
+      if (line.length === 1) consider(line[0].x, line[0].y);
+      if (acc.pt) return { ...b, x: acc.pt.x, y: acc.pt.y };
+    }
+    // No clear point on the visible run (the whole run hides behind panels): fall back to
+    // the old behaviour — push perpendicular off any overlapping panel toward the screen
+    // interior, then clamp on screen — so the label is at least visible and not buried.
     let { x, y } = b;
     const onTop = y <= inset + 1;
     const onBottom = y >= h - inset - 1;
@@ -269,16 +373,16 @@ export function dodgeBadges(
       const hit =
         x + HW > r.left && x - HW < r.right && y + HH > r.top && y - HH < r.bottom;
       if (!hit) continue;
-      // Push toward the screen interior, off the panel's inner edge. Accumulate
-      // across panels via min/max so overlapping panels are all cleared.
       if (onTop) y = Math.max(y, r.bottom + HH + GAP);
       else if (onBottom) y = Math.min(y, r.top - HH - GAP);
       else if (onLeft) x = Math.max(x, r.right + HW + GAP);
       else if (onRight) x = Math.min(x, r.left - HW - GAP);
       else y = Math.max(y, r.bottom + HH + GAP);
     }
-    x = Math.min(Math.max(x, inset + HW), w - inset - HW);
-    y = Math.min(Math.max(y, inset + HH), h - inset - HH);
-    return { ...b, x, y };
+    return {
+      ...b,
+      x: Math.min(Math.max(x, minX), maxX),
+      y: Math.min(Math.max(y, minY), maxY),
+    };
   });
 }
