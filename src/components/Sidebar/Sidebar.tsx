@@ -22,11 +22,13 @@ import type {
   AngleProgression,
   OverlayMode,
   PrimaryRate,
+  RelationshipMethod,
   TransitFrame,
 } from '../../lib/astro/timeline';
 import { THEMES, type Theme } from '../../lib/theme';
 import type { MapProjectionMode } from '../../lib/projection';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
+import { TipButton } from '../ui/HoverTip';
 import { useT, LANGUAGES } from '../../i18n';
 import type { Locale } from '../../i18n';
 import './Sidebar.css';
@@ -58,6 +60,10 @@ interface SidebarProps {
   overlayMode: OverlayMode;
   transitFrame: TransitFrame;
   setTransitFrame: (f: TransitFrame) => void;
+  synastryMethod: RelationshipMethod;
+  setSynastryMethod: (m: RelationshipMethod) => void;
+  onGenerateRelationship: () => void;
+  canGenerateRelationship: boolean;
   showTimeline: boolean;
   setShowTimeline: (v: boolean) => void;
   showOverlayZenith: boolean;
@@ -638,6 +644,10 @@ export function Sidebar({
   overlayMode,
   transitFrame,
   setTransitFrame,
+  synastryMethod,
+  setSynastryMethod,
+  onGenerateRelationship,
+  canGenerateRelationship,
   showTimeline,
   setShowTimeline,
   showOverlayZenith,
@@ -688,10 +698,8 @@ export function Sidebar({
     setOpenSection(openSection === s ? null : s);
 
   // The settings groups the active overlay exposes in its Overlay tab. Each is its
-  // own flag, and the tab is shown only when at least one is on — so an overlay
-  // with nothing to configure (Synastry today) simply gets no tab, with no
-  // per-mode special-casing. If Synastry gains a setting later, flip its flag and
-  // the tab returns on its own.
+  // own flag, and the tab is shown only when at least one is on — so an overlay with
+  // nothing to configure simply gets no tab, with no per-mode special-casing.
 
   // The bottom timeline only exists for the time-scrub overlays (not synastry), so
   // the Display ▸ Timeline toggle is shown only then.
@@ -700,17 +708,24 @@ export function Sidebar({
     overlayMode === 'progressed' ||
     overlayMode === 'solar-arc' ||
     overlayMode === 'primary-directions';
-  // Positioning (radix-relative vs the overlay moment's own sidereal time) shapes
-  // where the overlaid angle lines fall — meaningful for every overlay except
-  // Synastry, whose partner chart has no single moment to frame against.
-  const showPositioning = overlayMode !== 'off' && overlayMode !== 'synastry';
+  // Positioning (radix-relative vs the transit moment's own sidereal time) only changes
+  // the TRANSITS overlay, and only in the Celestial line system: the directed overlays
+  // (progressed / solar arc / primary directions) are natal-framed by construction, and
+  // Mundane/Geodetic lines key off zodiacal longitude with no sidereal-time reference —
+  // so the toggle would do nothing in those cases and isn't shown.
+  const showPositioning =
+    overlayMode === 'transits' && lineSystem === 'celestial';
   // The Chart Angle control is for the directed overlays only.
   const showChartAngle =
     overlayMode === 'progressed' || overlayMode === 'solar-arc';
+  // Synastry's own section: pick a relationship method and generate that derived
+  // chart. Synastry-only (the other overlays have no second chart to combine).
+  const showRelationships = overlayMode === 'synastry';
   // Show the Overlay tab only when the active overlay actually has a setting to
   // toggle; otherwise its header isn't rendered (and any saved open-state for it
   // just reads as "nothing open").
-  const showOverlayTab = isTimeMode || showPositioning || showChartAngle;
+  const showOverlayTab =
+    isTimeMode || showPositioning || showChartAngle || showRelationships;
 
   return (
     <aside className="sidebar">
@@ -1054,6 +1069,52 @@ export function Sidebar({
                       />
                     ))}
                   </ul>
+                </>
+              )}
+
+              {showRelationships && (
+                <>
+                  <h2>{t('settings.headings.relationships')}</h2>
+                  <ul className="theme-list">
+                    <HintOption
+                      selected={synastryMethod === 'davison'}
+                      onSelect={() => setSynastryMethod('davison')}
+                      label={t('settings.relationships.davison.label')}
+                      hint={t('settings.relationships.davison.hint')}
+                    />
+                    <HintOption
+                      selected={synastryMethod === 'composite'}
+                      onSelect={() => setSynastryMethod('composite')}
+                      label={t('settings.relationships.composite.label')}
+                      hint={t('settings.relationships.composite.hint')}
+                    />
+                  </ul>
+                  <TipButton
+                    type="button"
+                    className={`relationship-generate${
+                      !canGenerateRelationship || synastryMethod === 'composite'
+                        ? ' is-disabled'
+                        : ''
+                    }`}
+                    aria-disabled={
+                      !canGenerateRelationship || synastryMethod === 'composite'
+                    }
+                    onClick={() => {
+                      if (canGenerateRelationship && synastryMethod === 'davison')
+                        onGenerateRelationship();
+                    }}
+                    placement="top"
+                    tip={t('settings.relationships.generate.title')}
+                    hint={
+                      synastryMethod === 'composite'
+                        ? t('settings.relationships.generate.comingSoon')
+                        : !canGenerateRelationship
+                          ? t('settings.relationships.generate.needPartner')
+                          : t('settings.relationships.generate.hint')
+                    }
+                  >
+                    {t('settings.relationships.generate.title')}
+                  </TipButton>
                 </>
               )}
             </div>

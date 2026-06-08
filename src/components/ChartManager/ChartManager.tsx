@@ -7,11 +7,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   chartRecency,
+  chartTag,
   displayName,
+  type ChartTag,
   type StoredChart,
 } from '../../lib/chartLibrary';
 import { BirthDataFields } from '../BirthDataForm/BirthDataForm';
 import { HoverTip, TipButton } from '../ui/HoverTip';
+import { TagIcon } from '../ui/TagIcon';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
@@ -20,6 +23,13 @@ import './ChartManager.css';
 function fmtBirth(c: StoredChart, fmt: Formatters): string {
   return `${c.day} ${fmt.monthAbbr(c.month)} ${c.year}`;
 }
+
+// The tag-filter chips shown under the search box; 'all' clears the filter.
+const FILTER_CHIPS = [
+  { value: 'all', labelKey: 'chartManager.filter.all' },
+  { value: 'star', labelKey: 'chartManager.filter.starred' },
+  { value: 'space', labelKey: 'chartManager.filter.space' },
+] as const;
 
 interface ChartManagerProps {
   charts: StoredChart[];
@@ -54,6 +64,8 @@ export function ChartManager({
 }: ChartManagerProps) {
   const { t, fmt } = useT();
   const [query, setQuery] = useState('');
+  // Tag filter for the list; 'all' shows everything. Independent of the search box.
+  const [tagFilter, setTagFilter] = useState<'all' | ChartTag>('all');
   // The chart loaded in the right-hand form (null = adding a new one).
   const [editing, setEditing] = useState<StoredChart | null>(
     () => charts.find((c) => c.id === initialEditId) ?? null,
@@ -108,19 +120,27 @@ export function ChartManager({
 
   const q = query.trim().toLowerCase();
   const matches = useMemo(() => {
-    const sorted = [...charts].sort((a, b) => chartRecency(b) - chartRecency(a));
-    if (!q) return sorted;
-    return sorted.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.birthplace.label.toLowerCase().includes(q),
-    );
-  }, [charts, q]);
+    let result = [...charts].sort((a, b) => chartRecency(b) - chartRecency(a));
+    if (tagFilter !== 'all')
+      result = result.filter((c) => chartTag(c) === tagFilter);
+    if (q)
+      result = result.filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          c.birthplace.label.toLowerCase().includes(q),
+      );
+    return result;
+  }, [charts, q, tagFilter]);
 
   // Offer "Add <query>" unless the query already names an existing chart exactly.
   const exactNameExists = useMemo(
     () => charts.some((c) => c.name.trim().toLowerCase() === q),
     [charts, q],
+  );
+  // The Space filter chip appears only once at least one chart carries that (system) tag.
+  const hasSpace = useMemo(
+    () => charts.some((c) => chartTag(c) === 'space'),
+    [charts],
   );
 
   const editNew = (name: string) => {
@@ -205,10 +225,37 @@ export function ChartManager({
               )}
             </div>
 
+            <div
+              className="cm-filter-row"
+              role="group"
+              aria-label={t('chartManager.filter.label')}
+            >
+              {FILTER_CHIPS.filter(
+                (c) => c.value !== 'space' || hasSpace,
+              ).map(({ value, labelKey }) => (
+                <button
+                  key={value}
+                  type="button"
+                  className="cm-filter-chip"
+                  aria-pressed={tagFilter === value}
+                  onClick={() =>
+                    setTagFilter((prev) => (prev === value ? 'all' : value))
+                  }
+                >
+                  {value !== 'all' && <TagIcon tag={value} />}
+                  {t(labelKey)}
+                </button>
+              ))}
+            </div>
+
             <div className="cm-list-scroll">
             <ul className="cm-list" ref={listRef}>
-              {matches.length === 0 && !query && (
-                <li className="cm-list-empty">{t('chartManager.empty')}</li>
+              {matches.length === 0 && !(q && !exactNameExists) && (
+                <li className="cm-list-empty">
+                  {charts.length === 0
+                    ? t('chartManager.empty')
+                    : t('chartManager.noMatches')}
+                </li>
               )}
               {q && !exactNameExists && (
                 <li>
@@ -237,7 +284,10 @@ export function ChartManager({
                     className="cm-row"
                     onClick={() => onSelect(c.id)}
                   >
-                    <span className="cm-row-name">{displayName(c.name)}</span>
+                    <span className="cm-row-name">
+                      <TagIcon tag={chartTag(c)} className="tag-icon" />
+                      {displayName(c.name)}
+                    </span>
                     <span className="cm-row-meta">
                       {fmtBirth(c, fmt)} · {c.birthplace.label.split(',')[0]}
                     </span>

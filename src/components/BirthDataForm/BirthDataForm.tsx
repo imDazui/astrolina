@@ -20,9 +20,11 @@ import {
   NAME_HARD_LIMIT,
   NAME_SOFT_LIMIT,
   newChartId,
+  type ChartTag,
   type StoredChart,
 } from '../../lib/chartLibrary';
 import { TipButton } from '../ui/HoverTip';
+import { TagIcon } from '../ui/TagIcon';
 import { DateTimeFields } from '../DateTimeFields/DateTimeFields';
 import { useT } from '../../i18n';
 import './BirthDataForm.css';
@@ -80,6 +82,9 @@ export function BirthDataFields({
   const [day, setDay] = useState(initial?.day ?? now.getDate());
   const [hour, setHour] = useState(initial?.hour ?? 12);
   const [minute, setMinute] = useState(initial?.minute ?? 0);
+  // Organizing tag. Only Star is user-assignable (a None ⇄ Star toggle); the system
+  // 'space' tag is set by future in-app tools, never here.
+  const [tag, setTag] = useState<ChartTag>(initial?.tag ?? 'none');
 
   const [locationQuery, setLocationQuery] = useState(
     initial?.birthplace.label ?? '',
@@ -265,6 +270,7 @@ export function BirthDataFields({
       tzManual: manual,
       tzUncertain: effective?.uncertain ?? false,
       birthplace: selectedPlace,
+      tag,
     };
     onSubmit(chart);
   };
@@ -309,6 +315,31 @@ export function BirthDataFields({
             setHour(v.hour);
             setMinute(v.minute);
           }}
+          trailing={
+            // A "Tag" field to the right of the time inputs: a caption (aligned with the
+            // Date / Time captions) over a Star toggle whose label sits inside the button.
+            // Only Star is user-assignable; 'space' is never set here.
+            <div className="tag-field">
+              <span className="moment-caption">{t('chartForm.tag.caption')}</span>
+              <TipButton
+                type="button"
+                className="tag-toggle"
+                aria-pressed={tag === 'star'}
+                onClick={() => setTag((prev) => (prev === 'star' ? 'none' : 'star'))}
+                placement="top"
+                tip={
+                  <>
+                    <TagIcon tag="star" className="tag-icon" />
+                    {t('chartForm.tag.assignTitle')}
+                  </>
+                }
+                hint={t('chartForm.tag.assignHint')}
+              >
+                <TagIcon tag="star" className="tag-toggle-icon" />
+                <span className="tag-toggle-label">{t('chartForm.tag.label')}</span>
+              </TipButton>
+            </div>
+          }
         />
 
         <label className="location-field">

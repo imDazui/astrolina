@@ -6,6 +6,11 @@
 
 import type { BirthData } from './birthData';
 
+/** A chart's organizing tag. 'star' is user-assigned (the only one the UI offers);
+ *  'space' is a system tag set by in-app chart generation (no manual control yet).
+ *  'none' is the default — and what an absent `tag` field means on older records. */
+export type ChartTag = 'none' | 'star' | 'space';
+
 export interface StoredChart extends BirthData {
   id: string;
   createdAt: number;
@@ -20,11 +25,19 @@ export interface StoredChart extends BirthData {
    *  birthplace (so the editor reopens on that choice rather than re-detecting). */
   tzManual?: boolean;
   tzUncertain?: boolean;
+  /** Organizing tag; absent on charts saved before tagging existed. Read via
+   *  chartTag() so an absent value reads as 'none'. */
+  tag?: ChartTag;
 }
 
 /** Recency key for sorting the "most recently used" list (newest first). */
 export function chartRecency(c: StoredChart): number {
   return c.lastUsedAt ?? c.createdAt;
+}
+
+/** A chart's tag, defaulting an absent field to 'none' (back-compat for old records). */
+export function chartTag(c: StoredChart): ChartTag {
+  return c.tag ?? 'none';
 }
 
 // Chart-name length limits. Hard: the most a name can be (enforced on entry). Soft:

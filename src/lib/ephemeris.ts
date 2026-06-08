@@ -532,6 +532,35 @@ export function birthDataToJD(b: BirthData): number {
   return jd0 + (b.hour + b.minute / 60 - b.tzOffset) / 24;
 }
 
+// JD of 1582-10-15 00:00 UT — the first Gregorian date after the reform. Picks the
+// calendar when going back from a JD, mirroring birthDataToJD's forward branch.
+const GREGORIAN_REFORM_JD = 2299160.5;
+
+// Inverse of birthDataToJD's calendar step: a Universal-Time Julian Day → civil
+// Y/M/D and H:M (UT). Snaps to the nearest minute first, then reads the date back
+// from Swiss, so the extracted hour/minute are exact and a tick before midnight can't
+// land on the wrong day. Used to turn a Davison midpoint instant into a chart date.
+export function jdToCivil(jd: number): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} {
+  const jdMin = Math.round(jd * 1440) / 1440;
+  const cal =
+    jdMin >= GREGORIAN_REFORM_JD ? CalendarType.Gregorian : CalendarType.Julian;
+  const d = eph().julianDayToDate(jdMin, cal);
+  const totalMin = Math.round(d.hour * 60); // minute-of-day, 0..1439 (already snapped)
+  return {
+    year: d.year,
+    month: d.month,
+    day: d.day,
+    hour: Math.floor(totalMin / 60),
+    minute: totalMin % 60,
+  };
+}
+
 export function gmstRadians(jd: number): number {
   // ARMC at longitude 0 is Greenwich apparent sidereal time (degrees). This is
   // apparent (vs the old mean) sidereal time — ≤~0.004° different and consistent

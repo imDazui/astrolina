@@ -74,9 +74,11 @@ import {
   type AngleProgression,
   type OverlayMode,
   type PrimaryRate,
+  type RelationshipMethod,
   type TimeUnit,
   type TransitFrame,
 } from './lib/astro/timeline';
+import { buildDavison } from './lib/astro/relationship';
 import {
   loadAngleProgression,
   loadOverlayDate,
@@ -86,7 +88,9 @@ import {
   loadPrimaryRate,
   loadTransitFrame,
   loadUserPrimaryRate,
+  loadSynastryMethod,
   saveAngleProgression,
+  saveSynastryMethod,
   saveOverlayDate,
   saveOverlayMode,
   saveOverlayPartner,
@@ -398,6 +402,10 @@ export default function App() {
   );
   const [stepUnit, setStepUnit] = useState<TimeUnit>(() => loadOverlayStep());
   const [playing, setPlaying] = useState(false);
+  // Synastry ▸ Relationships: which derived-chart method the Generate button builds.
+  const [synastryMethod, setSynastryMethod] = useState<RelationshipMethod>(() =>
+    loadSynastryMethod(),
+  );
   // Progressions & Directions ("Progs/Dirns") settings — drive the directed overlays.
   const [angleProgression, setAngleProgression] = useState<AngleProgression>(() =>
     loadAngleProgression(),
@@ -586,6 +594,7 @@ export default function App() {
   useEffect(() => savePrimaryRate(primaryRate), [primaryRate]);
   useEffect(() => saveUserPrimaryRate(userPrimaryRate), [userPrimaryRate]);
   useEffect(() => saveTransitFrame(transitFrame), [transitFrame]);
+  useEffect(() => saveSynastryMethod(synastryMethod), [synastryMethod]);
 
   // Animation: advance the target date one minor notch per tick while playing.
   // setData is cheap; the per-tick cost is one getPlanetPositions(). ~8 fps keeps
@@ -1281,6 +1290,28 @@ export default function App() {
     setHover(null);
   };
 
+  // Build a relationship chart from the active chart + its synastry partner using the
+  // chosen method, make it the active chart, and clear the partner — the synastry view
+  // stays on (its partner slot just empties for re-picking). Davison only for now;
+  // Composite is gated off in the UI until its render path exists.
+  const handleGenerateRelationship = () => {
+    if (overlayMode !== 'synastry' || synastryMethod !== 'davison') return;
+    if (!current || !partner) return;
+    const now = Date.now();
+    const chart: StoredChart = {
+      ...buildDavison(current, partner),
+      id: newChartId(),
+      createdAt: now,
+      lastUsedAt: now,
+      tzIana: 'UTC',
+      tzManual: true,
+      tag: 'space',
+    };
+    setCharts((prev) => [...prev, chart]);
+    setCurrentId(chart.id);
+    setPartnerId(null);
+  };
+
   const handleImport = (imported: StoredChart[]) => {
     setImporting(false);
     if (imported.length === 0) return;
@@ -1384,6 +1415,10 @@ export default function App() {
           overlayMode={overlayMode}
           transitFrame={transitFrame}
           setTransitFrame={setTransitFrame}
+          synastryMethod={synastryMethod}
+          setSynastryMethod={setSynastryMethod}
+          onGenerateRelationship={handleGenerateRelationship}
+          canGenerateRelationship={overlayMode === 'synastry' && !!partner}
           showTimeline={showTimeline}
           setShowTimeline={setShowTimeline}
           showOverlayZenith={showOverlayZenith}

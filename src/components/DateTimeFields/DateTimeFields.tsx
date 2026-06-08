@@ -118,6 +118,9 @@ interface DateTimeFieldsProps {
   yearMax?: number;
   /** Optional element rendered right after the minute input — e.g. a zone label. */
   timeSuffix?: ReactNode;
+  /** Optional column rendered to the right of the time inputs (e.g. the birth form's
+   *  Star toggle). The timeline date modal omits it. */
+  trailing?: ReactNode;
 }
 
 // Date (Y / M / D) and Time (local, 24h) side by side — the shared moment editor.
@@ -129,6 +132,7 @@ export function DateTimeFields({
   yearMin = 1800,
   yearMax = 2200,
   timeSuffix,
+  trailing,
 }: DateTimeFieldsProps) {
   const { t } = useT();
   const { year, month, day, hour, minute } = value;
@@ -196,6 +200,7 @@ export function DateTimeFields({
           {timeSuffix != null && <span className="moment-tz">{timeSuffix}</span>}
         </div>
       </label>
+      {trailing}
     </div>
   );
 }

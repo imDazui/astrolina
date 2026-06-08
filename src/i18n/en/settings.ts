@@ -31,6 +31,7 @@ export const settings = {
     display: 'Display',
     positioning: 'Positioning',
     chartAngle: 'Chart Angle',
+    relationships: 'Relationships',
   },
   details: { roads: 'Roads', rivers: 'Rivers', labels: 'Labels' },
   shiftTag: 'Shift',
@@ -46,7 +47,7 @@ export const settings = {
   },
   natal: {
     title: 'Natal Chart',
-    hint: 'The underlying birth chart lines. Hide them to show just the overlay.',
+    hint: 'The underlying birth chart. Hide them to show just the overlay.',
   },
   // Tooltip on a language that is listed but not yet translated.
   languageUnavailable: 'Coming soon.',
@@ -142,6 +143,24 @@ export const settings = {
     'naibod-long': { label: 'Naibod in Long', hint: 'Mean solar rate 0.9856°/yr, applied in longitude.' },
     'naibod-ra': { label: 'Naibod in RA', hint: 'Mean solar rate 0.9856°/yr, applied in right ascension.' },
     'mean-quotidian': { label: 'Mean Quotidian', hint: 'Quotidian progressed angle (one day per year); on Solar Arc it matches SA in Longitude.' },
+  },
+
+  // Synastry ▸ Relationships: derive one chart from the two synastry charts.
+  relationships: {
+    davison: {
+      label: 'Davison',
+      hint: 'Midpoint in time and place of the two charts, cast as a real chart.',
+    },
+    composite: {
+      label: 'Comp. Midpoints',
+      hint: 'Midpoint of every planet between the two charts. Coming soon.',
+    },
+    generate: {
+      title: 'Generate',
+      hint: 'Build the chart, make it active, and clear the synastry partner.',
+      needPartner: 'Pick a partner in the synastry bar first.',
+      comingSoon: 'Composite charts are coming soon.',
+    },
   },
 
   // Line-type tooltip text only; the As/Ds/MC/IC button labels stay language-neutral.

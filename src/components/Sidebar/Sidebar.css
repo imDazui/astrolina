@@ -130,6 +130,43 @@
   text-align: center;
 }
 
+/* Synastry ▸ Relationships: the Generate action — a full-width accent button under
+   the method picker. When it can't run yet (no partner, or Composite which isn't
+   wired) it dims via .is-disabled rather than the native `disabled` attribute, so its
+   hover tip still fires and explains why. */
+.relationship-generate {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  border-radius: 6px;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    opacity 0.12s;
+}
+
+.relationship-generate:hover {
+  background: rgba(var(--accent-rgb), 0.22);
+  border-color: rgba(var(--accent-rgb), 0.7);
+}
+
+.relationship-generate.is-disabled,
+.relationship-generate.is-disabled:hover {
+  opacity: 0.45;
+  cursor: default;
+  background: rgba(var(--tint), 0.04);
+  border-color: rgba(var(--tint), 0.12);
+}
+
 .theme-option .swatch {
   width: 16px;
   height: 16px;

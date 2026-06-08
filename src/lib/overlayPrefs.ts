@@ -10,6 +10,7 @@ import type {
   AngleProgression,
   OverlayMode,
   PrimaryRate,
+  RelationshipMethod,
   TimeUnit,
   TransitFrame,
 } from './astro/timeline';
@@ -126,4 +127,17 @@ export function loadTransitFrame(): TransitFrame {
 }
 export function saveTransitFrame(f: TransitFrame) {
   localStorage.setItem(TRANSIT_FRAME_KEY, f);
+}
+
+// Which relationship-chart method the Synastry overlay's Generate button uses.
+const SYNASTRY_METHOD_KEY = 'astro:synastry-method:v1';
+const RELATIONSHIP_METHODS: RelationshipMethod[] = ['davison', 'composite'];
+export function loadSynastryMethod(): RelationshipMethod {
+  const v = localStorage.getItem(SYNASTRY_METHOD_KEY);
+  return v && (RELATIONSHIP_METHODS as string[]).includes(v)
+    ? (v as RelationshipMethod)
+    : 'davison';
+}
+export function saveSynastryMethod(m: RelationshipMethod) {
+  localStorage.setItem(SYNASTRY_METHOD_KEY, m);
 }

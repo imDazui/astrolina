@@ -120,6 +120,43 @@
   color: var(--text-strong);
 }
 
+/* Tag filter chips, just under the search box: narrow the list to a tag (or All). */
+.cm-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.cm-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 999px;
+  background: rgba(var(--tint), 0.04);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
+}
+
+.cm-filter-chip:hover {
+  border-color: rgba(var(--tint), 0.26);
+  color: var(--text);
+}
+
+.cm-filter-chip[aria-pressed='true'] {
+  border-color: rgba(var(--accent-rgb), 0.6);
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--text-strong);
+}
+
 /* The list lives in this flex-filling wrapper, but the <ul> inside is absolutely
    positioned — so the (potentially long) list contributes NO intrinsic height to the
    row. The right-hand form therefore defines the window height, and the list just

@@ -39,6 +39,12 @@ export type OverlayMode =
 
 export type OverlayKind = Exclude<OverlayMode, 'off'>;
 
+// The relationship-chart method the Synastry overlay's "Generate" button uses.
+// 'davison' is a real moment+place (cast like any chart); 'composite' (midpoint of
+// every planet between the two charts) is not yet wired — it needs precomputed
+// positions through the render stack.
+export type RelationshipMethod = 'davison' | 'composite';
+
 // ── Progressions & Directions settings (Solar Fire "Progs/Dirns") ────────────
 // Group A — how a directed/progressed chart's ANGLES advance. Drives both the
 // Solar Arc and the Progressed overlays. In this angle-only ACG app this resolves

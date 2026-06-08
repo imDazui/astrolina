@@ -78,6 +78,52 @@
   gap: 10px;
 }
 
+/* A captioned "Tag" field to the right of the time inputs (a DateTimeFields `trailing`
+   slot): the caption reuses .moment-caption to line up with the Date / Time captions,
+   and the toggle sits under it (so its baseline matches the input boxes). The toggle is
+   a small pill — a star icon + its label, muted when off and gold when starred. */
+.tag-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tag-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(var(--tint), 0.14);
+  border-radius: 8px;
+  background: rgba(var(--tint), 0.04);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
+}
+.tag-toggle:hover {
+  border-color: rgba(var(--tint), 0.28);
+  color: var(--text);
+}
+.tag-toggle[aria-pressed='true'] {
+  color: var(--tag-star);
+  border-color: var(--tag-star);
+  background: rgba(var(--tag-star-rgb), 0.12);
+}
+/* Let the star follow the button's colour (muted/gold) instead of its intrinsic gold. */
+.tag-toggle .tag-glyph {
+  color: inherit;
+}
+.tag-toggle-icon {
+  width: 15px;
+  height: 15px;
+}
+
 /* Read-only coordinate summary (the default): the auto-chosen lat/lng plus the
    "Enter manually" link that swaps in the inputs above. */
 .coord-summary {

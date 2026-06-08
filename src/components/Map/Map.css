@@ -40,6 +40,19 @@
   z-index: 8;
   pointer-events: none;
   overflow: hidden;
+  /* Fade back in (repositioned) once the map settles — see .is-moving. */
+  transition: opacity 0.25s ease;
+}
+
+/* While the camera is panning / zooming, hide the edge labels: they anchor to the
+   screen edges, so in motion they float detached from their (GPU-smooth) lines.
+   Faster to fade out than back in, and non-interactive while hidden. */
+.acg-edge-badges.is-moving {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.acg-edge-badges.is-moving .acg-badge {
+  pointer-events: none;
 }
 
 /* Subtle "Zoom out" escape button — bottom-centre, sitting just above where the

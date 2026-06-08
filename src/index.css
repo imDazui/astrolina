@@ -107,6 +107,13 @@ span.astro-glyph {
   --pin-stroke: #0a0a0f;
   --label-halo: rgba(10, 10, 15, 0.95);
 
+  /* Chart tags: a steady gold star and a cool slate for the (system) "space" tag.
+     Fixed hues, so the marks read the same across themes and never follow the
+     map-state accent. */
+  --tag-star: #f5b83d;
+  --tag-star-rgb: 245, 184, 61;
+  --tag-space: #7fa8d4;
+
   color: var(--text-strong);
   background: var(--bg-page);
 }
@@ -287,6 +294,23 @@ span.astro-glyph {
 }
 :root[data-theme='vintage'] .synastry-hud {
   background: rgba(var(--bg-panel), 0.72);
+}
+
+/* Chart-tag glyphs (TagIcon): colour is intrinsic to the tag (gold star, slate
+   planet) and set here; per-context classes (e.g. .tag-icon) handle size/spacing. */
+.tag-glyph {
+  flex: 0 0 auto;
+}
+.tag-glyph--star {
+  color: var(--tag-star);
+}
+.tag-glyph--space {
+  color: var(--tag-space);
+}
+/* Tag shown as a prefix before a chart name (My Charts list + top-bar picker). */
+.tag-icon {
+  vertical-align: -2px;
+  margin-right: 4px;
 }
 
 * {

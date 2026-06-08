@@ -1458,6 +1458,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const [badges, setBadges] = useState<LineBadge[]>([]);
   const [paranBadges, setParanBadges] = useState<ParanBadge[]>([]);
   const [localSpaceBadges, setLocalSpaceBadges] = useState<LocalSpaceBadge[]>([]);
+  // True while the map camera is animating (pan / zoom / flyTo). The edge labels fade
+  // out while moving — anchored to the screen edges, they read as detached from their
+  // lines in motion — and fade back in, repositioned, once it settles.
+  const [mapMoving, setMapMoving] = useState(false);
   // Current map zoom — gates the local-horizon compass and drives its scale + fade.
   const [zoom, setZoom] = useState(0);
   // Screen position of the local-space origin — the centre of the horizon compass.
@@ -1698,6 +1702,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     });
   }, [computeBadges]);
 
+  // The mount-once map effect below wires move/moveend/'astro:hud-moved' to these
+  // badge callbacks through refs rather than listing them in its deps. In prod they
+  // already have stable identity so it makes no difference; under dev hot-reload,
+  // though, Fast Refresh hands them new identities each edit, and listing them would
+  // re-run that effect and needlessly tear down + rebuild the whole map. The refs
+  // also let an edit to the badge logic hot-apply without that rebuild.
+  const computeBadgesRef = useRef(computeBadges);
+  const scheduleBadgesRef = useRef(scheduleBadges);
+  useEffect(() => {
+    computeBadgesRef.current = computeBadges;
+    scheduleBadgesRef.current = scheduleBadges;
+  }, [computeBadges, scheduleBadges]);
+
   // Hover/focus tip for the MapLibre-rendered zoom + compass buttons (plain DOM,
   // so the portaled HoverTip is driven imperatively from the init effect below).
   const [ctrlTip, setCtrlTip] = useState<
@@ -1825,22 +1842,31 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         ZENITH_DISC_COLORS[themeRef.current],
       );
       pushData(map, dataRef.current);
-      computeBadges();
+      computeBadgesRef.current();
     });
 
+    // Edge labels fade out while the camera animates and fade back in once it settles
+    // (see mapMoving). Positions are still recomputed every frame so the compass wheel
+    // (placed off the same projection) keeps tracking; the labels are just hidden.
+    map.on('movestart', () => setMapMoving(true));
     // Re-anchor the edge badges on every pan/zoom (throttled to one rAF/frame).
-    map.on('move', scheduleBadges);
-    map.on('moveend', computeBadges);
+    map.on('move', () => scheduleBadgesRef.current());
+    map.on('moveend', () => {
+      computeBadgesRef.current();
+      setMapMoving(false);
+    });
     // The timeline bar can be dragged anywhere; it dispatches 'astro:hud-moved'
     // when it moves, so re-dodge the labels off its new rect right away rather
-    // than waiting for the next pan/zoom.
-    window.addEventListener('astro:hud-moved', scheduleBadges);
+    // than waiting for the next pan/zoom. A stable wrapper (created once with the
+    // map) lets add/removeEventListener pair on the same reference.
+    const onHudMoved = () => scheduleBadgesRef.current();
+    window.addEventListener('astro:hud-moved', onHudMoved);
 
     mapRef.current = map;
 
     return () => {
       if (badgeRafRef.current) cancelAnimationFrame(badgeRafRef.current);
-      window.removeEventListener('astro:hud-moved', scheduleBadges);
+      window.removeEventListener('astro:hud-moved', onHudMoved);
       ctrlRoot.removeEventListener('click', onCreditsClick);
       ctrlTipCleanups.forEach((fn) => fn());
       setCtrlTip(null);
@@ -1849,10 +1875,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       map.remove();
       mapRef.current = null;
     };
-    // `t` is read once to label the bound-once nav-control tips; intentionally not a
-    // dep so a locale change never tears down and recreates the whole map.
+    // Mount-once: create the map a single time, tear it down only on unmount, so the
+    // dep array stays empty. `t` (used once for the nav-control tip labels) is
+    // intentionally excluded so a locale change never recreates the map; the badge
+    // callbacks are reached through refs for the same reason — and so dev hot-reload,
+    // where Fast Refresh reassigns their identities, can't tear down and rebuild the
+    // whole map. Prod is unaffected: both callbacks already had stable identity there.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [computeBadges, scheduleBadges]);
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2337,7 +2367,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         title={ctrlTip?.title ?? ''}
         hotkey={ctrlTip?.hotkey}
       />
-      <div className="acg-edge-badges" aria-hidden="true">
+      <div
+        className={`acg-edge-badges${mapMoving ? ' is-moving' : ''}`}
+        aria-hidden="true"
+      >
         {badges.map((b) => {
           const text = badgeTextColor(b.color);
           // A merged lunar-node pair gets a two-tone fill (North Node colour → South Node

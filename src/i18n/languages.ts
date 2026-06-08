@@ -5,9 +5,9 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // The languages shown in the Appearance ▸ Language dropdown. This is the scaffolding
-// registry for multi-language support: the top astrology-community languages (by rough
-// community size), with English the only one that has a catalog today. The other nine
-// are listed but disabled in the UI until a translation lands.
+// registry for multi-language support: English (the only one with a catalog today) plus
+// the planned translations, which are listed but disabled in the UI with a "coming soon"
+// tip until their catalog lands.
 //
 // To ENABLE a language (e.g. Spanish):
 //   1. Create its catalog: src/i18n/es/*.ts fragments + src/i18n/es.ts (`… satisfies Messages`).
@@ -27,18 +27,12 @@ export interface LanguageOption {
   available: boolean;
 }
 
-// Ordered by approximate astrology-community size, English first (the default + only
-// translated locale). Endonyms render via the browser's font fallback for non-Latin
-// scripts (Devanagari, CJK, Cyrillic).
+// English first (the default + only translated locale today); the rest follow as
+// "coming soon". Each is shown by its own native name (endonym), which is conventionally
+// not translated.
 export const LANGUAGES: LanguageOption[] = [
   { code: 'en', autonym: 'English', available: true },
   { code: 'es', autonym: 'Español', available: false },
   { code: 'pt', autonym: 'Português', available: false },
-  { code: 'hi', autonym: 'हिन्दी', available: false },
-  { code: 'ru', autonym: 'Русский', available: false },
-  { code: 'zh', autonym: '中文', available: false },
-  { code: 'ja', autonym: '日本語', available: false },
-  { code: 'fr', autonym: 'Français', available: false },
-  { code: 'de', autonym: 'Deutsch', available: false },
-  { code: 'it', autonym: 'Italiano', available: false },
+  { code: 'tr', autonym: 'Türkçe', available: false },
 ];

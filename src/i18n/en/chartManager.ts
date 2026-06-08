@@ -12,8 +12,17 @@ export const chartManager = {
   searchPlaceholder: 'Search names or places…',
   searchLabel: 'Search charts',
   clearSearch: 'Clear search',
+  // Tag-filter chips under the search box (narrow the list by tag).
+  filter: {
+    label: 'Filter by tag',
+    all: 'All',
+    starred: 'Star',
+    space: 'Space',
+  },
   // Empty-state row when no charts have been saved.
   empty: 'No saved charts yet.',
+  // Shown when a search or tag filter matches no charts (but some charts exist).
+  noMatches: 'No charts match.',
   // "Add <query>" row offered when the typed name has no exact match.
   addQuery: 'Add “{name}”',
   // window.confirm before deleting a chart.

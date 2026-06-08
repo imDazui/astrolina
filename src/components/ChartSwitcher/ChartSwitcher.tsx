@@ -7,12 +7,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   chartRecency,
+  chartTag,
   displayName,
   type StoredChart,
 } from '../../lib/chartLibrary';
 import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
+import { TagIcon } from '../ui/TagIcon';
 import { useHoverTip } from '../ui/useHoverTip';
 import './ChartSwitcher.css';
 
@@ -104,7 +106,14 @@ export function ChartSwitcher({
         <span className="label">
           <span className="name-row">
             <strong>
-              {current ? displayName(current.name) : t('chartSwitcher.noChart')}
+              {current ? (
+                <>
+                  <TagIcon tag={chartTag(current)} className="tag-icon" />
+                  {displayName(current.name)}
+                </>
+              ) : (
+                t('chartSwitcher.noChart')
+              )}
             </strong>
             {!compact && (
               <svg
@@ -161,7 +170,10 @@ export function ChartSwitcher({
                     setOpen(false);
                   }}
                 >
-                  <span className="chart-name">{displayName(c.name)}</span>
+                  <span className="chart-name">
+                    <TagIcon tag={chartTag(c)} className="tag-icon" />
+                    {displayName(c.name)}
+                  </span>
                   <span className="chart-meta">
                     {fmtBirthDate(c, fmt)} · {c.birthplace.label.split(',')[0]}
                   </span>

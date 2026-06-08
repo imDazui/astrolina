@@ -25,6 +25,14 @@ export const chartForm = {
     setPlace: 'Set a birthplace to choose a time zone',
     verifyDst: 'verify DST',
   },
+  // The Star toggle beside the time inputs: a "Tag" caption over a button whose label
+  // is the tag name; its .ui-tip explains what it does.
+  tag: {
+    caption: 'Tag',
+    label: 'Star',
+    assignTitle: 'Favorite this chart',
+    assignHint: 'Mark this chart so you can find it easily',
+  },
   birthplace: 'Birthplace',
   birthplacePlaceholder: 'City, country',
   searching: 'searching…',

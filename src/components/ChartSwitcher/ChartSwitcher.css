@@ -46,6 +46,9 @@
   font-weight: 600;
   color: var(--text-strong);
   letter-spacing: 0.02em;
+  /* A flex item of .name-row: needs min-width:0 to shrink below its content (now an
+     inline tag glyph + name) so text-overflow can ellipsis in the narrow top bar. */
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
