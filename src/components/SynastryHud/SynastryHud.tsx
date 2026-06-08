@@ -10,6 +10,7 @@ import { useMovableHud } from '../../lib/useMovableHud';
 import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
 import { HoverTip, TipButton } from '../ui/HoverTip';
+import { ClickIcon } from '../ui/ClickIcon';
 import { useHoverTip } from '../ui/useHoverTip';
 import './SynastryHud.css';
 
@@ -99,7 +100,13 @@ export function SynastryHud({
         {t('synastryHud.title')}
         <span className="hud-move-hint ui-tip-box ui-tip" aria-hidden="true">
           <span className="ui-tip-title">{t('common.hud.dragToMove')}</span>
-          <span className="ui-tip-sub">{t('common.hud.dockHint')}</span>
+          <span className="ui-tip-sub hud-dock-line">
+            <span className="ui-tip-hotkey hud-dock-key">
+              {t('common.hud.dockKey')}
+              <ClickIcon className="hud-dock-icon" />
+            </span>
+            {t('common.hud.dockHint')}
+          </span>
         </span>
       </span>
       <div className="synastry-hud-picker">

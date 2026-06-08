@@ -22,8 +22,14 @@ export interface LineBadge {
   color: string;
   planet: PlanetName;
   lineType: LineType;
-  /** Overlay tag (e.g. "Tr") for overlay lines; empty for natal. */
+  /** The body's overlay/promoted tag (e.g. "Tr") shown as the label prefix; empty for
+   *  the natal chart's own lines. Display only — natal-vs-overlay routing uses
+   *  `overlay` below, so a promoted overlay can show a prefix yet route as natal. */
   prefix: string;
+  /** True when the badge belongs to the OVERLAY rendering path (the dashed
+   *  'acg-lines-ov' source), so its label's zenith fly-to reads the overlay zenith
+   *  lookup; false for the natal path (incl. a promoted overlay drawn as the chart). */
+  overlay: boolean;
   /** This badge's line in screen space (its longest visible run, projected). Lets the
    *  placement step slide the label ALONG the line to keep it ON the (curved) line
    *  instead of detaching it when dodging the screen edge / a HUD panel. */
@@ -225,8 +231,10 @@ export function computeLineBadges(
     // every 3rd point is plenty to find edge crossings and keeps the per-move cost
     // low. Anything short (a stray fragment) is walked point-by-point.
     const step = coords.length > 20 ? 3 : 1;
-    const { planet, lineType, color, label, pair = false } = f.properties;
-    const prefix = isOverlay ? label : '';
+    const { planet, lineType, color, tag, pair = false } = f.properties;
+    // Display prefix comes from the line's tag (set by tagLabels for overlay AND
+    // promoted lines), independent of the isOverlay routing flag below.
+    const prefix = tag ?? '';
     const key = `${planet}|${lineType}|${prefix}`;
 
     // Split the projected polyline into contiguous runs of VISIBLE vertices. On a
@@ -275,6 +283,7 @@ export function computeLineBadges(
         planet: g.planet,
         lineType: g.lineType,
         prefix: g.prefix,
+        overlay: isOverlay,
         line: g.bestLine,
         pair: g.pair,
       });

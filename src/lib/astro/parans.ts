@@ -20,6 +20,9 @@ export interface ParanProps {
   intersectionLng: number;
   color: string;
   label: string;
+  /** Overlay/promoted tag (e.g. "Tr"); absent for the natal chart. Shown as the
+   *  paran badge's label prefix. */
+  tag?: string;
 }
 
 function normalizeDelta(rad: number): number {

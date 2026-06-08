@@ -441,3 +441,20 @@ body,
   z-index: 6;
 }
 
+/* The dock-gesture line inside a movable HUD's hint: a "Double 🖱" hotkey pill (the
+   shared .ui-tip-hotkey chip) followed by the plain-text explanation, on one row. */
+.hud-dock-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.hud-dock-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.hud-dock-icon {
+  flex-shrink: 0;
+}
+

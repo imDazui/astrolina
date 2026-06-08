@@ -21,6 +21,9 @@ export const common = {
   cardinal: { north: 'N', south: 'S', east: 'E', west: 'W' },
   hud: {
     dragToMove: 'Drag to move',
-    dockHint: 'Double-click to dock · snaps to centre',
+    // Shown as a hotkey pill — the word before the click icon ("Double" + 🖱 reads as
+    // a double-click) — then the plain-text explanation after it.
+    dockKey: 'Double',
+    dockHint: 'to dock · snaps to centre',
   },
 } as const;

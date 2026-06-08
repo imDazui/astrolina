@@ -412,9 +412,11 @@ export const OVERLAY_LABEL_PREFIX: Record<OverlayKind, string> = {
   synastry: 'Sy',
 };
 
-// Clone a line/paran FeatureCollection, stamping the overlay tag onto each
-// feature's `label` (the overlay map layers prepend it to the glyph + code).
-export function tagLabels<P extends { label: string }>(
+// Clone a line/paran FeatureCollection, stamping the overlay tag onto each feature.
+// `tag` is the clean signal the edge badges read for the label prefix (kept separate
+// from natal-vs-overlay routing); `label` is also set to it, since the overlay line
+// hover tip reads the tag from `label`.
+export function tagLabels<P extends { label: string; tag?: string }>(
   fc: FeatureCollection<LineString, P>,
   tag: string,
 ): FeatureCollection<LineString, P> {
@@ -422,7 +424,7 @@ export function tagLabels<P extends { label: string }>(
     type: 'FeatureCollection',
     features: fc.features.map((f) => ({
       ...f,
-      properties: { ...f.properties, label: tag },
+      properties: { ...f.properties, tag, label: tag },
     })),
   };
 }

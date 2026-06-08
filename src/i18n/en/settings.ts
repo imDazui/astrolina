@@ -34,7 +34,20 @@ export const settings = {
   },
   details: { roads: 'Roads', rivers: 'Rivers', labels: 'Labels' },
   shiftTag: 'Shift',
-  timelineBar: 'Timeline bar',
+  // Overlay ▸ Display toggles — each a show/hide switch with a hover hint, like the
+  // Parans / Local Space toggles in Map filters.
+  timelineBar: {
+    title: 'Timeline Bar',
+    hint: 'The date scrubber at the bottom of the map.',
+  },
+  overlayZenith: {
+    title: 'Zenith',
+    hint: 'Mark where each overlay body is directly overhead.',
+  },
+  natal: {
+    title: 'Natal Chart',
+    hint: 'The underlying birth chart lines. Hide them to show just the overlay.',
+  },
   // Tooltip on a language that is listed but not yet translated.
   languageUnavailable: 'Coming soon.',
   userRate: { label: 'Degrees per year' },

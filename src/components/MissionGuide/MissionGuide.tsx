@@ -9,6 +9,7 @@ import type { MissionGesture, MissionSet } from '../../lib/missions';
 import type { MsgKey } from '../../i18n/types';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { TipButton } from '../ui/HoverTip';
+import { ClickIcon } from '../ui/ClickIcon';
 import { useT } from '../../i18n';
 import './MissionGuide.css';
 
@@ -86,23 +87,6 @@ function ZoomIcon() {
     >
       <circle cx="11" cy="11" r="7" />
       <path d="M21 21l-4.35-4.35" />
-    </svg>
-  );
-}
-
-// The click icon shown inside a mouse gesture's hotkey pill — the same cursor glyph the
-// settings menu uses for its Shift+click tag (Sidebar's ShiftTapTag).
-function ClickIcon() {
-  return (
-    <svg
-      className="mg-click-icon"
-      width="11"
-      height="11"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
     </svg>
   );
 }
@@ -244,7 +228,7 @@ export function MissionGuide({
               <span className="mg-label">
                 <span className="ui-tip-hotkey mg-gesture">
                   {g.beforeKey && t(g.beforeKey)}
-                  {g.icon && <ClickIcon />}
+                  {g.icon && <ClickIcon className="mg-click-icon" />}
                   {g.afterKey && t(g.afterKey)}
                 </span>{' '}
                 {t(m.labelKey)}

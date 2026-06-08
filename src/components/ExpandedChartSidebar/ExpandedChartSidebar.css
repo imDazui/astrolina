@@ -129,10 +129,6 @@
   font-size: 11px;
 }
 
-.es-meta-where {
-  color: var(--text-muted);
-}
-
 /* Plain line-style pin (replaces the 📌 emoji) — inherits the row's state color. */
 .es-pin-icon {
   vertical-align: -2px;
@@ -144,8 +140,11 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 4px 0 0 0;
+  /* Tight row gap (place name → coordinates) but keep the wider column gap between the
+     coordinates and the recenter button. */
+  gap: 2px 8px;
+  /* Sit close under the date/time above (the place name is now the line right below it). */
+  margin: 1px 0 0 0;
   font-size: 11px;
   color: var(--cool);
   font-variant-numeric: tabular-nums;
@@ -349,8 +348,9 @@
   color: var(--text);
 }
 
-/* The expanded sidebar shows the full birth line in .es-meta, so suppress the
-   ChartSwitcher's own date/place subtitle here to avoid showing the date twice. */
+/* The expanded sidebar shows the birth date in .es-meta-when (and the place in the
+   relocated line below), so suppress the ChartSwitcher's own date/place subtitle here
+   to avoid showing the date twice. */
 .es-switcher .meta {
   display: none;
 }

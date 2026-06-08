@@ -254,9 +254,15 @@ export interface OverlayData {
   lines: FeatureCollection<LineString, LineProps>;
   parans: FeatureCollection<LineString, ParanProps>;
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
-  /** Sub-planetary (zenith) point per overlay body, so overlay labels can fly to
-   *  it on click just like natal ones. No stamps are drawn for overlays. */
+  /** Sub-planetary (zenith) point per overlay body. Drawn as stamps (and used as
+   *  the overlay labels' click-to-fly target, like natal) only when Overlay ▸
+   *  Display ▸ Zenith is on; the App feeds this empty otherwise. */
   zenith: FeatureCollection<Point, ZenithProps>;
+  /** The overlay's ecliptic (zodiac) line — a dotted companion to the solid
+   *  bright-yellow natal ecliptic, threading through the overlay Sun's zenith. Shown
+   *  only while the overlay zeniths are (the App gates it the same way; empty
+   *  otherwise). */
+  ecliptic: FeatureCollection<LineString>;
 }
 
 // Live result of the on-map measurement tool: great-circle separation between
@@ -450,33 +456,64 @@ function constrainToHoveredLine(
 // ── Zenith hover / click ────────────────────────────────────────────────────────
 // The sub-planetary stamps are small, so a query within a few px of the cursor
 // counts as a hit. Hovering one animates it + shows a tooltip; clicking flies to it
-// (the same place a planet's ACG line labels fly to).
-const ZENITH_HIT_LAYER = 'acg-zenith-disc';
+// (the same place a planet's ACG line labels fly to). Both the natal stamps and the
+// overlay stamps are hit-tested — the natal disc is drawn on top, so it wins where
+// the two coincide (queryRenderedFeatures returns topmost first).
+const ZENITH_HIT_LAYERS = ['acg-zenith-disc', 'acg-zenith-ov-disc'] as const;
 const ZENITH_HIT_TOLERANCE_PX = 4;
 
 interface ZenithHit {
   id: string;
+  /** The GeoJSON source the stamp lives in — 'acg-zenith' (natal) or 'acg-zenith-ov'
+   *  (overlay) — so its hover feature-state targets the right one (both number their
+   *  features by planet name, so the ids collide across sources). */
+  source: string;
+  /** True for an overlay stamp, so the click-to-fly toggle keys it by the overlay's
+   *  tag (matching the overlay label) rather than the natal '' prefix. */
+  overlay: boolean;
+  /** The body's overlay/promoted tag (e.g. "Tr"), carried on the stamp's feature;
+   *  shown as the hover-tooltip prefix. Absent for the natal chart's own zeniths. A
+   *  promoted stamp HAS a tag (display) yet is overlay=false (natal-path routing). */
+  tag?: string;
   planet: PlanetName;
   lng: number;
   lat: number;
 }
 
 function zenithAtPoint(map: maplibregl.Map, pt: ScreenPt): ZenithHit | null {
-  if (!map.getLayer(ZENITH_HIT_LAYER)) return null;
+  const layers = ZENITH_HIT_LAYERS.filter((id) => map.getLayer(id));
+  if (layers.length === 0) return null;
   const t = ZENITH_HIT_TOLERANCE_PX;
   const feats = map.queryRenderedFeatures(
     [
       [pt.x - t, pt.y - t],
       [pt.x + t, pt.y + t],
     ],
-    { layers: [ZENITH_HIT_LAYER] },
+    { layers: layers as unknown as string[] },
   );
   const f = feats[0];
   if (!f || f.id == null || !f.properties || f.geometry.type !== 'Point') {
     return null;
   }
+  const overlay = f.layer.id === 'acg-zenith-ov-disc';
   const [lng, lat] = f.geometry.coordinates as [number, number];
-  return { id: String(f.id), planet: f.properties.planet as PlanetName, lng, lat };
+  return {
+    id: String(f.id),
+    source: overlay ? 'acg-zenith-ov' : 'acg-zenith',
+    overlay,
+    tag: typeof f.properties.tag === 'string' ? f.properties.tag : undefined,
+    planet: f.properties.planet as PlanetName,
+    lng,
+    lat,
+  };
+}
+
+// A zenith's stable identity for the click-to-fly-and-back toggle: the overlay
+// prefix ('' for natal) plus the planet. The ACG label badges and the on-map
+// stamps build the SAME key, so flying out via a label and flying back by clicking
+// the stamp now centred under you share one toggle (see flyToZenith).
+function zenithKey(prefix: string, planet: string): string {
+  return `${prefix}|${planet}`;
 }
 
 // ── Local-space × birth-chart crossing hover ────────────────────────────────────
@@ -542,6 +579,7 @@ const LINE_HIT_LAYERS = [
   'local-space-layer-in',
   'local-space-ov-layer',
   'ecliptic-layer',
+  'ecliptic-ov-layer',
 ];
 const LINE_HIT_TOLERANCE_PX = 3;
 
@@ -558,10 +596,10 @@ function lineLabelHtml(
   t: TFn,
   labels: EnumLabels,
 ): string | null {
-  const isOv = layerId.includes('-ov');
-  // Overlay lines carry a tagged label ("Tr Ve MC"); lift the prefix off it.
-  const pre =
-    isOv && typeof props.label === 'string' ? tagHtml(props.label.split(' ')[0]) : '';
+  // Overlay AND promoted lines carry their tag (e.g. "Tr") in props.tag; show it as the
+  // hover-tip prefix regardless of which path (dashed overlay or solid natal/promoted)
+  // drew the line.
+  const pre = typeof props.tag === 'string' ? tagHtml(props.tag) : '';
   let row: string | null = null;
   if (layerId.startsWith('acg-lines')) {
     const planet = props.planet as PlanetName;
@@ -595,7 +633,7 @@ function lineLabelHtml(
       `<span class="cross-tip-x">×</span>` +
       glyphHtml(pb, PLANET_COLORS[pb]) +
       `${labels.planet(pb)} ${tagHtml(ANGLE_CODE[props.angleB as LineType])}`;
-  } else if (layerId === 'ecliptic-layer') {
+  } else if (layerId === 'ecliptic-layer' || layerId === 'ecliptic-ov-layer') {
     row = t('map.ecliptic');
   }
   return row ? `<div class="ui-tip"><span class="cross-tip-row">${row}</span></div>` : null;
@@ -832,6 +870,24 @@ function setupCustomLayers(
       'line-color': '#ffe14d',
       'line-width': 1.6,
       'line-opacity': 0.45,
+    },
+  });
+  // The overlay's ecliptic — the same bright-yellow reference, but DOTTED so it reads
+  // as the derived layer: a short round-capped dash + gap (a non-zero dash so it's
+  // reliably visible; round caps soften it toward dots). Fed only while the overlay
+  // zeniths are shown (the App gates it). Added right after the natal ecliptic, so
+  // both sit beneath the lines, parans, and stamps.
+  map.addSource('ecliptic-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer({
+    id: 'ecliptic-ov-layer',
+    source: 'ecliptic-ov',
+    type: 'line',
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': '#ffe14d',
+      'line-width': 1.6,
+      'line-opacity': 0.45,
+      'line-dasharray': [1, 2],
     },
   });
 
@@ -1151,6 +1207,51 @@ function setupCustomLayers(
     },
   });
 
+  // ── Overlay zenith stamps: the same glyph discs as the natal zeniths below, but
+  // for the active overlay's bodies. The App feeds this source points only while
+  // Overlay ▸ Display ▸ Zenith is on (empty otherwise, so the stamps vanish). Added
+  // BEFORE the natal stamps so a natal body stays on top where the two coincide, and
+  // drawn a touch softer to read as the derived (dashed-line) layer. Like the natal
+  // stamps they hover-grow and fly on click (zenithAtPoint hit-tests this layer too);
+  // the click toggle is keyed by the overlay tag, so it's shared with the matching
+  // overlay edge label.
+  map.addSource('acg-zenith-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer({
+    id: 'acg-zenith-ov-disc',
+    source: 'acg-zenith-ov',
+    type: 'circle',
+    paint: {
+      // Same grow-on-hover as the natal disc, but kept a touch translucent.
+      'circle-radius': ['case', ['boolean', ['feature-state', 'hover'], false], 18, 13],
+      'circle-radius-transition': { duration: 150, delay: 0 },
+      'circle-color': zenithFill,
+      'circle-opacity': 0.85,
+      'circle-stroke-color': ['get', 'color'],
+      'circle-stroke-width': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        2.75,
+        1.5,
+      ],
+      'circle-stroke-width-transition': { duration: 150, delay: 0 },
+      'circle-stroke-opacity': 0.85,
+    },
+  });
+  map.addLayer({
+    id: 'acg-zenith-ov-layer',
+    source: 'acg-zenith-ov',
+    type: 'symbol',
+    layout: {
+      'icon-image': ['concat', ZENITH_GLYPH_PREFIX, ['get', 'planet']] as unknown as ExpressionSpecification,
+      'icon-size': 1,
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+    paint: {
+      'icon-opacity': 0.85,
+    },
+  });
+
   // ── Zenith stamps: the planet glyph at each body's sub-planetary point (where
   // it is directly overhead) — on its MC line, at latitude = declination. Drawn
   // above the lines so the glyph reads on top of the meridian.
@@ -1246,10 +1347,21 @@ function pushData(map: maplibregl.Map, data: MapData) {
   const lsOv = map.getSource('local-space-ov') as
     | maplibregl.GeoJSONSource
     | undefined;
+  const zenOv = map.getSource('acg-zenith-ov') as
+    | maplibregl.GeoJSONSource
+    | undefined;
+  const eclOv = map.getSource('ecliptic-ov') as
+    | maplibregl.GeoJSONSource
+    | undefined;
   const ov = data.overlay;
   if (acgOv) acgOv.setData(ov ? ov.lines : EMPTY_FC());
   if (parOv) parOv.setData(ov ? ov.parans : EMPTY_FC());
   if (lsOv) lsOv.setData(ov ? ov.localSpace : EMPTY_FC());
+  // Overlay zenith stamps + the overlay ecliptic — already empty unless Overlay ▸
+  // Display ▸ Zenith is on (the App gates ov.zenith / ov.ecliptic), so this just
+  // mirrors the source data.
+  if (zenOv) zenOv.setData(ov ? ov.zenith : EMPTY_FC());
+  if (eclOv) eclOv.setData(ov ? ov.ecliptic : EMPTY_FC());
 }
 
 export const Map = forwardRef<MapHandle, MapProps>(function Map({
@@ -1393,6 +1505,36 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     [flyToPoint],
   );
 
+  // Clicking an ACG line's label flies to that body's zenith (its sub-planetary
+  // point); clicking the SAME zenith again returns to wherever you were when you
+  // first flew there (a toggle, like the paran badges). Keyed by the zenith's
+  // identity (overlay prefix + planet) and shared between the label badge and the
+  // on-map stamp, so you can fly out by clicking the label and fly back by
+  // re-clicking the label OR clicking the stamp now centred under you.
+  const zenithReturnRef = useRef<(SavedView & { id: string }) | null>(null);
+  const flyToZenith = useCallback(
+    (id: string, lng: number, lat: number) => {
+      const map = mapRef.current;
+      if (!map) return;
+      const saved = zenithReturnRef.current;
+      if (saved && saved.id === id) {
+        // Second click on the same zenith — fly back to the saved view.
+        zenithReturnRef.current = null;
+        map.flyTo({
+          center: saved.center,
+          zoom: saved.zoom,
+          bearing: saved.bearing,
+          pitch: saved.pitch,
+          essential: true,
+        });
+        return;
+      }
+      zenithReturnRef.current = { id, ...snapshotView(map) };
+      flyToPoint(lng, lat);
+    },
+    [flyToPoint],
+  );
+
   const computeBadges = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -1435,7 +1577,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           angleA: p.angleA,
           planetB: p.planetB,
           angleB: p.angleB,
-          prefix: overlay ? p.label : '',
+          // Tag prefix (overlay or promoted); empty for the natal chart's own parans.
+          prefix: p.tag ?? '',
           targetLng: p.intersectionLng,
           targetLat: p.latitude,
         });
@@ -1672,6 +1815,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         map,
         themeRef.current === 'dark' ? '' : LABEL_HALO_COLORS[themeRef.current],
         ZENITH_DISC_COLORS[themeRef.current],
+        themeRef.current,
       );
       applyDetailToggles(map, detailRef.current);
       setupCustomLayers(
@@ -1718,7 +1862,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     map.setStyle(BASEMAP_STYLE_URLS[theme]);
     map.once('style.load', async () => {
       applyProjection(map, projectionRef.current); // setStyle reset it; re-apply first
-      await ensureGlyphImages(map, theme === 'dark' ? '' : LABEL_HALO_COLORS[theme], ZENITH_DISC_COLORS[theme]);
+      await ensureGlyphImages(map, theme === 'dark' ? '' : LABEL_HALO_COLORS[theme], ZENITH_DISC_COLORS[theme], theme);
       applyDetailToggles(map, detailRef.current);
       setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current, ZENITH_DISC_COLORS[theme]);
       pushData(map, dataRef.current);
@@ -1754,7 +1898,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     if (!map) return;
     // The hovered zenith stamp (drives its grow/brighten feature-state) + a themed
     // tooltip explaining what it is. Kept across moves; cleared on leave/teardown.
-    let hoveredZenith: string | null = null;
+    let hoveredZenith: { source: string; id: string } | null = null;
     const zenithPopup = new maplibregl.Popup({
       closeButton: false,
       closeOnClick: false,
@@ -1762,8 +1906,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       className: 'zenith-popup',
     });
     const clearZenith = () => {
-      if (hoveredZenith !== null) {
-        map.setFeatureState({ source: 'acg-zenith', id: hoveredZenith }, { hover: false });
+      if (hoveredZenith) {
+        map.setFeatureState(hoveredZenith, { hover: false });
         hoveredZenith = null;
       }
       zenithPopup.remove();
@@ -1832,12 +1976,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (!linePopup.isOpen()) linePopup.addTo(map);
     };
     const showZenith = (zen: ZenithHit) => {
-      if (hoveredZenith !== null && hoveredZenith !== zen.id) {
-        map.setFeatureState({ source: 'acg-zenith', id: hoveredZenith }, { hover: false });
+      if (
+        hoveredZenith &&
+        (hoveredZenith.source !== zen.source || hoveredZenith.id !== zen.id)
+      ) {
+        map.setFeatureState(hoveredZenith, { hover: false });
       }
-      hoveredZenith = zen.id;
-      map.setFeatureState({ source: 'acg-zenith', id: zen.id }, { hover: true });
-      const name = labels.planet(zen.planet) ?? zen.planet;
+      hoveredZenith = { source: zen.source, id: zen.id };
+      map.setFeatureState({ source: zen.source, id: zen.id }, { hover: true });
+      // Match the edge-label convention: an overlay OR promoted stamp leads with its
+      // tag (e.g. "Tr Moon") so its tooltip is distinguishable from the natal body. The
+      // tag rides on the zenith feature, so it shows on promoted (natal-path) stamps too.
+      const tag = zen.tag ?? '';
+      const base = labels.planet(zen.planet) ?? zen.planet;
+      const name = tag ? `${tag} ${base}` : base;
       zenithPopup
         .setLngLat([zen.lng, zen.lat])
         .setHTML(
@@ -1896,10 +2048,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // Any map click can surface onboarding missions (the handler itself decides
       // whether anything is due).
       onMapClick?.();
-      // A click on (or near) a zenith stamp flies to it. Pin placement is a
+      // A click on (or near) a zenith stamp flies to it — and clicking the stamp
+      // again flies back (the same toggle the label badge uses, sharing one key per
+      // zenith). Natal stamps key off '' ; overlay stamps key off the overlay tag, so
+      // a stamp shares its toggle with its overlay label. Pin placement is a
       // double-tap now, so a plain click no longer relocates the chart.
       const zen = zenithAtPoint(map, e.point);
-      if (zen) flyToPoint(zen.lng, zen.lat);
+      if (zen) {
+        // Key by the routing prefix (the tag for overlay-path stamps, '' otherwise) so
+        // the stamp shares one toggle with its label — a promoted stamp shows its tag
+        // but keys '' like its natal-source label.
+        const prefix = zen.overlay ? (zen.tag ?? '') : '';
+        flyToZenith(zenithKey(prefix, zen.planet), zen.lng, zen.lat);
+      }
     };
     const handleDoubleClick = (e: maplibregl.MapMouseEvent) => {
       if (measureActive) return;
@@ -1929,7 +2090,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       clearCross();
       clearLine();
     };
-  }, [onHover, onLeave, onPlacePin, onRightClick, onMapClick, measureActive, flyToPoint, t, labels]);
+  }, [onHover, onLeave, onPlacePin, onRightClick, onMapClick, measureActive, flyToZenith, t, labels]);
 
   // Measurement tool: press-drag draws a great-circle segment from the origin to
   // the cursor and reports the live distance. Panning is disabled while the tool
@@ -2152,8 +2313,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       : null;
   // ACG line labels fly to that body's zenith on click — build the lookup. Natal
   // labels read the natal zenith stamps; overlay labels read the overlay's own
-  // zenith points (computed but not drawn as stamps). Plain objects, not a Map —
-  // `Map` is this component's own name here.
+  // zenith points, which the App supplies (and the map draws as stamps) only when
+  // Overlay ▸ Display ▸ Zenith is on — so when it's off this map is empty and the
+  // overlay labels become non-clickable. Plain objects, not a Map — `Map` is this
+  // component's own name here.
   const zenithByPlanet: Record<string, [number, number]> = {};
   for (const f of zenith.features) {
     const c = f.geometry.coordinates;
@@ -2189,9 +2352,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             ? `linear-gradient(100deg, ${PLANET_COLORS.NorthNode} 0 ${seamPct}%, ${PLANET_COLORS.SouthNode} ${seamPct}% 100%)`
             : b.color;
           const zenithTarget =
-            b.prefix === ''
-              ? zenithByPlanet[b.planet]
-              : zenithByOverlayPlanet[b.planet];
+            b.overlay
+              ? zenithByOverlayPlanet[b.planet]
+              : zenithByPlanet[b.planet];
           const inner = b.pair ? (
             // No "/" separator — the two-tone fill splits North vs South node — but keep an
             // empty spacer so the two halves read as two groups and the colour seam falls
@@ -2224,7 +2387,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               tabIndex={-1}
               className="acg-badge acg-badge-btn"
               style={{ translate: badgePos(b.x, b.y), background: bg, color: text }}
-              onClick={() => flyToPoint(zenithTarget[0], zenithTarget[1])}
+              onClick={() =>
+                flyToZenith(
+                  // Key by the routing prefix (the overlay tag for overlay-path
+                  // badges, '' otherwise) so the label shares one toggle with its
+                  // stamp — a promoted label shows "Tr" but keys '' like its
+                  // natal-source stamp.
+                  zenithKey(b.overlay ? b.prefix : '', b.planet),
+                  zenithTarget[0],
+                  zenithTarget[1],
+                )
+              }
               placement="top"
               tip={t('map.flyToZenith', {
                 prefix: b.prefix ? `${b.prefix} ` : '',

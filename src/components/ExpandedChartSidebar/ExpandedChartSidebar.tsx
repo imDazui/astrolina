@@ -128,9 +128,10 @@ interface ExpandedChartSidebarProps {
   chart: StoredChart | null;
   charts: StoredChart[];
   point: { lat: number; lng: number } | null;
-  /** The active point's resolved place name (live hover / pin location). Shown with the
-   *  relocated coordinates so the name tracks the point the way the coordinates do —
-   *  `chart.birthplace.label` above is the fixed BIRTH place, not this. */
+  /** The active point's resolved place name (live hover / pin location), shown with the
+   *  relocated coordinates so the name tracks the point the way the coordinates do. This
+   *  is the sidebar's only place line; the caller falls it back to the birthplace when
+   *  nothing is pinned, so it doubles as the birthplace label in the plain natal view. */
   pointLabel?: string | null;
   pinned: boolean;
   isNatalPin: boolean;
@@ -655,7 +656,6 @@ export function ExpandedChartSidebar({
                 </TipGlyph>
               )}
             </span>
-            <span className="es-meta-where">{chart.birthplace.label}</span>
           </div>
         )}
         {(() => {
@@ -673,34 +673,47 @@ export function ExpandedChartSidebar({
                 ? ''
                 : 'natal';
           const hasPin = isNatalPin || pinned;
+          // The pin marker, shown whenever a pin is placed. It sits beside the place
+          // name when there is one; if the name line is hidden (e.g. the measure tool
+          // nulls it) it falls back beside the coordinates, so a placed pin is never
+          // left unmarked.
+          const pinIcon = (
+            <svg
+              className="es-pin-icon"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+          );
           // The chart-state name (NATAL CHART / PINNED CHART / …) already shows in
-          // the wheel's top-left corner, so here we show just the pin + coordinates.
+          // the wheel's top-left corner, so here we show the place name (marked with a
+          // pin when one's placed) above its coordinates.
           return (
             <div className={`es-relocated ${stateClass}`}>
-              {/* The active point's place name, tracking the coordinates below it (the
-                  fixed BIRTH place lives in the header above). Only shown once there's an
-                  active hover/pin point to name. */}
+              {/* The active point's place name — the chart's only location line (the
+                  fixed birthplace line was removed to avoid showing the place twice).
+                  Falls back to the birthplace when nothing is pinned, so it's never
+                  blank; null only in transient states (e.g. the measure tool). When a
+                  pin is placed, the pin marker sits beside the name (the place IS the
+                  pin's location). */}
               {pointLabel && (
-                <span className="es-relocated-place">{pointLabel}</span>
+                <span className="es-relocated-place">
+                  {hasPin && pinIcon}
+                  {pointLabel}
+                </span>
               )}
               <span className="es-relocated-text">
-                {hasPin && (
-                  <svg
-                    className="es-pin-icon"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-                    <circle cx="12" cy="10" r="3" />
-                  </svg>
-                )}
+                {/* Fallback home for the pin when there's no name line to host it. */}
+                {hasPin && !pointLabel && pinIcon}
                 {fmtLat(displayPoint.lat)} {fmtLng(displayPoint.lng)}
               </span>
             </div>

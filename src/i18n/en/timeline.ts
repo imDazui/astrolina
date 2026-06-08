@@ -46,6 +46,16 @@ export const timeline = {
     month: '5 days',
     year: '1 month',
   },
+  // Full step-unit words for the transport tooltips (the compact step box keeps the
+  // min/h/d/mo symbol). Keyed by the step's BASE unit; the count picks one/other.
+  stepWords: {
+    minute: { one: 'minute', other: 'minutes' },
+    hour: { one: 'hour', other: 'hours' },
+    day: { one: 'day', other: 'days' },
+    week: { one: 'week', other: 'weeks' },
+    month: { one: 'month', other: 'months' },
+    year: { one: 'year', other: 'years' },
+  },
 
   transport: {
     stepBack: 'Step back {count} {unit}',
@@ -60,7 +70,7 @@ export const timeline = {
 
   ruler: { aria: 'Scrub date' },
   now: { label: 'Now', tip: 'Set to the current moment' },
-  scale: { label: 'Scale', tip: 'Notch = 1 {unit}; mini-notch = {minor}' },
+  scale: { label: 'Scale' },
   dateField: {
     tipChartZone: 'Transit / progressed moment, in the chart’s time zone',
     tipUtc: 'Transit / progressed moment, in UTC',

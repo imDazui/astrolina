@@ -24,6 +24,8 @@ import {
 } from '../../lib/atlas/timezone';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { TipButton, TipSpan } from '../ui/HoverTip';
+import { ClickIcon } from '../ui/ClickIcon';
+import { HintMenu } from '../Sidebar/Sidebar';
 import { TimelineDateModal } from '../TimelineDateModal/TimelineDateModal';
 import { useT } from '../../i18n';
 import './TimelineHud.css';
@@ -91,13 +93,18 @@ const RULER_PX: Record<TimeUnit, number> = {
 const MIN_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
-const STEP_UNIT: Record<TimeUnit, { count: number; baseMs: number; label: string }> = {
-  minute: { count: 1, baseMs: MIN_MS, label: 'min' },
-  hour: { count: 10, baseMs: MIN_MS, label: 'min' },
-  day: { count: 6, baseMs: HOUR_MS, label: 'h' },
-  week: { count: 1, baseMs: DAY_MS, label: 'd' },
-  month: { count: 5, baseMs: DAY_MS, label: 'd' },
-  year: { count: 1, baseMs: 30 * DAY_MS, label: 'mo' },
+// `label` is the compact symbol shown in the step box; `unit` is the base unit's full
+// key, used for the spelled-out word in the transport tooltips (timeline.stepWords.*).
+const STEP_UNIT: Record<
+  TimeUnit,
+  { count: number; baseMs: number; label: string; unit: TimeUnit }
+> = {
+  minute: { count: 1, baseMs: MIN_MS, label: 'min', unit: 'minute' },
+  hour: { count: 10, baseMs: MIN_MS, label: 'min', unit: 'minute' },
+  day: { count: 6, baseMs: HOUR_MS, label: 'h', unit: 'hour' },
+  week: { count: 1, baseMs: DAY_MS, label: 'd', unit: 'day' },
+  month: { count: 5, baseMs: DAY_MS, label: 'd', unit: 'day' },
+  year: { count: 1, baseMs: 30 * DAY_MS, label: 'mo', unit: 'month' },
 };
 
 const YEAR_MS = 365.2425 * 86_400_000;
@@ -313,7 +320,10 @@ export function TimelineHud({
   // The readout shows only the dynamic measure (Age / arc°). Transits passes null
   // — its state is already clear from the date field.
   const readout = overlayMeasure;
-  const minorDesc = t(`timeline.minorLabel.${stepUnit}`);
+  // The spelled-out base unit for the transport tooltips ("Step forward 5 days" /
+  // "1 month"), pluralized by the count — the compact step box keeps the symbol.
+  const stepWord = (n: number) =>
+    t(`timeline.stepWords.${stepBase.unit}.${n === 1 ? 'one' : 'other'}`);
   const modeLabel =
     overlayMode in NUB_LABEL_KEY
       ? t(NUB_LABEL_KEY[overlayMode as keyof typeof NUB_LABEL_KEY])
@@ -353,7 +363,13 @@ export function TimelineHud({
         {readout && <span className="thud-measure-value">{readout}</span>}
         <span className="hud-move-hint ui-tip-box ui-tip" aria-hidden="true">
           <span className="ui-tip-title">{t('common.hud.dragToMove')}</span>
-          <span className="ui-tip-sub">{t('common.hud.dockHint')}</span>
+          <span className="ui-tip-sub hud-dock-line">
+            <span className="ui-tip-hotkey hud-dock-key">
+              {t('common.hud.dockKey')}
+              <ClickIcon className="hud-dock-icon" />
+            </span>
+            {t('common.hud.dockHint')}
+          </span>
         </span>
       </div>
 
@@ -380,7 +396,7 @@ export function TimelineHud({
             placement="top"
             tip={t('timeline.transport.stepBack', {
               count: stepCount,
-              unit: stepBase.label,
+              unit: stepWord(stepCount),
             })}
           >
             ‹
@@ -403,7 +419,7 @@ export function TimelineHud({
             placement="top"
             tip={t('timeline.transport.stepForward', {
               count: stepCount,
-              unit: stepBase.label,
+              unit: stepWord(stepCount),
             })}
           >
             ›
@@ -411,7 +427,7 @@ export function TimelineHud({
           <TipSpan
             className="thud-stepsize"
             placement="top"
-            tip={t('timeline.transport.stepAmount', { unit: stepBase.label })}
+            tip={t('timeline.transport.stepAmount', { unit: stepWord(2) })}
           >
             <input
               type="number"
@@ -420,7 +436,7 @@ export function TimelineHud({
               step={1}
               value={Number.isFinite(stepCount) ? stepCount : ''}
               onChange={(e) => setStepCount(e.target.valueAsNumber)}
-              aria-label={t('timeline.transport.stepAmountAria', { unit: stepBase.label })}
+              aria-label={t('timeline.transport.stepAmountAria', { unit: stepWord(2) })}
             />
             <span className="thud-stepunit">{stepBase.label}</span>
           </TipSpan>
@@ -465,30 +481,21 @@ export function TimelineHud({
           </TipSpan>
         </span>
 
-        <label className="thud-mode thud-unit">
+        {/* The scale picker reuses the shared HintMenu dropdown (same styling as the
+            Calc settings) rather than a native select. Empty hints → no row tips, so
+            hovering the scale shows nothing. */}
+        <div className="thud-mode thud-unit">
           <span className="thud-mode-label">{t('timeline.scale.label')}</span>
-          <TipSpan
-            className="thud-select-wrap"
-            placement="top"
-            tip={t('timeline.scale.tip', {
-              unit: t(`timeline.unitsLower.${stepUnit}`),
-              minor: minorDesc,
-            })}
-          >
-            <select
-              className="thud-select"
-              value={stepUnit}
-              onChange={(e) => setStepUnit(e.target.value as TimeUnit)}
-            >
-              {UNIT_OPTIONS.map((unit) => (
-                <option key={unit} value={unit}>
-                  {t(`timeline.units.${unit}`)}
-                </option>
-              ))}
-            </select>
-            <span className="thud-select-caret">▾</span>
-          </TipSpan>
-        </label>
+          <HintMenu
+            value={stepUnit}
+            onChange={setStepUnit}
+            options={UNIT_OPTIONS.map((unit) => ({
+              value: unit,
+              label: t(`timeline.units.${unit}`),
+              hint: '',
+            }))}
+          />
+        </div>
       </div>
 
       {pickerOpen && (

@@ -13,17 +13,18 @@
 .timeline-hud {
   position: absolute;
   bottom: 16px;
-  /* Center over the *visible* map, not the whole viewport: when the expanded
-     chart sidebar is open it publishes its width as --es-width, so we treat the
-     sidebar's right edge as the left bound. We only count the sidebar as 50% of
-     its real width for the shift (so the center moves right by a quarter of the
-     width, not half) — full recentering pushed the bars too far right. The top
-     (Mapping Tools) and bottom (Timeline) bars stop hiding behind the expanded
-     sidebar without over-shooting. --es-width is 0 when it's closed. */
+  /* When the expanded chart sidebar is open it publishes its width as --es-width; we
+     shift the WHOLE bar right by a quarter of that (not half — full recentering
+     over-shot) so it "pops out" from behind the sidebar as a single unit. We
+     deliberately do NOT shrink the bar to the visible area: clamping max-width by
+     --es-width narrowed the box below its (non-wrapping) content on smaller screens,
+     so the content overflowed the box and the top nub no longer stayed centred on it.
+     The bar is freely movable, so the user can nudge it over if the shifted bar still
+     overlaps the sidebar. --es-width is 0 when the sidebar is closed. */
   left: calc(50% + var(--es-width, 0px) / 4);
   transform: translateX(-50%);
   z-index: 12;
-  max-width: calc(100vw - var(--es-width, 0px) - 360px);
+  max-width: calc(100vw - 360px);
   background: rgba(var(--bg-panel), 0.94);
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 10px;
@@ -218,6 +219,16 @@
   font-size: 12px;
   color: var(--text-faint);
   pointer-events: none;
+}
+
+/* The scale picker reuses the shared HintMenu dropdown. Size its trigger to the bar
+   (auto width, inline beside the "Scale" label) rather than the sidebar's full-width
+   form trigger; the portaled panel still matches the trigger's measured width. */
+.thud-unit .calc-menu {
+  display: inline-flex;
+}
+.thud-unit .calc-menu-trigger {
+  width: auto;
 }
 
 /* ── Transport: step / play / step ─────────────────────────────── */

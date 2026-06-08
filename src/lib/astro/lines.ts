@@ -41,6 +41,10 @@ export interface LineProps {
   lineType: LineType;
   color: string;
   label: string;
+  /** Overlay/promoted tag (e.g. "Tr") stamped by tagLabels; absent on the natal
+   *  chart's own lines. The edge badge reads it for the label prefix, independent of
+   *  whether the badge is routed as natal or overlay. */
+  tag?: string;
   /** Set by the node-pair merge (see App.mergeNodePairs): this North Node line coincides
    *  with its (antipodal) South Node counterpart, so the map draws it two-toned and the
    *  edge badge labels it for both nodes ("NN MC / SN IC"). Absent on every other line. */
@@ -205,6 +209,9 @@ export function generateLines(
 export interface ZenithProps {
   planet: PlanetName;
   color: string;
+  /** Overlay/promoted tag (e.g. "Tr"); absent for the natal chart. Shown as the
+   *  prefix in the zenith stamp's hover tooltip, like the line/paran labels. */
+  tag?: string;
 }
 
 // The zenith / sub-planetary point: the single spot on Earth where a planet is

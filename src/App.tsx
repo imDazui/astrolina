@@ -5,7 +5,12 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FeatureCollection, LineString, Point as GeoPoint } from 'geojson';
+import type {
+  FeatureCollection,
+  Geometry,
+  LineString,
+  Point as GeoPoint,
+} from 'geojson';
 import {
   Map,
   type MapHandle,
@@ -98,7 +103,7 @@ import {
   saveCurrentId,
   type StoredChart,
 } from './lib/chartLibrary';
-import { applyTheme, loadTheme, saveTheme, type Theme } from './lib/theme';
+import { applyTheme, loadTheme, MOON_LINE_DARK, saveTheme, type Theme } from './lib/theme';
 import {
   loadProjection,
   saveProjection,
@@ -113,14 +118,15 @@ interface Point {
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 
-// The Earth/Glass basemaps are light, so the Moon's pale gray line barely shows. On
-// those themes only, swap it for a darker slate. The line color is the single source
-// the edge badges, hover tip, and crossing-dot blends all read, so they follow suit.
-const MOON_LINE_DARK = '#5b6480';
-function withDarkMoon<P extends { planet: PlanetName; color: string }>(
-  fc: FeatureCollection<LineString, P>,
+// The Earth/Glass basemaps are light, so the Moon's pale gray barely shows. On those
+// themes only, swap it for a darker slate (MOON_LINE_DARK, shared from lib/theme so the
+// baked zenith glyph matches). The color is the single source the edge badges, hover
+// tip, crossing-dot blends, AND the zenith disc/stamp all read, so they follow suit.
+// Geometry-agnostic so it covers the line/local-space (LineString) and zenith (Point) sets.
+function withDarkMoon<G extends Geometry, P extends { planet: PlanetName; color: string }>(
+  fc: FeatureCollection<G, P>,
   theme: Theme,
-): FeatureCollection<LineString, P> {
+): FeatureCollection<G, P> {
   if (theme === 'dark') return fc;
   return {
     type: 'FeatureCollection',
@@ -229,6 +235,21 @@ function filterZenith(
   return {
     type: 'FeatureCollection',
     features: fc.features.filter((f) => planets.has(f.properties.planet)),
+  };
+}
+// Stamp the overlay tag (e.g. "Tr") onto each zenith point — the on-map stamp's hover
+// tooltip reads it, so an overlay (or promoted) zenith reads "Tr Moon" rather than
+// being mistaken for the natal body. The natal chart's own zeniths are left untagged.
+function tagZeniths(
+  fc: FeatureCollection<GeoPoint, ZenithProps>,
+  tag: string,
+): FeatureCollection<GeoPoint, ZenithProps> {
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.map((f) => ({
+      ...f,
+      properties: { ...f.properties, tag },
+    })),
   };
 }
 
@@ -341,6 +362,21 @@ export default function App() {
   // its draggable nub (no ruler/transport).
   const [showTimeline, setShowTimeline] = useState(
     () => localStorage.getItem('astro:show-timeline:v1') !== '0',
+  );
+  // Overlay ▸ Display ▸ Zenith: draw the overlay bodies' sub-planetary (zenith)
+  // stamps on the map. Off by default. When off, the overlay edge labels also stop
+  // being click-to-fly targets — their zenith point isn't shown, so there's nothing
+  // to fly to (the App simply feeds the overlay zenith source no points).
+  const [showOverlayZenith, setShowOverlayZenith] = useState(
+    () => localStorage.getItem('astro:show-overlay-zenith:v1') === '1',
+  );
+  // Overlay ▸ Display ▸ Natal: on by default. When off (and a time overlay is
+  // active), the natal chart is hidden and the overlay is promoted to BE the chart
+  // temporarily — drawn solid through the natal path, with the wheel/readouts
+  // reading the overlay's own positions/angles. Reverts the moment the overlay is
+  // turned off or this is switched back on.
+  const [showNatal, setShowNatal] = useState(
+    () => localStorage.getItem('astro:show-natal:v1') !== '0',
   );
   // Which sidebar accordion section is open (owned here so the Info chip can open the
   // Calculation tab). Persisted; defaults to Map Filters.
@@ -532,6 +568,15 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:show-timeline:v1', showTimeline ? '1' : '0');
   }, [showTimeline]);
+  useEffect(() => {
+    localStorage.setItem(
+      'astro:show-overlay-zenith:v1',
+      showOverlayZenith ? '1' : '0',
+    );
+  }, [showOverlayZenith]);
+  useEffect(() => {
+    localStorage.setItem('astro:show-natal:v1', showNatal ? '1' : '0');
+  }, [showNatal]);
 
   useEffect(() => saveOverlayMode(overlayMode), [overlayMode]);
   useEffect(() => saveOverlayDate(targetDate), [targetDate]);
@@ -673,8 +718,9 @@ export default function App() {
     [showLocalSpace, localSpace, lines],
   );
   const zenith = useMemo(
-    () => filterZenith(allZenith, visiblePlanets, visibleLineTypes),
-    [allZenith, visiblePlanets, visibleLineTypes],
+    () =>
+      withDarkMoon(filterZenith(allZenith, visiblePlanets, visibleLineTypes), theme),
+    [allZenith, visiblePlanets, visibleLineTypes, theme],
   );
 
   // ── Timeline / overlay: a second chart layer (transits, secondary
@@ -762,15 +808,31 @@ export default function App() {
             theme,
           )
         : EMPTY_FC,
-      // Zenith points for the overlay bodies — not drawn as stamps, only used so an
-      // overlay label flies to its zenith on click (same gating as natal: needs MC).
-      zenith: filterZenith(
-        generateZenithStamps(ovPositions, ovMeridianLng),
-        visiblePlanets,
-        visibleLineTypes,
-      ),
+      // Zenith points for the overlay bodies. When Overlay ▸ Display ▸ Zenith is on
+      // these are drawn as stamps AND each overlay label flies to its zenith on click
+      // (same MC gating as natal). When off we feed no points: the stamps vanish and,
+      // with no fly target, the overlay labels become non-clickable.
+      zenith: showOverlayZenith
+        ? tagZeniths(
+            withDarkMoon(
+              filterZenith(
+                generateZenithStamps(ovPositions, ovMeridianLng),
+                visiblePlanets,
+                visibleLineTypes,
+              ),
+              theme,
+            ),
+            prefix,
+          )
+        : EMPTY_FC,
+      // The overlay's ecliptic (zodiac) line — a dotted yellow companion to the natal
+      // ecliptic, threading through the overlay Sun's zenith. Shown only when the
+      // overlay zeniths are (same gate), since it's the zenith stamps' reference curve.
+      ecliptic: showOverlayZenith
+        ? generateEcliptic(overlayLayer.jd, ovMeridianLng)
+        : EMPTY_FC,
     };
-  }, [overlayLayer, visiblePlanets, visibleLineTypes, showParans, showLocalSpace, coordSystem, lineSystem, theme]);
+  }, [overlayLayer, visiblePlanets, visibleLineTypes, showParans, showLocalSpace, showOverlayZenith, coordSystem, lineSystem, theme]);
 
   // Overlay planets in ecliptic coords for the bi-wheel. (For solar-arc the
   // speed/retrograde sampling is meaningless, but the wheel only reads `lon`.)
@@ -781,6 +843,107 @@ export default function App() {
         : null,
     [overlayLayer],
   );
+
+  // Overlay ▸ Display ▸ Natal off, with a time overlay active → promote the overlay
+  // to stand in for the natal chart. (Only the time overlays expose the Display
+  // section that holds this toggle, so it can always be switched back; synastry and
+  // "no overlay" leave the natal chart alone.)
+  const isTimeOverlay =
+    overlayMode === 'transits' ||
+    overlayMode === 'progressed' ||
+    overlayMode === 'solar-arc' ||
+    overlayMode === 'primary-directions';
+  const promoteOverlay = isTimeOverlay && !!overlayLayer && !showNatal;
+
+  // The promoted dataset: the overlay's bodies run through the SAME generators and
+  // filters as the natal chart, so the map's natal rendering path draws them solid and
+  // interactive, exactly as if they were the natal chart. They KEEP the overlay tag
+  // (e.g. "Tr") on their labels so the user isn't misled into reading them as the
+  // entered birth chart (and as a reminder the toggle is on); the zenith stamps +
+  // ecliptic still follow the Zenith toggle. Null unless promoting.
+  const promoted = useMemo(() => {
+    if (!promoteOverlay || !overlayLayer) return null;
+    const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
+    const ovPositions =
+      lineSystem === 'geodetic' || coordSystem === 'zodiaco'
+        ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
+        : overlayLayer.positions;
+    const ovMeridianLng: MeridianLng =
+      lineSystem === 'geodetic'
+        ? (raM) => (eclipticLonOfRA(raM, obliquity(overlayLayer.jd)) * 180) / Math.PI
+        : (raM) => ((raM - overlayLayer.gmst) * 180) / Math.PI;
+    const pLines = mergeNodePairs(
+      withDarkMoon(
+        filterLines(
+          tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
+          visiblePlanets,
+          visibleLineTypes,
+        ),
+        theme,
+      ),
+    );
+    const pLocalSpace = showLocalSpace
+      ? withDarkMoon(
+          filterLocalSpace(
+            generateLocalSpace(
+              ovPositions,
+              overlayLayer.gmst,
+              overlayLayer.originLat,
+              overlayLayer.originLng,
+            ),
+            visiblePlanets,
+          ),
+          theme,
+        )
+      : EMPTY_FC;
+    return {
+      lines: pLines,
+      parans: showParans
+        ? mergeNodeParans(
+            filterParans(
+              tagLabels(generateParans(ovPositions, overlayLayer.gmst), prefix),
+              visiblePlanets,
+            ),
+            visiblePlanets,
+          )
+        : EMPTY_FC,
+      localSpace: pLocalSpace,
+      localSpaceCross: showLocalSpace
+        ? generateLocalSpaceCrossings(pLocalSpace, pLines)
+        : EMPTY_FC,
+      // Zeniths + ecliptic follow the Zenith toggle here too, so it still has an effect
+      // while Natal is hidden: empty when off → the stamps/line vanish and the promoted
+      // labels lose their fly target, just like a normal overlay with Zenith off.
+      zenith: showOverlayZenith
+        ? tagZeniths(
+            withDarkMoon(
+              filterZenith(
+                generateZenithStamps(ovPositions, ovMeridianLng),
+                visiblePlanets,
+                visibleLineTypes,
+              ),
+              theme,
+            ),
+            prefix,
+          )
+        : EMPTY_FC,
+      eclipticLine: showOverlayZenith
+        ? generateEcliptic(overlayLayer.jd, ovMeridianLng)
+        : EMPTY_FC,
+      origin: { lat: overlayLayer.originLat, lng: overlayLayer.originLng } as Point,
+    };
+  }, [
+    promoteOverlay,
+    overlayLayer,
+    visiblePlanets,
+    visibleLineTypes,
+    showParans,
+    showLocalSpace,
+    showOverlayZenith,
+    coordSystem,
+    lineSystem,
+    theme,
+  ]);
 
   const activePoint = pinned ?? hover;
   const isNatalPin =
@@ -900,16 +1063,36 @@ export default function App() {
     // `Map` is the MapLibre component here, so lean on the helper (empty ecliptic
     // → empty result) rather than a `new Map()` literal for the no-chart case.
     const obs = activePoint ?? current?.birthplace;
+    // Promoting the overlay → report the OVERLAY's bodies at the overlay's moment.
+    if (promoteOverlay && overlayLayer) {
+      return getHorizontalCoords(
+        obs ? (overlayEcliptic ?? []) : [],
+        overlayLayer.gmst,
+        obliquity(overlayLayer.jd),
+        obs?.lat ?? 0,
+        obs?.lng ?? 0,
+      );
+    }
     return getHorizontalCoords(obs ? ecliptic : [], gmst, eps, obs?.lat ?? 0, obs?.lng ?? 0);
-  }, [activePoint, current, ecliptic, gmst, eps]);
+  }, [promoteOverlay, overlayLayer, overlayEcliptic, activePoint, current, ecliptic, gmst, eps]);
 
   // The same RA + declination + azimuth/altitude for the four chart angles (each
   // an ecliptic point), so the Advanced table can show real data instead of dashes.
   const angleCoords = useMemo(() => {
     const obs = activePoint ?? current?.birthplace;
-    if (!angles || !obs) return null;
-    return getAngleCoords(angles, gmst, eps, obs.lat, obs.lng);
-  }, [angles, activePoint, current, gmst, eps]);
+    const a = promoteOverlay ? overlayAngles : angles;
+    if (!a || !obs) return null;
+    if (promoteOverlay && overlayLayer) {
+      return getAngleCoords(a, overlayLayer.gmst, obliquity(overlayLayer.jd), obs.lat, obs.lng);
+    }
+    return getAngleCoords(a, gmst, eps, obs.lat, obs.lng);
+  }, [promoteOverlay, overlayLayer, overlayAngles, angles, activePoint, current, gmst, eps]);
+
+  // While promoting the overlay (Natal off), the wheel + coordinate readout read the
+  // overlay's own planet positions / angles as the single chart; the natal ring is
+  // dropped (see the overlay* props on the wheel below, nulled when promoting).
+  const wheelPlanets = promoteOverlay && overlayEcliptic ? overlayEcliptic : ecliptic;
+  const wheelAngles = promoteOverlay && overlayAngles ? overlayAngles : angles;
 
   const togglePlanet = useCallback((p: PlanetName) => {
     setVisiblePlanets((prev) => {
@@ -1133,14 +1316,16 @@ export default function App() {
     <>
       <Map
         ref={mapRef}
-        lines={lines}
-        parans={parans}
-        localSpace={localSpace}
-        localSpaceCross={localSpaceCross}
-        localSpaceOrigin={showLocalSpace ? localSpaceOrigin : null}
-        zenith={zenith}
-        ecliptic={eclipticLine}
-        overlay={overlay}
+        lines={promoted ? promoted.lines : lines}
+        parans={promoted ? promoted.parans : parans}
+        localSpace={promoted ? promoted.localSpace : localSpace}
+        localSpaceCross={promoted ? promoted.localSpaceCross : localSpaceCross}
+        localSpaceOrigin={
+          showLocalSpace ? (promoted ? promoted.origin : localSpaceOrigin) : null
+        }
+        zenith={promoted ? promoted.zenith : zenith}
+        ecliptic={promoted ? promoted.eclipticLine : eclipticLine}
+        overlay={promoted ? null : overlay}
         pin={pinned}
         pinType={isNatalPin ? 'natal' : pinned ? 'custom' : null}
         theme={theme}
@@ -1169,7 +1354,7 @@ export default function App() {
           )}
           <CoordReadout
             point={activePoint ?? (current ? current.birthplace : null)}
-            angles={angles}
+            angles={wheelAngles}
             source={coordSource}
             location={coordLocation}
             fadeLocation={fadeLocation}
@@ -1201,6 +1386,10 @@ export default function App() {
           setTransitFrame={setTransitFrame}
           showTimeline={showTimeline}
           setShowTimeline={setShowTimeline}
+          showOverlayZenith={showOverlayZenith}
+          setShowOverlayZenith={setShowOverlayZenith}
+          showNatal={showNatal}
+          setShowNatal={setShowNatal}
           angleProgression={angleProgression}
           setAngleProgression={setAngleProgression}
           primaryRate={primaryRate}
@@ -1313,14 +1502,14 @@ export default function App() {
           chart={current}
           charts={charts}
           point={activePoint}
-          pointLabel={locationLabel}
+          pointLabel={coordLocation}
           pinned={pinned != null}
           isNatalPin={isNatalPin}
-          angles={angles}
-          planets={ecliptic}
-          overlayPlanets={overlayEcliptic}
-          overlayAngles={overlayAngles}
-          overlayLabel={overlayLayer?.labelFull ?? null}
+          angles={wheelAngles}
+          planets={wheelPlanets}
+          overlayPlanets={promoteOverlay ? null : overlayEcliptic}
+          overlayAngles={promoteOverlay ? null : overlayAngles}
+          overlayLabel={promoteOverlay ? null : (overlayLayer?.labelFull ?? null)}
           visiblePlanets={visiblePlanets}
           visibleLineTypes={visibleLineTypes}
           advancedCoords={advancedCoords}
@@ -1338,8 +1527,8 @@ export default function App() {
             point={activePoint}
             pinned={pinned != null}
             isNatalPin={isNatalPin}
-            angles={angles}
-            planets={ecliptic}
+            angles={wheelAngles}
+            planets={wheelPlanets}
             visiblePlanets={visiblePlanets}
           />
         )

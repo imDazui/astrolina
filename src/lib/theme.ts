@@ -58,3 +58,10 @@ export const ZENITH_DISC_COLORS: Record<Theme, string> = {
   dark: 'rgba(10, 10, 15, 0.95)',
   vintage: 'rgba(232, 222, 202, 0.92)',
 };
+
+// The Moon's pale gray reads on the dark basemap but barely shows on the light Earth /
+// Glass themes — including over the pale zenith disc, where its baked glyph and ring
+// nearly disappear. On those themes only, the Moon's lines, labels, and zenith
+// glyph/stamp use this darker slate instead. Single source for App's withDarkMoon and
+// the baked zenith glyph (glyphImages.ensureGlyphImages), so they stay in sync.
+export const MOON_LINE_DARK = '#5b6480';

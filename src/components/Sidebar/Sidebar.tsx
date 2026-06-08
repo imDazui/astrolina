@@ -60,6 +60,10 @@ interface SidebarProps {
   setTransitFrame: (f: TransitFrame) => void;
   showTimeline: boolean;
   setShowTimeline: (v: boolean) => void;
+  showOverlayZenith: boolean;
+  setShowOverlayZenith: (v: boolean) => void;
+  showNatal: boolean;
+  setShowNatal: (v: boolean) => void;
   angleProgression: AngleProgression;
   setAngleProgression: (a: AngleProgression) => void;
   primaryRate: PrimaryRate;
@@ -267,7 +271,9 @@ function HintOption({
 // full-width trigger showing the current value, opening a panel of option rows.
 // The panel is portaled to <body> so the sidebar's overflow can't clip it, and —
 // unlike a native <select> — each row reveals its explanation as a hover .ui-tip.
-function HintMenu<V extends string>({
+// Exported so the timeline-bar scale picker reuses the same dropdown styling as the
+// Calc settings (rather than a separate native <select>).
+export function HintMenu<V extends string>({
   value,
   onChange,
   options,
@@ -634,6 +640,10 @@ export function Sidebar({
   setTransitFrame,
   showTimeline,
   setShowTimeline,
+  showOverlayZenith,
+  setShowOverlayZenith,
+  showNatal,
+  setShowNatal,
   angleProgression,
   setAngleProgression,
   primaryRate,
@@ -979,17 +989,36 @@ export function Sidebar({
                 <>
                   <h2>{t('settings.headings.display')}</h2>
                   <ul className="technique-list">
-                    <li>
-                      <button
-                        type="button"
-                        className={`tech-toggle ${showTimeline ? 'on' : 'off'}`}
-                        onClick={() => setShowTimeline(!showTimeline)}
-                        aria-pressed={showTimeline}
-                      >
-                        <EyeIcon open={showTimeline} />
-                        <span className="name">{t('settings.timelineBar')}</span>
-                      </button>
-                    </li>
+                    <TipToggle
+                      className={`tech-toggle ${showNatal ? 'on' : 'off'}`}
+                      onClick={() => setShowNatal(!showNatal)}
+                      ariaPressed={showNatal}
+                      title={t('settings.natal.title')}
+                      hint={t('settings.natal.hint')}
+                    >
+                      <EyeIcon open={showNatal} />
+                      <span className="name">{t('settings.natal.title')}</span>
+                    </TipToggle>
+                    <TipToggle
+                      className={`tech-toggle ${showTimeline ? 'on' : 'off'}`}
+                      onClick={() => setShowTimeline(!showTimeline)}
+                      ariaPressed={showTimeline}
+                      title={t('settings.timelineBar.title')}
+                      hint={t('settings.timelineBar.hint')}
+                    >
+                      <EyeIcon open={showTimeline} />
+                      <span className="name">{t('settings.timelineBar.title')}</span>
+                    </TipToggle>
+                    <TipToggle
+                      className={`tech-toggle ${showOverlayZenith ? 'on' : 'off'}`}
+                      onClick={() => setShowOverlayZenith(!showOverlayZenith)}
+                      ariaPressed={showOverlayZenith}
+                      title={t('settings.overlayZenith.title')}
+                      hint={t('settings.overlayZenith.hint')}
+                    >
+                      <EyeIcon open={showOverlayZenith} />
+                      <span className="name">{t('settings.overlayZenith.title')}</span>
+                    </TipToggle>
                   </ul>
                 </>
               )}

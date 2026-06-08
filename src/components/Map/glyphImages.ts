@@ -12,6 +12,7 @@
 // lib/astro/glyphChars (the same ones the DOM/SVG components use).
 import type { Map as MlMap } from 'maplibre-gl';
 import { PLANET_COLORS, PLANET_NAMES, type PlanetName } from '../../lib/ephemeris';
+import { MOON_LINE_DARK, type Theme } from '../../lib/theme';
 import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 
 export const GLYPH_IMAGE_PREFIX = 'glyph-';
@@ -95,10 +96,15 @@ export async function ensureGlyphImages(
   map: MlMap,
   halo: string,
   zenithHalo: string,
+  theme: Theme,
 ): Promise<void> {
   await ensureFontLoaded();
   for (const p of PLANET_NAMES) {
-    const color = PLANET_COLORS[p];
+    // The Moon's pale gray vanishes on the light themes — including over the pale zenith
+    // disc — so bake it in the shared darker slate there, matching App's withDarkMoon for
+    // the lines. Dark theme keeps the pale gray (it reads on the dark disc/basemap).
+    const color =
+      p === 'Moon' && theme !== 'dark' ? MOON_LINE_DARK : PLANET_COLORS[p];
     // Line-label glyph: nudged down to sit on the angle-code baseline.
     const id = `${GLYPH_IMAGE_PREFIX}${p}`;
     const data = rasterize(p, color, halo);
