@@ -152,6 +152,15 @@
   letter-spacing: 0.02em;
 }
 
+/* The active point's place name, on its own line above the relocated coordinates (so the
+   name tracks the point like the coordinates do). Full-width so the coordinates wrap below
+   it; inherits the relocated block's state colour. */
+.es-relocated-place {
+  flex-basis: 100%;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
 /* Recenter button beside the "Pinned at …" text — flies the map to the pin. */
 .es-recenter-btn {
   display: inline-flex;

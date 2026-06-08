@@ -177,10 +177,56 @@
 /* ── Footer ── */
 .mg-footer {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Guide pager (reference mode only): "‹ 1/3 ›" sits left-aligned; the OK button is kept
+   pinned to the right by its margin-left:auto below, so the pop-up's footer is unchanged. */
+.mg-pager {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mg-pager-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 5px;
+  border: 1px solid rgba(var(--tint), 0.14);
+  background: rgba(var(--tint), 0.05);
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.mg-pager-btn:hover:not(:disabled) {
+  background: rgba(var(--tint), 0.1);
+  border-color: rgba(var(--tint), 0.22);
+  color: var(--text-strong);
+}
+
+.mg-pager-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.mg-pager-count {
+  min-width: 30px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
 }
 
 .mg-ok {
+  margin-left: auto;
   padding: 8px 16px;
   border-radius: 6px;
   border: 1px solid transparent;

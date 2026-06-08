@@ -45,6 +45,7 @@ import {
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { LocalHorizonWheel } from '../LocalHorizonWheel/LocalHorizonWheel';
 import type { LineType } from '../../lib/astro/lines';
+import { OPPOSITE_ANGLE } from '../../lib/astro/lines';
 import { PLANET_COLORS, type PlanetName } from '../../lib/ephemeris';
 import { useT } from '../../i18n';
 import type { EnumLabels } from '../../i18n';
@@ -306,8 +307,12 @@ function measureBetween(a: LatLng, b: LatLng): MeasureInfo {
 const SNAP_LINE_LAYERS = [
   'acg-lines-meridian',
   'acg-lines-horizon',
+  'acg-lines-meridian-pair',
+  'acg-lines-horizon-pair',
   'acg-lines-ov-meridian',
   'acg-lines-ov-horizon',
+  'acg-lines-ov-pair-nn',
+  'acg-lines-ov-pair-sn',
   'parans-layer',
   'parans-ov-layer',
   'local-space-layer-out',
@@ -525,8 +530,12 @@ function crossAtPoint(map: maplibregl.Map, pt: ScreenPt): CrossHit | null {
 const LINE_HIT_LAYERS = [
   'acg-lines-meridian',
   'acg-lines-horizon',
+  'acg-lines-meridian-pair',
+  'acg-lines-horizon-pair',
   'acg-lines-ov-meridian',
   'acg-lines-ov-horizon',
+  'acg-lines-ov-pair-nn',
+  'acg-lines-ov-pair-sn',
   'parans-layer',
   'parans-ov-layer',
   'local-space-layer-out',
@@ -556,10 +565,23 @@ function lineLabelHtml(
   let row: string | null = null;
   if (layerId.startsWith('acg-lines')) {
     const planet = props.planet as PlanetName;
-    row =
-      pre +
-      glyphHtml(planet, props.color as string) +
-      `${labels.planet(planet)} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
+    if (props.pair) {
+      // Merged lunar-node line: show both nodes, e.g. "NN MC / SN IC" (with the overlay
+      // tag ahead of it on overlay lines).
+      const opp = OPPOSITE_ANGLE[props.lineType as LineType];
+      row =
+        pre +
+        glyphHtml('NorthNode', PLANET_COLORS.NorthNode) +
+        `${labels.planet('NorthNode')} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}` +
+        `<span class="cross-tip-x">/</span>` +
+        glyphHtml('SouthNode', PLANET_COLORS.SouthNode) +
+        `${labels.planet('SouthNode')} ${tagHtml(ANGLE_CODE[opp])}`;
+    } else {
+      row =
+        pre +
+        glyphHtml(planet, props.color as string) +
+        `${labels.planet(planet)} ${tagHtml(ANGLE_CODE[props.lineType as LineType])}`;
+    }
   } else if (layerId.startsWith('local-space')) {
     const planet = props.planet as PlanetName;
     row = tagHtml('LS') + glyphHtml(planet, props.color as string) + labels.planet(planet);
@@ -861,12 +883,25 @@ function setupCustomLayers(
   addArrowLayer(map, 'local-space-arrows-out', 'local-space', lsDir('out'), '→', 30);
   addArrowLayer(map, 'local-space-arrows-in', 'local-space', lsDir('in'), '←');
 
-  map.addSource('acg-lines', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  // lineMetrics:true lets the node-pair layers below colour a single line with a
+  // line-gradient (half North Node colour, half South Node colour).
+  map.addSource('acg-lines', {
+    type: 'geojson',
+    data: EMPTY_FC(),
+    ...LINE_SOURCE_OPTS,
+    lineMetrics: true,
+  });
   map.addLayer({
     id: 'acg-lines-meridian',
     source: 'acg-lines',
+    // Solid (single-colour) meridians; merged node-pair meridians render in the dedicated
+    // two-tone layer below instead (pair == true), so exclude them here.
+    filter: [
+      'all',
+      ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
+      ['!=', ['get', 'pair'], true],
+    ],
     type: 'line',
-    filter: ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
     paint: {
       'line-color': ['get', 'color'],
       'line-width': [
@@ -890,15 +925,74 @@ function setupCustomLayers(
     id: 'acg-lines-horizon',
     source: 'acg-lines',
     type: 'line',
-    filter: ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
+    filter: [
+      'all',
+      ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
+      ['!=', ['get', 'pair'], true],
+    ],
     paint: {
       'line-color': ['get', 'color'],
       'line-width': 1.5,
       'line-opacity': 0.85,
     },
   });
-  addArrowLayer(map, 'acg-lines-arrows-asc', 'acg-lines', lineTypeIs('ASC'), '→');
-  addArrowLayer(map, 'acg-lines-arrows-dsc', 'acg-lines', lineTypeIs('DSC'), '←');
+  // Merged lunar-node pairs: the North Node line and its antipodal South Node line
+  // coincide, so we draw ONE line graded half North Node colour, half South Node colour
+  // (a hard split at the line's midpoint) rather than two lines overdrawing. Same
+  // width/opacity as the solid layers above so it reads as the same kind of line.
+  const nodePairGradient = [
+    'step',
+    ['line-progress'],
+    PLANET_COLORS.NorthNode,
+    0.5,
+    PLANET_COLORS.SouthNode,
+  ] as unknown as ExpressionSpecification;
+  map.addLayer({
+    id: 'acg-lines-meridian-pair',
+    source: 'acg-lines',
+    type: 'line',
+    filter: [
+      'all',
+      ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
+      ['==', ['get', 'pair'], true],
+    ],
+    paint: {
+      'line-gradient': nodePairGradient,
+      'line-width': ['case', ['==', ['get', 'lineType'], 'MC'], 1.9, 1.0],
+      'line-opacity': ['case', ['==', ['get', 'lineType'], 'MC'], 0.95, 0.7],
+    },
+  });
+  map.addLayer({
+    id: 'acg-lines-horizon-pair',
+    source: 'acg-lines',
+    type: 'line',
+    filter: [
+      'all',
+      ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
+      ['==', ['get', 'pair'], true],
+    ],
+    paint: {
+      'line-gradient': nodePairGradient,
+      'line-width': 1.5,
+      'line-opacity': 0.85,
+    },
+  });
+  // ASC/DSC arrows skip merged node pairs (pair == true): a single line that is both a
+  // rising and a setting line can't carry a meaningful up/down arrow.
+  addArrowLayer(
+    map,
+    'acg-lines-arrows-asc',
+    'acg-lines',
+    ['all', lineTypeIs('ASC'), ['!=', ['get', 'pair'], true]] as unknown as ExpressionSpecification,
+    '→',
+  );
+  addArrowLayer(
+    map,
+    'acg-lines-arrows-dsc',
+    'acg-lines',
+    ['all', lineTypeIs('DSC'), ['!=', ['get', 'pair'], true]] as unknown as ExpressionSpecification,
+    '←',
+  );
   // The glyph + angle label is no longer drawn along the line — it's rendered as
   // a colored edge badge (see the edge-badge overlay in the Map component).
 
@@ -942,7 +1036,12 @@ function setupCustomLayers(
     id: 'acg-lines-ov-meridian',
     source: 'acg-lines-ov',
     type: 'line',
-    filter: ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
+    // Merged node-pair meridians render in the two-tone pair layers below (pair == true).
+    filter: [
+      'all',
+      ['in', ['get', 'lineType'], ['literal', ['MC', 'IC']]],
+      ['!=', ['get', 'pair'], true],
+    ],
     paint: {
       'line-color': ['get', 'color'],
       'line-width': ['case', ['==', ['get', 'lineType'], 'MC'], 1.5, 0.8],
@@ -956,7 +1055,11 @@ function setupCustomLayers(
     id: 'acg-lines-ov-horizon',
     source: 'acg-lines-ov',
     type: 'line',
-    filter: ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
+    filter: [
+      'all',
+      ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
+      ['!=', ['get', 'pair'], true],
+    ],
     paint: {
       'line-color': ['get', 'color'],
       'line-width': 1.1,
@@ -964,8 +1067,65 @@ function setupCustomLayers(
       'line-dasharray': [2, 3],
     },
   });
-  addArrowLayer(map, 'acg-lines-ov-arrows-asc', 'acg-lines-ov', lineTypeIs('ASC'), '→');
-  addArrowLayer(map, 'acg-lines-ov-arrows-dsc', 'acg-lines-ov', lineTypeIs('DSC'), '←');
+  // Merged lunar-node pairs on the OVERLAY: the dashed two-tone counterpart of the base
+  // gradient pair (line-gradient can't combine with dashes, and overlay lines must stay
+  // dashed). Two layers — North-node colour and South-node colour with complementary
+  // (offset) dashes — interleave into alternating green/salmon dashes, so the fused node
+  // line reads as both nodes while still reading as a derived overlay line. One pair of
+  // layers covers all four angles via a data-driven width (MC widest, IC thinnest).
+  map.addLayer({
+    id: 'acg-lines-ov-pair-nn',
+    source: 'acg-lines-ov',
+    type: 'line',
+    filter: ['==', ['get', 'pair'], true],
+    paint: {
+      'line-color': PLANET_COLORS.NorthNode,
+      'line-width': [
+        'case',
+        ['==', ['get', 'lineType'], 'MC'],
+        1.5,
+        ['==', ['get', 'lineType'], 'IC'],
+        0.8,
+        1.1,
+      ],
+      'line-opacity': 1,
+      'line-dasharray': [3, 3],
+    },
+  });
+  map.addLayer({
+    id: 'acg-lines-ov-pair-sn',
+    source: 'acg-lines-ov',
+    type: 'line',
+    filter: ['==', ['get', 'pair'], true],
+    paint: {
+      'line-color': PLANET_COLORS.SouthNode,
+      'line-width': [
+        'case',
+        ['==', ['get', 'lineType'], 'MC'],
+        1.5,
+        ['==', ['get', 'lineType'], 'IC'],
+        0.8,
+        1.1,
+      ],
+      'line-opacity': 1,
+      // Leading 0 offsets these dashes into the North-node layer's gaps → alternating.
+      'line-dasharray': [0, 3, 3],
+    },
+  });
+  addArrowLayer(
+    map,
+    'acg-lines-ov-arrows-asc',
+    'acg-lines-ov',
+    ['all', lineTypeIs('ASC'), ['!=', ['get', 'pair'], true]] as unknown as ExpressionSpecification,
+    '→',
+  );
+  addArrowLayer(
+    map,
+    'acg-lines-ov-arrows-dsc',
+    'acg-lines-ov',
+    ['all', lineTypeIs('DSC'), ['!=', ['get', 'pair'], true]] as unknown as ExpressionSpecification,
+    '←',
+  );
   // Overlay glyph + angle labels are also drawn as edge badges, not along the line.
 
   // ── Local-space × birth-chart crossings: a small dot wherever a local-space line
@@ -2017,11 +2177,37 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       <div className="acg-edge-badges" aria-hidden="true">
         {badges.map((b) => {
           const text = badgeTextColor(b.color);
+          // A merged lunar-node pair gets a two-tone fill (North Node colour → South Node
+          // colour, matching the line) and a dual "NN MC / SN IC" label; every other
+          // badge keeps its solid planet colour and single label.
+          // Seam between the two node colours. 50% centres it for a natal pair, but an
+          // OVERLAY pair leads with a 2-char tag ("Tr"/"Sp") that widens the North-node
+          // half, so push the seam later (~60%) to keep it in the gap between the halves
+          // rather than slicing through the glyphs.
+          const seamPct = b.prefix ? 60 : 50;
+          const bg = b.pair
+            ? `linear-gradient(100deg, ${PLANET_COLORS.NorthNode} 0 ${seamPct}%, ${PLANET_COLORS.SouthNode} ${seamPct}% 100%)`
+            : b.color;
           const zenithTarget =
             b.prefix === ''
               ? zenithByPlanet[b.planet]
               : zenithByOverlayPlanet[b.planet];
-          const inner = (
+          const inner = b.pair ? (
+            // No "/" separator — the two-tone fill splits North vs South node — but keep an
+            // empty spacer so the two halves read as two groups and the colour seam falls
+            // in the gap rather than through a glyph. The overlay tag (e.g. "Tr") still
+            // leads, as on every other overlay badge.
+            <>
+              {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
+              <PlanetGlyph planet={b.planet} size={11} color={text} />
+              <span className="acg-badge-code">{ANGLE_CODE[b.lineType]}</span>
+              <span className="acg-badge-sep" aria-hidden="true" />
+              <PlanetGlyph planet="SouthNode" size={11} color={text} />
+              <span className="acg-badge-code">
+                {ANGLE_CODE[OPPOSITE_ANGLE[b.lineType]]}
+              </span>
+            </>
+          ) : (
             <>
               {b.prefix && <span className="acg-badge-prefix">{b.prefix}</span>}
               <PlanetGlyph planet={b.planet} size={11} color={text} />
@@ -2037,7 +2223,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               key={b.key}
               tabIndex={-1}
               className="acg-badge acg-badge-btn"
-              style={{ translate: badgePos(b.x, b.y), background: b.color, color: text }}
+              style={{ translate: badgePos(b.x, b.y), background: bg, color: text }}
               onClick={() => flyToPoint(zenithTarget[0], zenithTarget[1])}
               placement="top"
               tip={t('map.flyToZenith', {
@@ -2051,7 +2237,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             <span
               key={b.key}
               className="acg-badge"
-              style={{ translate: badgePos(b.x, b.y), background: b.color, color: text }}
+              style={{ translate: badgePos(b.x, b.y), background: bg, color: text }}
             >
               {inner}
             </span>

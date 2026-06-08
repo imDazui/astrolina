@@ -128,6 +128,10 @@ interface ExpandedChartSidebarProps {
   chart: StoredChart | null;
   charts: StoredChart[];
   point: { lat: number; lng: number } | null;
+  /** The active point's resolved place name (live hover / pin location). Shown with the
+   *  relocated coordinates so the name tracks the point the way the coordinates do —
+   *  `chart.birthplace.label` above is the fixed BIRTH place, not this. */
+  pointLabel?: string | null;
   pinned: boolean;
   isNatalPin: boolean;
   angles: RelocatedAngles | null;
@@ -365,6 +369,7 @@ export function ExpandedChartSidebar({
   chart,
   charts,
   point,
+  pointLabel,
   pinned,
   isNatalPin,
   angles,
@@ -672,6 +677,12 @@ export function ExpandedChartSidebar({
           // the wheel's top-left corner, so here we show just the pin + coordinates.
           return (
             <div className={`es-relocated ${stateClass}`}>
+              {/* The active point's place name, tracking the coordinates below it (the
+                  fixed BIRTH place lives in the header above). Only shown once there's an
+                  active hover/pin point to name. */}
+              {pointLabel && (
+                <span className="es-relocated-place">{pointLabel}</span>
+              )}
               <span className="es-relocated-text">
                 {hasPin && (
                   <svg

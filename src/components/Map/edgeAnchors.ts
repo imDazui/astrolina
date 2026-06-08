@@ -28,6 +28,9 @@ export interface LineBadge {
    *  placement step slide the label ALONG the line to keep it ON the (curved) line
    *  instead of detaching it when dodging the screen edge / a HUD panel. */
   line?: { x: number; y: number }[];
+  /** A merged lunar-node line (North Node line coincident with its antipodal South Node
+   *  counterpart): the badge shows both, e.g. "NN MC / SN IC". */
+  pair?: boolean;
 }
 
 interface Pt {
@@ -119,6 +122,8 @@ interface LineGroup {
   planet: PlanetName;
   lineType: LineType;
   prefix: string;
+  /** Whether this is a merged lunar-node pair line (see LineBadge.pair). */
+  pair: boolean;
   // The two ends (or single end) of the LONGEST on-screen run seen so far, plus that
   // run's squared end-to-end pixel extent and its full projected polyline. We label the
   // most-visible contiguous run rather than the farthest-apart pair across all runs, so
@@ -145,6 +150,7 @@ function addRunEnds(
   planet: PlanetName,
   lineType: LineType,
   prefix: string,
+  pair: boolean,
 ): void {
   if (pts.length === 0) return;
   const anchors: Pt[] = [];
@@ -164,7 +170,7 @@ function addRunEnds(
   if (anchors.length === 0) return;
   let g = groups.get(key);
   if (!g) {
-    g = { color, planet, lineType, prefix, bestEnds: [], bestExtent: -1, bestLine: [] };
+    g = { color, planet, lineType, prefix, pair, bestEnds: [], bestExtent: -1, bestLine: [] };
     groups.set(key, g);
   }
   const ends =
@@ -219,7 +225,7 @@ export function computeLineBadges(
     // every 3rd point is plenty to find edge crossings and keeps the per-move cost
     // low. Anything short (a stray fragment) is walked point-by-point.
     const step = coords.length > 20 ? 3 : 1;
-    const { planet, lineType, color, label } = f.properties;
+    const { planet, lineType, color, label, pair = false } = f.properties;
     const prefix = isOverlay ? label : '';
     const key = `${planet}|${lineType}|${prefix}`;
 
@@ -231,7 +237,7 @@ export function computeLineBadges(
     // (the worldPx jump guard below).
     let run: Pt[] = [];
     const flushRun = () => {
-      addRunEnds(run, rect, groups, key, color, planet, lineType, prefix);
+      addRunEnds(run, rect, groups, key, color, planet, lineType, prefix, pair);
       run = [];
     };
     const pushCoord = (c: number[]) => {
@@ -270,6 +276,7 @@ export function computeLineBadges(
         lineType: g.lineType,
         prefix: g.prefix,
         line: g.bestLine,
+        pair: g.pair,
       });
     });
     gi++;

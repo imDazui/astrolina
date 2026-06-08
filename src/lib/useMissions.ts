@@ -8,7 +8,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MISSION_SETS,
   loadCompletedSets,
+  loadSeenSets,
   saveCompletedSets,
+  saveSeenSets,
   type MissionEvent,
   type MissionSet,
   type MissionTrigger,
@@ -34,6 +36,14 @@ export interface MissionsApi {
    *  on its own — e.g. ones with a mission that's "not applicable" (and so never
    *  recorded) in the current mode. Idempotent. */
   complete: (setId: string) => void;
+  /** Sets the View ▸ Guides reference can flip through, in display order: those the user
+   *  has actually met (surfaced or completed). Falls back to the first set when they
+   *  haven't met any yet, so the reference always has something to show. */
+  guideSets: MissionSet[];
+  /** The check state to display for a set in the reference: every mission for a completed
+   *  set, otherwise this session's live progress (empty for a set last met in an earlier
+   *  session, since per-mission progress is not persisted). */
+  progressFor: (set: MissionSet) => ReadonlySet<string>;
 }
 
 // Owns missions state: which sets are finished (persisted) and, for this session, which
@@ -54,17 +64,36 @@ export function useMissions(): MissionsApi {
   const [progress, setProgress] = useState<Record<string, ReadonlySet<string>>>(
     {},
   );
+  // Sets that have surfaced at least once (persisted) — the View ▸ Guides reference list.
+  const [seenSets, setSeenSets] = useState<Record<string, boolean>>(loadSeenSets);
   const [openSetId, setOpenSetId] = useState<string | null>(null);
 
   // Latest state, read by the stable callbacks below without being their deps.
   const completedRef = useRef(completedSets);
   const progressRef = useRef(progress);
+  const seenRef = useRef(seenSets);
+  const openIdRef = useRef(openSetId);
   useEffect(() => {
     completedRef.current = completedSets;
   }, [completedSets]);
   useEffect(() => {
     progressRef.current = progress;
   }, [progress]);
+  useEffect(() => {
+    seenRef.current = seenSets;
+  }, [seenSets]);
+  useEffect(() => {
+    openIdRef.current = openSetId;
+  }, [openSetId]);
+
+  // Record (and persist) that a set has surfaced, so it joins the Guides reference list.
+  // Stable + ref-based so the trigger callback below can stay stable too. Idempotent.
+  const markSeen = useCallback((id: string) => {
+    if (seenRef.current[id]) return;
+    const next = { ...seenRef.current, [id]: true };
+    setSeenSets(next);
+    saveSeenSets(next);
+  }, []);
 
   const recordEvent = useCallback((event: MissionEvent) => {
     const curProgress = progressRef.current;
@@ -96,16 +125,25 @@ export function useMissions(): MissionsApi {
     }
   }, []);
 
-  const trigger = useCallback((t: MissionTrigger, replace = false) => {
-    setOpenSetId((cur) => {
-      if (cur && !replace) return cur; // a guide is already up (and we're yielding)
+  const trigger = useCallback(
+    (t: MissionTrigger, replace = false) => {
+      // openIdRef lags openSetId by one commit. That's fine here: each gesture fires at
+      // most one replace=false trigger (the only path that reads `cur`), and the
+      // replace=true measure/zoom triggers ignore `cur` entirely — so the ref is always
+      // current when it actually matters.
+      const cur = openIdRef.current;
       const set = MISSION_SETS.find(
         (s) => s.trigger === t && !completedRef.current[s.id],
       );
-      // Nothing incomplete for this trigger — keep whatever's open (don't close it).
-      return set ? set.id : cur;
-    });
-  }, []);
+      // Surface (and count as "seen") only when it will actually show: nothing is up, or
+      // we're explicitly replacing the open guide. Otherwise keep whatever's open.
+      if (set && (!cur || replace)) {
+        markSeen(set.id);
+        setOpenSetId(set.id);
+      }
+    },
+    [markSeen],
+  );
 
   const close = useCallback(() => setOpenSetId(null), []);
 
@@ -122,5 +160,30 @@ export function useMissions(): MissionsApi {
   );
   const openProgress = (openSetId && progress[openSetId]) || EMPTY;
 
-  return { openSet, openProgress, recordEvent, trigger, close, complete };
+  // The reference list: every set the user has met (surfaced or completed), in registry
+  // order. Falls back to the first set (the map-click guide) so a brand-new user opening
+  // View ▸ Guides still sees the default guide rather than an empty card.
+  const guideSets = useMemo(() => {
+    const met = MISSION_SETS.filter((s) => seenSets[s.id] || completedSets[s.id]);
+    return met.length ? met : [MISSION_SETS[0]];
+  }, [seenSets, completedSets]);
+
+  const progressFor = useCallback(
+    (set: MissionSet): ReadonlySet<string> =>
+      completedSets[set.id]
+        ? new Set(set.missions.map((m) => m.id))
+        : progress[set.id] ?? EMPTY,
+    [completedSets, progress],
+  );
+
+  return {
+    openSet,
+    openProgress,
+    recordEvent,
+    trigger,
+    close,
+    complete,
+    guideSets,
+    progressFor,
+  };
 }

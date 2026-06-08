@@ -36,7 +36,7 @@ export const settings = {
   shiftTag: 'Shift',
   timelineBar: 'Timeline bar',
   // Tooltip on a language that is listed but not yet translated.
-  languageUnavailable: 'Not available at this time.',
+  languageUnavailable: 'Coming soon.',
   userRate: { label: 'Degrees per year' },
   parans: {
     title: 'Parans',

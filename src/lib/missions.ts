@@ -176,3 +176,31 @@ export function saveCompletedSets(completed: Record<string, boolean>): void {
     // Ignore persistence failures (private mode, quota, etc.).
   }
 }
+
+// "Seen" sets: which sets have actually surfaced at least once, regardless of whether the
+// user finished them. This drives the View ▸ Guides reference, where someone can flip back
+// through the guides they have met (a completed set counts as seen too). Persisted so the
+// reference still lists them in a later session — even though per-mission progress, which
+// is session-only, has reset by then. Same { [setId]: true } shape as completed sets.
+const STORAGE_KEY_SEEN = 'astro:missions:seen:v1';
+
+export function loadSeenSets(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SEEN);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, boolean>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveSeenSets(seen: Record<string, boolean>): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_SEEN, JSON.stringify(seen));
+  } catch {
+    // Ignore persistence failures (private mode, quota, etc.).
+  }
+}

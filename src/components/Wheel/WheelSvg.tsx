@@ -1262,6 +1262,47 @@ export function WheelSvg({
           );
         })}
 
+      {/* The overlay angles' degree·sign·minute readout — the natal angle readout's twin
+          in the OUTER ring, so the bi-wheel's overlay angles read exactly like the natal
+          ones (this is what was missing for transits/progressed; solar-arc now has angles
+          to show too). Same fanned trio + formatter, positioned on the overlay readout
+          radii. */}
+      {showOverlayReadouts &&
+        showAngleMarks &&
+        overlayAngleMarks.map((a) => {
+          const degPos = svgPos(a.lon, angles.asc, rOverlayReadout + OV_FAN, cx, cy);
+          const signPos = svgPos(a.lon, angles.asc, rOverlayReadout, cx, cy);
+          const minPos = svgPos(a.lon, angles.asc, rOverlayReadout - OV_FAN, cx, cy);
+          const lonDeg = (((a.lon * 180) / Math.PI) % 360 + 360) % 360;
+          const signIdx = Math.floor(lonDeg / 30);
+          const inSign = lonDeg % 30;
+          const deg = Math.floor(inSign);
+          const min = Math.floor((inSign - deg) * 60);
+          return (
+            <g key={`ov-angle-rdo-${a.key}`} className="planet-readout overlay-readout">
+              <text
+                x={degPos.x}
+                y={degPos.y + 3}
+                textAnchor="middle"
+                className="readout-deg"
+                fontSize={readoutFont}
+              >
+                {deg}°
+              </text>
+              {readoutSign(signIdx, signPos.x, signPos.y, readoutFont + 2)}
+              <text
+                x={minPos.x}
+                y={minPos.y + 3}
+                textAnchor="middle"
+                className="readout-min"
+                fontSize={readoutFont}
+              >
+                {String(min).padStart(2, '0')}&#39;
+              </text>
+            </g>
+          );
+        })}
+
       {/* Bi-ring detail: the overlay planets' degree·sign·minute readout, laid out
           fanned along the spoke just inside the overlay glyphs (degree nearest the
           glyph, then sign, then minutes) — the natal readout's twin, so overlay

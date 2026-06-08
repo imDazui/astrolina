@@ -52,6 +52,7 @@ import {
   generateEcliptic,
   generateLines,
   generateZenithStamps,
+  OPPOSITE_ANGLE,
   type LineProps,
   type LineType,
   type MeridianLng,
@@ -147,6 +148,35 @@ function filterLines(
     ),
   };
 }
+// The North and South nodes are exact antipodes, so each North Node line lies exactly on
+// a South Node line with the angle swapped (North Node MC = South Node IC, and so on).
+// When BOTH nodes are visible those coincident lines would draw twice (the overlap); so
+// we keep the North Node feature, flag it `pair` (the map then draws it two-toned and the
+// edge badge labels it "NN MC / SN IC"), and drop the South Node duplicate. With only one
+// node visible there is no duplicate — nothing merges and that node's lines render as
+// usual. Runs AFTER filterLines, so it also respects the per-angle (MC/IC/ASC/DSC) toggles:
+// a pair only forms when both halves survived filtering.
+function mergeNodePairs(
+  fc: FeatureCollection<LineString, LineProps>,
+): FeatureCollection<LineString, LineProps> {
+  const nnTypes = new Set<LineType>();
+  const snTypes = new Set<LineType>();
+  for (const f of fc.features) {
+    if (f.properties.planet === 'NorthNode') nnTypes.add(f.properties.lineType);
+    else if (f.properties.planet === 'SouthNode') snTypes.add(f.properties.lineType);
+  }
+  if (nnTypes.size === 0 || snTypes.size === 0) return fc; // at most one node shown
+  const features = fc.features.flatMap((f) => {
+    const { planet, lineType } = f.properties;
+    if (planet === 'NorthNode' && snTypes.has(OPPOSITE_ANGLE[lineType])) {
+      return [{ ...f, properties: { ...f.properties, pair: true } }];
+    }
+    // The South Node duplicate is now carried by its North Node counterpart.
+    if (planet === 'SouthNode' && nnTypes.has(OPPOSITE_ANGLE[lineType])) return [];
+    return [f];
+  });
+  return { type: 'FeatureCollection', features };
+}
 function filterParans(
   fc: FeatureCollection<LineString, ParanProps>,
   planets: Set<PlanetName>,
@@ -157,6 +187,26 @@ function filterParans(
       (f) =>
         planets.has(f.properties.planetA) &&
         planets.has(f.properties.planetB),
+    ),
+  };
+}
+// When BOTH lunar nodes are shown, every South-Node paran coincides exactly with a North-
+// Node one — the nodes are antipodes, so SN-on-MC = NN-on-IC, SN-rising = NN-setting, etc.
+// — and would draw the same latitude line and label on top of each other. So we drop the
+// South-Node duplicates (which also removes the degenerate node-to-node parans, since those
+// involve SN), leaving each distinct nodal-axis paran drawn once and labelled by the North
+// Node. With only one node shown there are no duplicates, so nothing is dropped. This is the
+// parans counterpart of the two-tone node-LINE merge (mergeNodePairs).
+function mergeNodeParans(
+  fc: FeatureCollection<LineString, ParanProps>,
+  planets: Set<PlanetName>,
+): FeatureCollection<LineString, ParanProps> {
+  if (!(planets.has('NorthNode') && planets.has('SouthNode'))) return fc;
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.filter(
+      (f) =>
+        f.properties.planetA !== 'SouthNode' && f.properties.planetB !== 'SouthNode',
     ),
   };
 }
@@ -276,6 +326,11 @@ export default function App() {
   const [showTeleport, setShowTeleport] = useState(
     () => localStorage.getItem('astro:view-teleport:v1') === '1',
   );
+  // The guides reference (View ▸ Guides): reopen the onboarding guides as a glossary.
+  // Not persisted — it's an on-demand reference, so it shouldn't reappear on every load.
+  // guideIndex is which met-guide the pager is showing (reset to the first on open).
+  const [showGuides, setShowGuides] = useState(false);
+  const [guideIndex, setGuideIndex] = useState(0);
   // Teleport "Go back" toggle state: 'none' until the first jump, then 'back'
   // (next press returns to where you were) <-> 'forward' (returns to the place you
   // jumped to). Held here so it survives the window closing/reopening.
@@ -588,12 +643,18 @@ export default function App() {
   const eclipticLine = useMemo(() => generateEcliptic(jd, meridianLng), [jd, meridianLng]);
 
   const lines = useMemo(
-    () => withDarkMoon(filterLines(allLines, visiblePlanets, visibleLineTypes), theme),
+    () =>
+      mergeNodePairs(
+        withDarkMoon(filterLines(allLines, visiblePlanets, visibleLineTypes), theme),
+      ),
     [allLines, visiblePlanets, visibleLineTypes, theme],
   );
 
   const parans = useMemo(
-    () => (showParans ? filterParans(allParans, visiblePlanets) : EMPTY_FC),
+    () =>
+      showParans
+        ? mergeNodeParans(filterParans(allParans, visiblePlanets), visiblePlanets)
+        : EMPTY_FC,
     [allParans, visiblePlanets, showParans],
   );
 
@@ -668,17 +729,22 @@ export default function App() {
         ? (raM) => (eclipticLonOfRA(raM, obliquity(overlayLayer.jd)) * 180) / Math.PI
         : (raM) => ((raM - overlayLayer.gmst) * 180) / Math.PI;
     return {
-      lines: withDarkMoon(
-        filterLines(
-          tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
-          visiblePlanets,
-          visibleLineTypes,
+      lines: mergeNodePairs(
+        withDarkMoon(
+          filterLines(
+            tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
+            visiblePlanets,
+            visibleLineTypes,
+          ),
+          theme,
         ),
-        theme,
       ),
       parans: showParans
-        ? filterParans(
-            tagLabels(generateParans(ovPositions, overlayLayer.gmst), prefix),
+        ? mergeNodeParans(
+            filterParans(
+              tagLabels(generateParans(ovPositions, overlayLayer.gmst), prefix),
+              visiblePlanets,
+            ),
             visiblePlanets,
           )
         : EMPTY_FC,
@@ -808,23 +874,24 @@ export default function App() {
         : birthAngles,
     [jd, activePoint, current, birthAngles, houseSystem],
   );
-  // The overlay chart's own MC/IC/AS/DS for the bi-wheel, at the same place as the
-  // natal angles. Only the time-based overlays have a genuine second moment we can
-  // turn into angles via relocate(jd): the directed overlays (solar-arc, primary)
-  // advance the RAMC frame, which our ephemeris wrapper can't convert to angles (no
-  // ARMC-based houses), so we skip their marks rather than draw the natal ones.
-  // See docs/calculation-methods.md ("Directed-overlay angles").
+  // The overlay chart's own MC/IC/AS/DS for the bi-wheel, at the same place as the natal
+  // angles. Time-based overlays (transits / progressed / synastry) have a genuine second
+  // moment → relocate(jd) at the active point. The directed overlays (solar-arc, primary)
+  // have no such moment: their angles are the NATAL angles advanced by the arc, so we
+  // relocate the natal angles to the active point and apply the overlay's directAngle
+  // closure (same arc + frame the bodies use). See docs/calculation-methods.md
+  // ("Directed-overlay angles").
   const overlayAngles = useMemo(() => {
     if (!overlayLayer || !current) return null;
-    if (
-      overlayLayer.kind === 'solar-arc' ||
-      overlayLayer.kind === 'primary-directions'
-    ) {
-      return null;
-    }
     const lat = activePoint?.lat ?? current.birthplace.lat;
     const lng = activePoint?.lng ?? current.birthplace.lng;
-    return relocate(overlayLayer.jd, lat, lng, houseSystem);
+    const base = relocate(overlayLayer.jd, lat, lng, houseSystem);
+    const direct = overlayLayer.directAngle;
+    if (!direct) return base; // transits / progressed / synastry
+    const wrap = (x: number) => ((x % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    const asc = direct(base.asc);
+    const mc = direct(base.mc);
+    return { ...base, asc, mc, dsc: wrap(asc + Math.PI), ic: wrap(mc + Math.PI) };
   }, [overlayLayer, activePoint, current, houseSystem]);
 
   // Per-body RA + azimuth/altitude for the Advanced planet table, computed for
@@ -907,7 +974,17 @@ export default function App() {
     trigger: triggerMission,
     close: closeMissionGuide,
     complete: completeMission,
+    guideSets,
+    progressFor: missionProgressFor,
   } = useMissions();
+  // Toggle the guides reference, always (re)opening it at the first met-guide. guideIdx
+  // also keeps the pager index in range as the met-guide list grows. (guideSets is never
+  // empty — it falls back to the first set.)
+  const toggleGuides = useCallback((open: boolean) => {
+    setShowGuides(open);
+    if (open) setGuideIndex(0);
+  }, []);
+  const guideIdx = Math.min(guideIndex, guideSets.length - 1);
 
   // Surface the onboarding guide on any map gesture (left/right/double click) — gated
   // on an active chart, since the natal-pin mission can't complete without one (so a
@@ -1174,6 +1251,8 @@ export default function App() {
         setShowInfo={setShowInfo}
         showTeleport={showTeleport}
         setShowTeleport={setShowTeleport}
+        showGuides={showGuides}
+        setShowGuides={toggleGuides}
       />
       {showInfo && (
         <InfoBar
@@ -1234,6 +1313,7 @@ export default function App() {
           chart={current}
           charts={charts}
           point={activePoint}
+          pointLabel={locationLabel}
           pinned={pinned != null}
           isNatalPin={isNatalPin}
           angles={angles}
@@ -1285,13 +1365,34 @@ export default function App() {
           onImport={handleImport}
         />
       )}
-      {missionSet && (
+      {/* The guides reference (View ▸ Guides) takes precedence over an onboarding pop-up,
+          so only one card shows at a time; closing it lets any unfinished onboarding guide
+          resurface on the next gesture. In reference mode the pager flips through the met
+          guides — shown only when there's more than one (handled inside MissionGuide). */}
+      {showGuides ? (
         <MissionGuide
-          set={missionSet}
-          completed={missionProgress}
+          reference
+          set={guideSets[guideIdx]}
+          completed={missionProgressFor(guideSets[guideIdx])}
           is3d={is3d}
-          onClose={closeMissionGuide}
+          onClose={() => setShowGuides(false)}
+          pager={{
+            index: guideIdx,
+            count: guideSets.length,
+            onPrev: () => setGuideIndex((i) => Math.max(0, i - 1)),
+            onNext: () =>
+              setGuideIndex((i) => Math.min(guideSets.length - 1, i + 1)),
+          }}
         />
+      ) : (
+        missionSet && (
+          <MissionGuide
+            set={missionSet}
+            completed={missionProgress}
+            is3d={is3d}
+            onClose={closeMissionGuide}
+          />
+        )
       )}
     </>
   );

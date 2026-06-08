@@ -120,6 +120,13 @@ export interface OverlayLayer {
   gmst: number;
   originLat: number; // local-space origin
   originLng: number;
+  /** Directed-overlay angle inference. Solar-arc / primary-directions have no relocatable
+   *  "second moment": their angles are the NATAL angles advanced by the arc. This closure
+   *  takes a (relocated) natal angle's ecliptic longitude and returns the directed one,
+   *  applying the SAME arc + frame the bodies use, so the bi-wheel's directed angles move
+   *  coherently with the directed bodies. Absent for transits / progressed / synastry,
+   *  whose overlay angles come straight from relocate() at the target moment. */
+  directAngle?: (lon: number) => number;
 }
 
 const TROPICAL_YEAR_DAYS = 365.2422;
@@ -180,6 +187,25 @@ function directionContext(
   const ramcOfLong = (dLon: number) =>
     eclipticToRaDec(eclipticLonOfRA(natalGMST, eps) + dLon, 0, eps).ra;
   return { birthJD, eps, natal, years, progressedJD, natalGMST, arcLong, arcRA, ramcOfLong };
+}
+
+// Direct one ANGLE's ecliptic longitude by the arc, matching how the bodies are directed
+// so the bi-wheel's angles and bodies advance together. 'long' adds the arc in ecliptic
+// longitude (shiftEclipticLongitude's frame). 'ra' shifts the angle — taken as a point ON
+// the ecliptic (latitude 0) — in right ascension keeping its declination (shiftRight-
+// Ascension's frame), then reads the ecliptic longitude back (dec-aware, not the lat-0
+// eclipticLonOfRA). Returned as a closure so App can apply it to the RELOCATED natal
+// angles (the wheel shows angles at the active map point, which buildOverlay can't know).
+function directAngleFn(
+  arc: number,
+  frame: 'long' | 'ra',
+  eps: number,
+): (lon: number) => number {
+  if (frame === 'long') return (lon) => norm2pi(lon + arc);
+  return (lon) => {
+    const { ra, dec } = eclipticToRaDec(lon, 0, eps);
+    return raDecToEclipticLon(norm2pi(ra + arc), dec, eps);
+  };
 }
 
 export function buildOverlay(
@@ -267,27 +293,33 @@ export function buildOverlay(
       // source (true solar arc vs Naibod's mean rate) and frame (longitude vs RA).
       // Mean Quotidian has no native solar-arc form → falls back to SA in longitude.
       let arc: number;
-      let positions: PlanetPosition[];
+      let frame: 'long' | 'ra';
       switch (angleProgression) {
         case 'sa-ra':
           arc = c.arcRA();
-          positions = c.natal.map((p) => shiftRightAscension(p, arc));
+          frame = 'ra';
           break;
         case 'naibod-long':
           arc = naibodArc;
-          positions = c.natal.map((p) => shiftEclipticLongitude(p, arc, c.eps));
+          frame = 'long';
           break;
         case 'naibod-ra':
           arc = naibodArc;
-          positions = c.natal.map((p) => shiftRightAscension(p, arc));
+          frame = 'ra';
           break;
         case 'sa-long':
         case 'mean-quotidian':
         default:
           arc = c.arcLong();
-          positions = c.natal.map((p) => shiftEclipticLongitude(p, arc, c.eps));
+          frame = 'long';
           break;
       }
+      // Angles direct by the SAME arc + frame as the bodies (see directAngleFn), so the
+      // bi-wheel's directed MC/IC/As/Ds move with the directed planets.
+      const positions =
+        frame === 'ra'
+          ? c.natal.map((p) => shiftRightAscension(p, arc))
+          : c.natal.map((p) => shiftEclipticLongitude(p, arc, c.eps));
       return {
         kind: mode,
         // Just the arc angle next to the "Solar Arc" mode name (no "Sun" prefix).
@@ -298,6 +330,7 @@ export function buildOverlay(
         jd: c.birthJD,
         positions,
         gmst: c.natalGMST,
+        directAngle: directAngleFn(arc, frame, c.eps),
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
       };
@@ -345,6 +378,8 @@ export function buildOverlay(
         jd: c.birthJD,
         positions: c.natal.map((p) => shiftRightAscension(p, -arc)),
         gmst: c.natalGMST,
+        // Angles ride the same rigid −arc RA rotation as the bodies.
+        directAngle: directAngleFn(-arc, 'ra', c.eps),
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
       };

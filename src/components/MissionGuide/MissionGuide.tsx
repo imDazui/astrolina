@@ -138,13 +138,34 @@ interface MissionGuideProps {
    *  satisfied (neutral) when this is false. */
   is3d: boolean;
   onClose: () => void;
+  /** Reference mode (opened from View ▸ Guides). The card becomes a glossary you can
+   *  browse, so the OK button is always enabled — it just closes — even with missions
+   *  still outstanding, and a guide pager may be shown. Off during the normal onboarding
+   *  pop-up, where OK stays locked until the set is finished. */
+  reference?: boolean;
+  /** Guide pager for reference mode: flip through the guides met so far. Rendered to the
+   *  left of OK, and only when there's more than one to flip through (so a lone guide
+   *  shows no pager). Omitted entirely in the normal pop-up. */
+  pager?: {
+    index: number;
+    count: number;
+    onPrev: () => void;
+    onNext: () => void;
+  };
 }
 
 // The gamified onboarding card: a movable checklist (drag by the top bar) that ticks off
 // live as the user performs each gesture. "OK, got it" unlocks only once every mission is
 // done; the faint × skips it (the set re-surfaces later until finished). Data-driven off
 // the MissionSet, so it renders any set (map basics, measure tool, …) unchanged.
-export function MissionGuide({ set, completed, is3d, onClose }: MissionGuideProps) {
+export function MissionGuide({
+  set,
+  completed,
+  is3d,
+  onClose,
+  reference = false,
+  pager,
+}: MissionGuideProps) {
   const { t } = useT();
   const ref = useRef<HTMLDivElement>(null);
   // Not persisted: the guide always opens at the top-right home (drag is an in-session
@@ -160,6 +181,10 @@ export function MissionGuide({ set, completed, is3d, onClose }: MissionGuideProp
   const allDone = set.missions.every(
     (m) => completed.has(m.id) || (!!m.only3d && !is3d),
   );
+  // In reference mode OK is just "close", so it's always enabled; in the onboarding
+  // pop-up it stays locked until every mission is done.
+  const okEnabled = reference || allDone;
+  const showPager = reference && !!pager && pager.count > 1;
 
   // Subtitle: render any "{pin}" / "{ruler}" token inline as its icon, the rest as text.
   const subtitleParts = t(set.subtitleKey).split(/(\{\w+\})/);
@@ -230,12 +255,44 @@ export function MissionGuide({ set, completed, is3d, onClose }: MissionGuideProp
       </ul>
 
       <div className="mg-footer">
+        {showPager && pager && (
+          <div className="mg-pager">
+            <button
+              type="button"
+              className="mg-pager-btn"
+              onClick={pager.onPrev}
+              disabled={pager.index <= 0}
+              aria-label={t('missions.prevGuide')}
+            >
+              ‹
+            </button>
+            <span
+              className="mg-pager-count"
+              aria-live="polite"
+              aria-label={t('missions.guidePosition', {
+                current: pager.index + 1,
+                total: pager.count,
+              })}
+            >
+              {pager.index + 1}/{pager.count}
+            </span>
+            <button
+              type="button"
+              className="mg-pager-btn"
+              onClick={pager.onNext}
+              disabled={pager.index >= pager.count - 1}
+              aria-label={t('missions.nextGuide')}
+            >
+              ›
+            </button>
+          </div>
+        )}
         <button
           type="button"
           className="mg-ok"
           onClick={onClose}
-          disabled={!allDone}
-          title={allDone ? undefined : t('missions.okLocked')}
+          disabled={!okEnabled}
+          title={okEnabled ? undefined : t('missions.okLocked')}
         >
           {t('missions.ok')}
         </button>

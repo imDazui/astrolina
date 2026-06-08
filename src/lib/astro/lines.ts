@@ -21,6 +21,15 @@ const DEG2RAD = Math.PI / 180;
 
 export type LineType = 'MC' | 'IC' | 'ASC' | 'DSC';
 
+// The angle a body hits at the OTHER end of the same axis. Used for the lunar-node merge:
+// the North and South nodes are antipodes, so North Node MC = South Node IC, etc.
+export const OPPOSITE_ANGLE: Record<LineType, LineType> = {
+  MC: 'IC',
+  IC: 'MC',
+  ASC: 'DSC',
+  DSC: 'ASC',
+};
+
 // Maps a meridian's right ascension (radians) to its geographic longitude (degrees,
 // before normLng). Celestial: raM → (raM − GMST)·deg. Geodetic: raM →
 // eclipticLonOfRA(raM)·deg. Injected so one set of generators serves both systems.
@@ -32,6 +41,10 @@ export interface LineProps {
   lineType: LineType;
   color: string;
   label: string;
+  /** Set by the node-pair merge (see App.mergeNodePairs): this North Node line coincides
+   *  with its (antipodal) South Node counterpart, so the map draws it two-toned and the
+   *  edge badge labels it for both nodes ("NN MC / SN IC"). Absent on every other line. */
+  pair?: boolean;
 }
 
 function normLng(lng: number): number {

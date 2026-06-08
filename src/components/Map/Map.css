@@ -116,6 +116,15 @@
   letter-spacing: 0.02em;
 }
 
+/* Empty spacer between the two halves of a merged lunar-node badge (replacing the former
+   "/"): widens the gap between the North- and South-node halves — on top of the badge's
+   own 3px flex gaps — so they read as two groups and the two-tone colour seam lands in the
+   gap rather than through a glyph. */
+.acg-badge-sep {
+  width: 3px;
+  flex-shrink: 0;
+}
+
 /* The "×" between the two bodies of a paran badge — quieter than the codes. */
 .paran-badge-x {
   margin: 0 1px;

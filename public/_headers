@@ -1,0 +1,51 @@
+# Cloudflare Pages — browser caching rules.
+#
+# These rules let returning visitors pick up a new release on an ordinary page
+# refresh, while large files that rarely change stay cached so they are not
+# re-downloaded on every deploy.
+#
+# How it works: index.html is always revalidated, so a refresh fetches the latest
+# HTML, which references content-hashed asset URLs. Only files whose contents
+# changed get a new URL (and are downloaded); everything else is served from the
+# browser cache. Cloudflare clears its own edge cache on each deployment, so these
+# rules govern the browser cache.
+#
+# Syntax reference: https://developers.cloudflare.com/pages/configuration/headers/
+
+# Application shell — always revalidate.
+# "max-age=0, must-revalidate" makes the browser check with the server on every
+# load (a small 304 response when nothing changed), so a refresh always lands on
+# the newest build's asset references.
+/
+  Cache-Control: public, max-age=0, must-revalidate
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Build output — safe to cache permanently.
+# Vite embeds a content hash in every filename (for example, index-DWxzs4el.js), so
+# the URL changes whenever the file does. The large bundles (Swiss Ephemeris
+# WebAssembly, the offline city lookup, and MapLibre) are re-fetched only when their
+# contents actually change.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Static data at stable URLs.
+# The Swiss Ephemeris .se1 files (~2 MB) and font metadata do not change between
+# releases, so they are cached permanently. If one ever does change, give it a new
+# filename (preferred) or purge that path, because "immutable" responses are trusted
+# until they expire.
+/ephe/*
+  Cache-Control: public, max-age=31536000, immutable
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Other unhashed assets — cached for a day.
+# Small files at stable URLs that may occasionally be edited (the basemap style, the
+# banner image, and the icons). A one-day cache keeps them fast while still letting
+# edits appear without a manual purge.
+/basemaps/*
+  Cache-Control: public, max-age=86400
+/images/*
+  Cache-Control: public, max-age=86400
+/favicon/*
+  Cache-Control: public, max-age=86400

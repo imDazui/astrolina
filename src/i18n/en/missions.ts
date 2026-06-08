@@ -16,6 +16,11 @@ export const missions = {
   skipTip: 'Skip this guide',
   ok: 'OK, got it',
   okLocked: 'Finish every mission to continue',
+  // The reference-mode guide pager (View ▸ Guides) — aria labels for the ‹ / › buttons,
+  // and a spoken form of the "n/total" position for screen readers.
+  prevGuide: 'Previous guide',
+  nextGuide: 'Next guide',
+  guidePosition: 'Guide {current} of {total}',
 
   // Words shown in the hotkey pill around the cursor icon (see GESTURES in
   // MissionGuide). e.g. "Double 🖱", "Shift 🖱 Drag", "Ctrl/⌘ 🖱 Drag".

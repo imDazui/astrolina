@@ -72,5 +72,7 @@ export const topNav = {
     settings: 'Settings',
     teleport: 'Teleport',
     info: 'Info',
+    // Opens the guides as a reference — a glossary of the map controls you can revisit.
+    guides: 'Guides',
   },
 } as const;

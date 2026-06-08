@@ -74,6 +74,10 @@ interface TopNavProps {
   setShowInfo: (v: boolean) => void;
   showTeleport: boolean;
   setShowTeleport: (v: boolean) => void;
+  /** The guides reference (View ▸ Guides) — revisit the onboarding guides as a glossary.
+   *  No hotkey: it's an occasional reference, not a frequently toggled HUD. */
+  showGuides: boolean;
+  setShowGuides: (v: boolean) => void;
 }
 
 // Selectable overlay modes (no explicit "None"); clicking the active one again
@@ -300,6 +304,8 @@ export function TopNav({
   setShowInfo,
   showTeleport,
   setShowTeleport,
+  showGuides,
+  setShowGuides,
 }: TopNavProps) {
   const { t } = useT();
   const overlayActive = overlayMode !== 'off';
@@ -539,6 +545,13 @@ export function TopNav({
                 hotkey="I"
                 checked={showInfo}
                 onToggle={() => setShowInfo(!showInfo)}
+              />
+              {/* Guides reference — at the bottom and deliberately without a hotkey, since
+                  it's an occasional glossary, not a frequently toggled HUD. */}
+              <CheckItem
+                label={t('topNav.view.guides')}
+                checked={showGuides}
+                onToggle={() => setShowGuides(!showGuides)}
               />
             </NavMenu>
           </div>
