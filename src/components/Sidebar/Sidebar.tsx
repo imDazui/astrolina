@@ -26,11 +26,11 @@ import type {
   TransitFrame,
 } from '../../lib/astro/timeline';
 import { THEMES, type Theme } from '../../lib/theme';
-import type { EclipseDetails } from '../../lib/astro/eclipses';
+import type { EclipseContact, EclipseDetails } from '../../lib/astro/eclipses';
 import type { EclipseIsoStep } from '../../lib/overlayPrefs';
 import type { MapProjectionMode } from '../../lib/projection';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
-import { SIGN_GLYPHS } from '../../lib/astro/glyphChars';
+import { ASPECT_GLYPHS, SIGN_GLYPHS } from '../../lib/astro/glyphChars';
 import { TipButton } from '../ui/HoverTip';
 import { glyphify } from '../ui/glyphify';
 import { useT, LANGUAGES } from '../../i18n';
@@ -74,11 +74,11 @@ interface SidebarProps {
   canGenerateRelationship: boolean;
   /** The selected eclipse's details panel data (null outside eclipses mode). */
   eclipseDetails: EclipseDetails | null;
+  /** Eclipse-degree hits on the natal chart (conj/square/opp within 3°),
+   *  tightest first; null outside eclipses mode. */
+  eclipseContacts: EclipseContact[] | null;
   showEclipseNatalLines: boolean;
   setShowEclipseNatalLines: (v: boolean) => void;
-  /** Eclipse Chart Lines toggle wiring — currently UI-gated (no button shown;
-   *  see the Display section comment), but kept in the contract so App's
-   *  state/persistence and the Map rendering stay exercised. */
   showEclipseChartLines: boolean;
   setShowEclipseChartLines: (v: boolean) => void;
   eclipseIsoStep: EclipseIsoStep;
@@ -673,8 +673,11 @@ export function Sidebar({
   onGenerateRelationship,
   canGenerateRelationship,
   eclipseDetails,
+  eclipseContacts,
   showEclipseNatalLines,
   setShowEclipseNatalLines,
+  showEclipseChartLines,
+  setShowEclipseChartLines,
   eclipseIsoStep,
   setEclipseIsoStep,
   showTimeline,
@@ -1189,7 +1192,10 @@ export function Sidebar({
                 <>
                   <h2>{t('settings.headings.eclipse')}</h2>
                   {/* The selected eclipse's vitals — catalog metadata (NASA) plus
-                      the Swiss-derived maximum instant and eclipse degree. */}
+                      the Swiss-derived maximum instant and eclipse degree. The
+                      magnitude/duration rows differ by body: a solar eclipse has
+                      one magnitude and a path; a lunar one has umbral/penumbral
+                      depths and per-phase durations. */}
                   <dl className="eclipse-details">
                     <div>
                       <dt>{t('settings.eclipses.details.maximum')}</dt>
@@ -1198,8 +1204,11 @@ export function Sidebar({
                     <div>
                       <dt>{t('settings.eclipses.details.type')}</dt>
                       <dd>
+                        {t(`settings.eclipses.body.${eclipseDetails.row.body}`)}
+                        {' · '}
                         {t(`settings.eclipses.kind.${eclipseDetails.row.kind}`)}
-                        {eclipseDetails.row.kind !== 'partial' &&
+                        {eclipseDetails.row.body === 'solar' &&
+                          eclipseDetails.row.kind !== 'partial' &&
                           ` · ${t(
                             eclipseDetails.row.central
                               ? 'settings.eclipses.details.central'
@@ -1215,13 +1224,26 @@ export function Sidebar({
                         onMouseEnter={showEclipseSign}
                         onMouseLeave={hideEclipseSign}
                       >
-                        {glyphify(eclipseDetails.sunZodiac)}
+                        {glyphify(eclipseDetails.zodiac)}
                       </dd>
                     </div>
-                    <div>
-                      <dt>{t('settings.eclipses.details.magnitude')}</dt>
-                      <dd>{eclipseDetails.row.magnitude.toFixed(4)}</dd>
-                    </div>
+                    {eclipseDetails.row.body === 'solar' ? (
+                      <div>
+                        <dt>{t('settings.eclipses.details.magnitude')}</dt>
+                        <dd>{eclipseDetails.row.magnitude.toFixed(4)}</dd>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <dt>{t('settings.eclipses.details.umbralMag')}</dt>
+                          <dd>{eclipseDetails.row.umbMag.toFixed(4)}</dd>
+                        </div>
+                        <div>
+                          <dt>{t('settings.eclipses.details.penumbralMag')}</dt>
+                          <dd>{eclipseDetails.row.penMag.toFixed(4)}</dd>
+                        </div>
+                      </>
+                    )}
                     <div>
                       <dt>{t('settings.eclipses.details.gamma')}</dt>
                       <dd>{eclipseDetails.row.gamma.toFixed(4)}</dd>
@@ -1244,22 +1266,77 @@ export function Sidebar({
                       <dt>{t('settings.eclipses.details.lunation')}</dt>
                       <dd>{eclipseDetails.row.lunation}</dd>
                     </div>
-                    {eclipseDetails.row.durationSec !== null && (
-                      <div>
-                        <dt>{t('settings.eclipses.details.duration')}</dt>
-                        <dd>
-                          {Math.floor(eclipseDetails.row.durationSec / 60)}m{' '}
-                          {eclipseDetails.row.durationSec % 60}s
-                        </dd>
-                      </div>
-                    )}
-                    {eclipseDetails.row.widthKm !== null && (
-                      <div>
-                        <dt>{t('settings.eclipses.details.width')}</dt>
-                        <dd>{eclipseDetails.row.widthKm} km</dd>
-                      </div>
+                    {eclipseDetails.row.body === 'solar' ? (
+                      <>
+                        {eclipseDetails.row.durationSec !== null && (
+                          <div>
+                            <dt>{t('settings.eclipses.details.duration')}</dt>
+                            <dd>
+                              {Math.floor(eclipseDetails.row.durationSec / 60)}m{' '}
+                              {eclipseDetails.row.durationSec % 60}s
+                            </dd>
+                          </div>
+                        )}
+                        {eclipseDetails.row.widthKm !== null && (
+                          <div>
+                            <dt>{t('settings.eclipses.details.width')}</dt>
+                            <dd>{eclipseDetails.row.widthKm} km</dd>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {(
+                          [
+                            ['penumbralDur', eclipseDetails.row.durPenMin],
+                            ['partialDur', eclipseDetails.row.durParMin],
+                            ['totalDur', eclipseDetails.row.durTotMin],
+                          ] as const
+                        ).map(
+                          ([key, min]) =>
+                            min !== null && (
+                              <div key={key}>
+                                <dt>{t(`settings.eclipses.details.${key}`)}</dt>
+                                <dd>
+                                  {Math.floor(min / 60)}h{' '}
+                                  {String(Math.round(min % 60)).padStart(2, '0')}m
+                                </dd>
+                              </div>
+                            ),
+                        )}
+                      </>
                     )}
                   </dl>
+
+                  {/* Where the eclipse degree strikes the natal chart — the
+                      classical hard contacts (conj/square/opp, 3° orb),
+                      tightest first. */}
+                  <h2>{t('settings.eclipses.contacts.heading')}</h2>
+                  {eclipseContacts && eclipseContacts.length > 0 ? (
+                    <ul className="eclipse-contacts">
+                      {eclipseContacts.map((c) => (
+                        <li key={`${c.aspect}-${c.planet ?? c.angle}`}>
+                          <span className="astro-glyph eclipse-contact-asp">
+                            {ASPECT_GLYPHS[c.aspect]}
+                          </span>
+                          <span className="eclipse-contact-name">
+                            {t(`settings.eclipses.contacts.aspect.${c.aspect}`)}{' '}
+                            {c.planet
+                              ? labels.planet(c.planet)
+                              : t(`settings.eclipses.contacts.${c.angle!}`)}
+                          </span>
+                          <span className="eclipse-contact-orb">
+                            {Math.floor(c.orb)}°
+                            {String(Math.round((c.orb % 1) * 60)).padStart(2, '0')}′
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="eclipse-contacts-empty">
+                      {t('settings.eclipses.contacts.none')}
+                    </p>
+                  )}
 
                   <h2>{t('settings.headings.display')}</h2>
                   <ul className="technique-list">
@@ -1277,35 +1354,52 @@ export function Sidebar({
                         {t('settings.eclipses.natalLines.title')}
                       </span>
                     </TipToggle>
-                    {/* Eclipse Chart Lines: feature-complete but not ready to
-                        ship — UI-gated only, so all state/props/render logic
-                        stays wired. Restore the TipToggle (same shape as Natal
-                        Chart above, props showEclipseChartLines /
-                        setShowEclipseChartLines, strings under
-                        settings.eclipses.chartLines.*) to re-enable. */}
+                    <TipToggle
+                      className={`tech-toggle ${showEclipseChartLines ? 'on' : 'off'}`}
+                      onClick={() =>
+                        setShowEclipseChartLines(!showEclipseChartLines)
+                      }
+                      ariaPressed={showEclipseChartLines}
+                      title={t('settings.eclipses.chartLines.title')}
+                      hint={t('settings.eclipses.chartLines.hint')}
+                    >
+                      <EyeIcon open={showEclipseChartLines} />
+                      <span className="name">
+                        {t('settings.eclipses.chartLines.title')}
+                      </span>
+                    </TipToggle>
                   </ul>
 
-                  <h2>{t('settings.headings.magnitudeSteps')}</h2>
-                  <ul className="theme-list">
-                    {([10, 20, 25] as const).map((step) => (
-                      <HintOption
-                        key={step}
-                        selected={eclipseIsoStep === step}
-                        onSelect={() => setEclipseIsoStep(step)}
-                        label={t(`settings.eclipses.isoStep.${step}.label`)}
-                        hint={t(`settings.eclipses.isoStep.${step}.hint`)}
-                      />
-                    ))}
-                  </ul>
+                  {/* The isoline radios describe the solar percentage contours;
+                      a lunar eclipse draws no isolines, so the section hides. */}
+                  {eclipseDetails.row.body === 'solar' && (
+                    <>
+                      <h2>{t('settings.headings.magnitudeSteps')}</h2>
+                      <ul className="theme-list">
+                        {([10, 20, 25] as const).map((step) => (
+                          <HintOption
+                            key={step}
+                            selected={eclipseIsoStep === step}
+                            onSelect={() => setEclipseIsoStep(step)}
+                            label={t(`settings.eclipses.isoStep.${step}.label`)}
+                            hint={t(`settings.eclipses.isoStep.${step}.hint`)}
+                          />
+                        ))}
+                      </ul>
+                    </>
+                  )}
 
                   <ChoiceTip
                     pos={eclipseSignPos}
                     title={glyphify(
-                      `${SIGN_GLYPHS[eclipseDetails.sunSignIndex]} ${labels.sign(eclipseDetails.sunSignIndex)}`,
+                      `${SIGN_GLYPHS[eclipseDetails.signIndex]} ${labels.sign(eclipseDetails.signIndex)}`,
                     )}
-                    hint={t('settings.eclipses.details.sunPositionTip', {
-                      sign: labels.sign(eclipseDetails.sunSignIndex),
-                    })}
+                    hint={t(
+                      eclipseDetails.row.body === 'solar'
+                        ? 'settings.eclipses.details.sunPositionTip'
+                        : 'settings.eclipses.details.moonPositionTip',
+                      { sign: labels.sign(eclipseDetails.signIndex) },
+                    )}
                   />
                 </>
               )}

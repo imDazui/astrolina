@@ -32,7 +32,12 @@ import type { BirthData } from './birthData';
 // From the adapter module, NOT eclipsePath — a static import of eclipsePath
 // here would hoist the whole Besselian-fitting module into the entry bundle,
 // defeating the lazy eclipses chunk (see eclipseAdapter.ts).
-import { normalizeSwissEclipse, type SunMoonSample } from './astro/eclipseAdapter';
+import {
+  normalizeSwissEclipse,
+  normalizeSwissLunarEclipse,
+  type LunarEclipseTimes,
+  type SunMoonSample,
+} from './astro/eclipseAdapter';
 
 export type PlanetName =
   | 'Sun'
@@ -801,6 +806,35 @@ export function findSolarEclipse(startJD: number, backward = false): EclipseEven
     central: (e.type & EclipseType.Central) !== 0,
     ...normalizeSwissEclipse(e),
   };
+}
+
+// ── Lunar eclipses ────────────────────────────────────────────────────────────
+
+export type LunarEclipseKind = 'total' | 'partial' | 'penumbral';
+
+/** A lunar-eclipse event from Swiss's search: classification plus the phase
+ *  contacts (UT JDs), already remapped by normalizeSwissLunarEclipse. */
+export interface LunarEclipseEvent extends LunarEclipseTimes {
+  kind: LunarEclipseKind;
+}
+
+// The next lunar eclipse after (or before, with `backward`) the given UT JD.
+// Wraps swe_lun_eclipse_when; visibility geometry (who sees it) is derived in
+// src/lib/astro/lunarEclipse.ts from Moon positions.
+export function findLunarEclipse(startJD: number, backward = false): LunarEclipseEvent {
+  const e = eph().findNextLunarEclipse(
+    startJD,
+    CalculationFlag.SwissEphemeris,
+    0, // no type filter
+    backward,
+  );
+  const kind: LunarEclipseKind =
+    e.type & EclipseType.Total
+      ? 'total'
+      : e.type & EclipseType.Partial
+        ? 'partial'
+        : 'penumbral';
+  return { kind, ...normalizeSwissLunarEclipse(e) };
 }
 
 // Apparent geocentric Sun + Moon (equatorial, of date) plus sidereal time at one

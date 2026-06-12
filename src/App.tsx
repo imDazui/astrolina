@@ -32,6 +32,9 @@ import { ChartManager } from './components/ChartManager/ChartManager';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
 import { MissionGuide } from './components/MissionGuide/MissionGuide';
 import { useMissions } from './lib/useMissions';
+// Type-only: erased at compile time, so the eclipses module itself still
+// loads lazily (the value import lives in the dynamic-import effect below).
+import type { EclipseCatalogRow, EclipseContact } from './lib/astro/eclipses';
 import { SEED_BIRTHS } from './lib/birthData';
 import { useReverseGeocode } from './lib/atlas/useReverseGeocode';
 import { useNearestCityLabel } from './lib/atlas/useNearestCityLabel';
@@ -1013,6 +1016,21 @@ export default function App() {
   // Local circumstances under the cursor, for the eclipse-curve hover tip.
   const eclipseTip = useMemo(() => {
     if (!resolvedEclipse || !eclipsesMod) return null;
+    if (resolvedEclipse.body === 'lunar') {
+      // Lunar: how much of the eclipse this place catches — pure math on the
+      // phase samples the geometry already holds (hover-rate cheap).
+      const geo = resolvedEclipse.geometry;
+      const present = eclipsesMod.LUNAR_PHASE_ORDER.filter((p) => geo.samples[p]);
+      return (lat: number, lng: number) => {
+        const vis = present.filter(
+          (p) => eclipsesMod.moonSinAlt(geo.samples[p]!.sample, lat, lng) >= -0.01,
+        ).length;
+        if (vis === 0) return null;
+        return vis === present.length
+          ? t('map.eclipse.lunarAllVisible')
+          : t('map.eclipse.lunarPartView', { n: vis, total: present.length });
+      };
+    }
     const el = resolvedEclipse.elements;
     return (lat: number, lng: number) => {
       const lc = eclipsesMod.localCircumstances(el, lat, lng);
@@ -1025,6 +1043,111 @@ export default function App() {
       });
     };
   }, [resolvedEclipse, eclipsesMod, t]);
+
+  // The click-card builder for eclipses mode: ready-made .ui-tip HTML with the
+  // clicked point's full local circumstances. Its identity doubles as the
+  // card's close signal (the Map removes the pinned popup when it changes).
+  const eclipseCard = useMemo(() => {
+    if (overlayMode !== 'eclipses' || !resolvedEclipse || !eclipsesMod) return null;
+    const title = `${resolvedEclipse.row.id} · ${t(`settings.eclipses.kind.${resolvedEclipse.row.kind}`)}`;
+    // All values below are computed numbers/times and localized strings —
+    // nothing user-authored reaches this HTML.
+    const card = (rows: string, sub = '') =>
+      `<div class="ui-tip"><span class="ui-tip-title">${title}</span>` +
+      `<dl class="eclipse-card-rows">${rows}</dl>` +
+      (sub ? `<span class="ui-tip-sub">${sub}</span>` : '') +
+      `</div>`;
+    const row = (label: string, value: string, dim = false) =>
+      `<dt>${label}</dt><dd${dim ? ' class="eclipse-card-dim"' : ''}>${value}</dd>`;
+
+    if (resolvedEclipse.body === 'lunar') {
+      const geo = resolvedEclipse.geometry;
+      return (lat: number, lng: number) => {
+        const view = eclipsesMod.lunarLocalView(geo, lat, lng);
+        if (!view) return null;
+        // Phase contacts and any mid-eclipse moonrise/set, in time order; the
+        // contacts the Moon misses stay listed but dimmed (that is the local
+        // story: what this place catches and what it sleeps through).
+        const entries = [
+          ...view.phases.map((p) => ({
+            jd: p.jd,
+            html: row(
+              t(`map.eclipseCard.phase.${p.phase}`),
+              p.visible
+                ? eclipsesMod.jdToUtcHms(p.jd)
+                : t('map.eclipseCard.belowHorizon'),
+              !p.visible,
+            ),
+          })),
+          ...(view.moonrise !== null
+            ? [{
+                jd: view.moonrise,
+                html: row(t('map.eclipseCard.moonrise'), eclipsesMod.jdToUtcHms(view.moonrise)),
+              }]
+            : []),
+          ...(view.moonset !== null
+            ? [{
+                jd: view.moonset,
+                html: row(t('map.eclipseCard.moonset'), eclipsesMod.jdToUtcHms(view.moonset)),
+              }]
+            : []),
+        ].sort((a, b) => a.jd - b.jd);
+        return card(entries.map((e) => e.html).join(''));
+      };
+    }
+
+    const el = resolvedEclipse.elements;
+    return (lat: number, lng: number) => {
+      const c = eclipsesMod.localContacts(el, lat, lng);
+      if (!c) return null;
+      const annular = c.centralKind === 'annular';
+      const time = (lc: { jd: number; atHorizon: boolean }, rise: boolean) =>
+        eclipsesMod.jdToUtcHms(lc.jd) +
+        (lc.atHorizon
+          ? ` · ${t(rise ? 'map.eclipseCard.atSunrise' : 'map.eclipseCard.atSunset')}`
+          : '');
+      const rows = [
+        c.c1 && row(t('map.eclipseCard.c1'), time(c.c1, true)),
+        c.c2 && row(t(annular ? 'map.eclipseCard.c2Annular' : 'map.eclipseCard.c2'), time(c.c2, true)),
+        row(t('map.eclipseCard.max'), eclipsesMod.jdToUtcHms(c.max.jd)),
+        c.c3 && row(t(annular ? 'map.eclipseCard.c3Annular' : 'map.eclipseCard.c3'), time(c.c3, false)),
+        c.c4 && row(t('map.eclipseCard.c4'), time(c.c4, false)),
+        c.centralDurationSec !== null &&
+          row(
+            t('map.eclipseCard.duration'),
+            `${Math.floor(c.centralDurationSec / 60)}m${String(Math.round(c.centralDurationSec % 60)).padStart(2, '0')}s`,
+          ),
+      ]
+        .filter(Boolean)
+        .join('');
+      return card(
+        rows,
+        t('map.eclipseCard.maxValue', {
+          mag: `${Math.round(c.max.magnitude * 100)}%`,
+          obsc: `${Math.round(c.max.obscuration * 100)}%`,
+        }),
+      );
+    };
+  }, [overlayMode, resolvedEclipse, eclipsesMod, t]);
+
+  // Ease the camera to an eclipse's headline ground point (the catalog's
+  // whole-degree coordinates are plenty at this zoom). Menu picks and the
+  // HUD's ⌖ fly; ‹ › stepping deliberately never moves the camera.
+  const flyToEclipse = useCallback((row: EclipseCatalogRow) => {
+    const lat = row.body === 'solar' ? row.geLat : row.zenLat;
+    const lng = row.body === 'solar' ? row.geLng : row.zenLng;
+    mapRef.current?.flyTo(lat, lng, 2.75);
+  }, []);
+  const onEclipseSelect = useCallback(
+    (id: string, source: 'menu' | 'step') => {
+      setEclipseId(id);
+      if (source === 'menu') {
+        const row = eclipseCatalog.find((r) => r.id === id);
+        if (row) flyToEclipse(row);
+      }
+    },
+    [eclipseCatalog, flyToEclipse],
+  );
 
   const overlayLayer = useMemo(() => {
     if (overlayMode === 'off' || !current) return null;
@@ -1355,6 +1478,19 @@ export default function App() {
         : birthAngles,
     [jd, activePoint, current, birthAngles, houseSystem],
   );
+  // Where the eclipse degree strikes the natal chart (conj/square/opp, 3°),
+  // for the Sidebar's contacts list. Targets are the user's visible bodies
+  // plus the RADIX angles — birthAngles, not the pin-relocated ones: the
+  // contact doctrine reads the birth chart, and a relocated Asc would make
+  // the list silently change as the pin moves.
+  const eclipseContactList = useMemo<EclipseContact[] | null>(() => {
+    if (overlayMode !== 'eclipses' || !eclipseDetails || !eclipsesMod) return null;
+    return eclipsesMod.eclipseContacts(
+      eclipseDetails.lonRad,
+      ecliptic.filter((p) => visiblePlanets.has(p.name)),
+      birthAngles ? { asc: birthAngles.asc, mc: birthAngles.mc } : null,
+    );
+  }, [overlayMode, eclipseDetails, eclipsesMod, ecliptic, visiblePlanets, birthAngles]);
   // The overlay chart's own MC/IC/AS/DS for the bi-wheel, at the same place as the natal
   // angles. Time-based overlays (transits / progressed / synastry) have a genuine second
   // moment → relocate(jd) at the active point. The directed overlays (solar-arc, primary)
@@ -1683,6 +1819,7 @@ export default function App() {
         overlay={promoted ? null : overlay}
         eclipse={eclipseMapData}
         eclipseTip={eclipseTip}
+        eclipseCard={eclipseCard}
         pin={pinned}
         pinType={isNatalPin ? 'natal' : pinned ? 'custom' : null}
         theme={theme}
@@ -1750,6 +1887,7 @@ export default function App() {
           onGenerateRelationship={handleGenerateRelationship}
           canGenerateRelationship={overlayMode === 'synastry' && !!partner}
           eclipseDetails={eclipseDetails}
+          eclipseContacts={eclipseContactList}
           showEclipseNatalLines={showEclipseNatalLines}
           setShowEclipseNatalLines={setShowEclipseNatalLines}
           showEclipseChartLines={showEclipseChartLines}
@@ -1856,7 +1994,10 @@ export default function App() {
         <EclipseHud
           catalog={eclipseCatalog}
           selected={eclipseRow}
-          onSelect={setEclipseId}
+          onSelect={onEclipseSelect}
+          onLocate={() => {
+            if (eclipseRow) flyToEclipse(eclipseRow);
+          }}
         />
       )}
       {showTeleport && (

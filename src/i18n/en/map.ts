@@ -46,8 +46,48 @@ export const map = {
     pathEdge: 'Edge of the central path',
     // {pct} is the contour's magnitude, e.g. "50%".
     isoline: '{pct} maximum eclipse',
+    // The faint solar 0%-magnitude boundary.
+    outerLimit: 'Visibility edge — any eclipse at all inside this line',
+    // Lunar moonrise/set circle at a phase contact; {phase} is the contact
+    // tag in the astronomical convention (U1, U4, P1, P4).
+    horizon: 'Moonrise/set line at {phase}',
     // {pct} obscuration (area covered) + {time} "HH:MM" UTC of the local peak.
     localMax: '{pct} of the Sun covered here, at {time} UTC',
+    // Hover sub-line on lunar curves: how much of the eclipse this place sees.
+    lunarAllVisible: 'The whole eclipse is visible from here',
+    lunarPartView: 'Part of the eclipse is visible from here ({n} of {total} contacts)',
+  },
+  // The pinned click-card in eclipses mode: local contact times (solar) or
+  // phase visibility (lunar) at the clicked point.
+  eclipseCard: {
+    notVisible: 'Eclipse not visible from here',
+    // Solar contact rows (times are HH:MM:SS UTC).
+    c1: 'Partial begins',
+    c2: 'Totality begins',
+    c2Annular: 'Ring begins',
+    max: 'Maximum',
+    c3: 'Totality ends',
+    c3Annular: 'Ring ends',
+    c4: 'Partial ends',
+    // Suffix for a contact clipped by the horizon ("17:02:11 · at sunrise").
+    atSunrise: 'at sunrise',
+    atSunset: 'at sunset',
+    // "73% magnitude · 64% of the Sun covered" on the Maximum row.
+    maxValue: '{mag} magnitude · {obsc} covered',
+    duration: 'Duration',
+    // Lunar rows: each phase contact with its visibility at this place.
+    phase: {
+      P1: 'Penumbral begins',
+      U1: 'Partial begins',
+      U2: 'Totality begins',
+      max: 'Maximum',
+      U3: 'Totality ends',
+      U4: 'Partial ends',
+      P4: 'Penumbral ends',
+    },
+    belowHorizon: 'Moon below horizon',
+    moonrise: 'Moonrise',
+    moonset: 'Moonset',
   },
   // Zenith stamp hover popup. {planet} is the planet display name.
   zenithTitle: '{planet} zenith',

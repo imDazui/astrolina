@@ -93,6 +93,12 @@
   cursor: default;
 }
 
+/* ⌖ fly-to button: same chrome as the steppers, sized for the wider glyph. */
+.eclipse-hud-locate {
+  font-size: 15px;
+  padding-bottom: 0;
+}
+
 .eclipse-hud-picker {
   position: relative;
   min-width: 0;
@@ -137,14 +143,15 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* Floor the title at ~27 characters so the centered bar keeps ONE width as
-     ‹ › steps through differently-sized titles ("8 April 2024 · Total" vs
-     "21 September 2025 · Partial") — otherwise the arrows shift under the
-     cursor and rapid tap-tap-tap stepping needs re-aiming every click.
-     Capped by viewport width so narrow screens can still shrink the bar.
-     Shorter titles center in the floored box (matching the centered meta
-     line below) rather than hugging its left edge. */
-  min-width: min(27ch, 40vw);
+  /* Floor the title at the longest it can get so the centered bar keeps ONE
+     width as ‹ › steps through differently-sized titles ("8 April 2024 ·
+     ☉ Total" vs "18 September 2024 · ☾ Penumbral", ~31 characters with the
+     body glyph) — otherwise the arrows shift under the cursor and rapid
+     tap-tap-tap stepping needs re-aiming every click. Capped by viewport
+     width so narrow screens can still shrink the bar. Shorter titles center
+     in the floored box (matching the centered meta line below) rather than
+     hugging its left edge. */
+  min-width: min(31ch, 40vw);
   text-align: center;
 }
 
@@ -207,7 +214,8 @@
   border-color: rgba(var(--map-accent-rgb), 0.5);
 }
 
-/* Type filter chips: All / Total / Annular / Hybrid / Partial. */
+/* Filter chip rows: body (All / Solar / Lunar), then — once a body is
+   chosen — its type chips (e.g. All / Total / Annular / Hybrid / Partial). */
 .eclipse-hud-filters {
   display: flex;
   gap: 4px;

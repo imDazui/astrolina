@@ -174,13 +174,21 @@ export const settings = {
   },
 
   // Eclipses overlay (Overlay tab while the Eclipses mode is active): the
-  // details panel labels, the display toggle, and the isoline-interval radios.
+  // details panel labels, the display toggles, the natal-contacts list, and
+  // the isoline-interval radios.
   eclipses: {
+    // Shared by solar and lunar rows: 'total'/'partial' mean the right thing
+    // for either body, and the body itself is marked separately (☉/☾).
     kind: {
       total: 'Total',
       annular: 'Annular',
       hybrid: 'Hybrid',
       partial: 'Partial',
+      penumbral: 'Penumbral',
+    },
+    body: {
+      solar: 'Solar',
+      lunar: 'Lunar',
     },
     details: {
       maximum: 'Maximum',
@@ -195,11 +203,32 @@ export const settings = {
       // Hover tip on the eclipse-degree value; {sign} is the spelled-out sign name.
       sunPositionTip:
         'The zodiac degree of the eclipse — the Sun and Moon meet here in {sign}.',
+      moonPositionTip:
+        'The zodiac degree of the eclipsed Moon in {sign} — it stands opposite the Sun.',
       hemisphere: 'Hemisphere',
       north: 'Northern',
       south: 'Southern',
       duration: 'Max duration',
       width: 'Path width',
+      // Lunar rows: how deep the Moon dips into each shadow, in Moon diameters.
+      umbralMag: 'Umbral magnitude',
+      penumbralMag: 'Penumbral magnitude',
+      penumbralDur: 'Penumbral phase',
+      partialDur: 'Partial phase',
+      totalDur: 'Total phase',
+    },
+    contacts: {
+      heading: 'Natal Contacts',
+      // Under the heading when the eclipse degree strikes nothing in the chart.
+      none: 'No contacts within 3° — this eclipse passes the chart quietly.',
+      aspect: {
+        conjunction: 'conjunct',
+        square: 'square',
+        opposition: 'opposite',
+      },
+      // The natal angles as contact targets.
+      asc: 'Ascendant',
+      mc: 'Midheaven',
     },
     natalLines: {
       title: 'Natal Chart Lines',

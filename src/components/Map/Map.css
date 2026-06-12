@@ -204,6 +204,52 @@
   text-align: center;
 }
 
+/* ── Eclipse local-circumstances card ────────────────────────────────
+   The pinned click-card in eclipses mode (contact times / phase visibility).
+   Inherits the zenith-popup chrome; re-enables pointer events so its ✕ close
+   button works, and lays the contact rows out as a tight two-column grid. */
+.eclipse-popup {
+  pointer-events: auto;
+}
+.eclipse-popup .ui-tip {
+  text-align: left;
+}
+.eclipse-popup .maplibregl-popup-close-button {
+  width: 18px;
+  height: 18px;
+  margin: 2px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-muted);
+  border-radius: 6px;
+}
+.eclipse-popup .maplibregl-popup-close-button:hover {
+  color: var(--text-strong);
+  background: rgba(var(--tint), 0.12);
+}
+.eclipse-card-rows {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 1px 12px;
+  margin-top: 3px;
+}
+.eclipse-card-rows dt {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.eclipse-card-rows dd {
+  margin: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+  text-align: right;
+  white-space: nowrap;
+}
+.eclipse-card-rows dd.eclipse-card-dim {
+  color: var(--text-muted);
+}
+
 /* The local-space × birth-chart crossing tooltip stacks both lines with the cross
    between them: "LS <glyph> Mars" / × / "Ds <glyph> Venus". */
 .cross-tip {

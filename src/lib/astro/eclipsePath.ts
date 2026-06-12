@@ -631,6 +631,19 @@ export function magnitudeIsolines(
 }
 
 /**
+ * The outer edge of visibility — where the maximum eclipse is exactly 0%, the
+ * penumbral limit. Just the m = 0 member of the iso-magnitude family (the
+ * offset radius collapses to L1 = l1 − ζ·tanF1), drawn faint so the map shows
+ * how far "any eclipse at all" reaches beyond the dashed percentage curves.
+ */
+export function penumbralLimit(el: BesselianElements): [number, number][][] {
+  return [
+    ...toSegments(traceOffsetCurve(el, magnitudeOffset(0), 1)),
+    ...toSegments(traceOffsetCurve(el, magnitudeOffset(0), -1)),
+  ];
+}
+
+/**
  * The point of greatest eclipse — where the shadow axis passes closest to
  * Earth's center. Central eclipses: the axis ground point at that instant.
  * Non-central/partial: the limb point nearest the axis.
@@ -676,6 +689,43 @@ export interface LocalCircumstances {
   jd: number;
 }
 
+// The pieces of one place's eclipse geometry at one instant: cone radii at the
+// observer's height, the offset from the shadow axis, and that height itself
+// (ζ ≈ sin of the Sun's altitude). Shared by localCircumstances/localContacts.
+function localGeometryAt(
+  el: BesselianElements,
+  t: number,
+  latDeg: number,
+  lngDeg: number,
+): { zeta: number; L1: number; L2: number; delta: number } {
+  const e = el.at(t);
+  const f = geoToFundamental(e, latDeg, lngDeg);
+  return {
+    zeta: f.zeta,
+    L1: e.l1 - f.zeta * e.tanF1,
+    L2: e.l2 - f.zeta * e.tanF2,
+    delta: Math.hypot(f.u - e.x, f.v - e.y),
+  };
+}
+
+// Sun-below-horizon cutoff for local visibility, in ζ ≈ sin alt. Allows ~0.6°
+// past the geometric horizon: refraction keeps the Sun visible there, and the
+// maximum of a grazing eclipse sits exactly on the terminator (1935-01-05's
+// peak is at ζ = −0.002, a hair "below" geometrically yet plainly visible).
+const HORIZON_ZETA = -0.01;
+
+// Local magnitude at one instant; −Infinity with the Sun below the horizon.
+function localMagAt(
+  el: BesselianElements,
+  t: number,
+  latDeg: number,
+  lngDeg: number,
+): number {
+  const g = localGeometryAt(el, t, latDeg, lngDeg);
+  if (g.zeta < HORIZON_ZETA) return -Infinity;
+  return (g.L1 - g.delta) / (g.L1 + g.L2);
+}
+
 /**
  * What this geographic point experiences: peak magnitude, obscuration, and
  * when. Returns null where the eclipse is invisible (Sun below the horizon
@@ -687,19 +737,7 @@ export function localCircumstances(
   lngDeg: number,
 ): LocalCircumstances | null {
   const [tA, tB] = el.tPartial;
-  const magAt = (t: number): number => {
-    const e = el.at(t);
-    const f = geoToFundamental(e, latDeg, lngDeg);
-    // Sun below the horizon — but allow ~0.6° past the geometric horizon
-    // (ζ ≈ sin alt): refraction keeps the Sun visible there, and the maximum
-    // of a grazing eclipse sits exactly on the terminator (1935-01-05's peak
-    // is at ζ = −0.002, a hair "below" geometrically yet plainly visible).
-    if (f.zeta < -0.01) return -Infinity;
-    const L1 = e.l1 - f.zeta * e.tanF1;
-    const L2 = e.l2 - f.zeta * e.tanF2;
-    const delta = Math.hypot(f.u - e.x, f.v - e.y);
-    return (L1 - delta) / (L1 + L2);
-  };
+  const magAt = (t: number) => localMagAt(el, t, latDeg, lngDeg);
   // Coarse scan for the best bracket, then golden-section refine.
   const STEPS = 96;
   let bestT = tA, bestM = -Infinity;
@@ -723,13 +761,9 @@ export function localCircumstances(
 
   // Obscuration: the classical two-disk overlap. In Δ-scaled units the Sun
   // and Moon apparent radii are (L1+L2)/2 and (L1−L2)/2, separated by Δ.
-  const e = el.at(t);
-  const f = geoToFundamental(e, latDeg, lngDeg);
-  const L1 = e.l1 - f.zeta * e.tanF1;
-  const L2 = e.l2 - f.zeta * e.tanF2;
+  const { L1, L2, delta: s } = localGeometryAt(el, t, latDeg, lngDeg);
   const rs = (L1 + L2) / 2;
   const rm = (L1 - L2) / 2;
-  const s = Math.hypot(f.u - e.x, f.v - e.y);
   // Inside the central phase (Δ ≤ |L2|, i.e. m ≥ min(1, ratio)) the reported
   // magnitude switches to the diameter ratio — the value local-circumstance
   // tables list for places that see totality or the full ring.
@@ -749,4 +783,135 @@ export function localCircumstances(
     obscuration = lens / (Math.PI * rs * rs);
   }
   return { magnitude, obscuration, jd: el.jd0 + t / 24 };
+}
+
+// ── Local contact times ───────────────────────────────────────────────────────
+
+export interface LocalContact {
+  /** UT instant (Julian Day). */
+  jd: number;
+  /**
+   * True when this is local sunrise/sunset rather than a true geometric
+   * contact — the eclipse was already (or still) in progress as the Sun
+   * crossed the horizon, so the place's view starts/ends here instead.
+   */
+  atHorizon: boolean;
+}
+
+export interface LocalContacts {
+  max: LocalCircumstances;
+  /** First/last contact — the partial eclipse begins/ends here. */
+  c1: LocalContact | null;
+  c4: LocalContact | null;
+  /** Central-phase contacts; null when this place sees no totality/annularity. */
+  c2: LocalContact | null;
+  c3: LocalContact | null;
+  centralKind: 'total' | 'annular' | null;
+  /** c3 − c2 in seconds (the place's totality/annularity duration). */
+  centralDurationSec: number | null;
+}
+
+// Find where f crosses zero between a ≤-side instant and a >-side instant
+// (either order); −Infinity counts as the ≤ side, so an eclipse truncated by
+// the horizon bisects to the sunrise/sunset instant itself.
+function bisectCrossing(
+  f: (t: number) => number,
+  tNonPos: number,
+  tPos: number,
+): number {
+  let lo = tNonPos, hi = tPos;
+  for (let n = 0; n < 40; n++) {
+    const mid = (lo + hi) / 2;
+    if (f(mid) > 0) hi = mid;
+    else lo = mid;
+  }
+  return (hi + lo) / 2;
+}
+
+/**
+ * The classical local contact times: C1/C4 where the partial eclipse begins
+ * and ends for this place, C2/C3 bracketing its central phase (when it has
+ * one). Null where the eclipse is invisible. Contacts clipped by sunrise or
+ * sunset come back flagged `atHorizon` — the instant is then the horizon
+ * crossing, not a geometric contact. Powers the click-for-details card.
+ */
+export function localContacts(
+  el: BesselianElements,
+  latDeg: number,
+  lngDeg: number,
+): LocalContacts | null {
+  const max = localCircumstances(el, latDeg, lngDeg);
+  if (!max) return null;
+  const [tA, tB] = el.tPartial;
+  const tMax = (max.jd - el.jd0) * 24;
+  const magAt = (t: number) => localMagAt(el, t, latDeg, lngDeg);
+
+  // Walk outward from the local maximum to bracket each crossing, then bisect.
+  // The bracket search and the horizon flag both use the SAME gated magnitude,
+  // so a sunrise/sunset transition (−Infinity → positive) is found exactly
+  // like a geometric one; the flag then asks whether the UNGATED magnitude was
+  // already well past zero on the dark side of the crossing.
+  const STEP = (tB - tA) / 192;
+  const contactToward = (dir: 1 | -1): LocalContact | null => {
+    let tOut = tMax;
+    while ((dir === -1 && tOut > tA) || (dir === 1 && tOut < tB)) {
+      const next = tOut + dir * STEP;
+      if (magAt(next) <= 0) {
+        const t = bisectCrossing(magAt, next, tOut);
+        const g = localGeometryAt(el, t + dir * STEP * 0.25, latDeg, lngDeg);
+        const ungatedMag = (g.L1 - g.delta) / (g.L1 + g.L2);
+        return { jd: el.jd0 + t / 24, atHorizon: ungatedMag > 0.005 };
+      }
+      tOut = next;
+    }
+    return null; // still eclipsed at the window edge — cannot happen in practice
+  };
+  const c1 = contactToward(-1);
+  const c4 = contactToward(1);
+
+  // Central phase: inside it, Δ ≤ |L2| (the same condition that switches the
+  // reported magnitude to the diameter ratio). Gated by the horizon like the
+  // magnitude, so a totality clipped by sunrise flags `atHorizon` too.
+  const centralAt = (t: number): number => {
+    const g = localGeometryAt(el, t, latDeg, lngDeg);
+    if (g.zeta < HORIZON_ZETA) return -Infinity;
+    return Math.abs(g.L2) - g.delta;
+  };
+  let c2: LocalContact | null = null;
+  let c3: LocalContact | null = null;
+  let centralKind: 'total' | 'annular' | null = null;
+  if (centralAt(tMax) > 0) {
+    centralKind = localGeometryAt(el, tMax, latDeg, lngDeg).L2 < 0 ? 'total' : 'annular';
+    // The central phase lasts minutes; bracket from the maximum at a fine
+    // step, bounded at ±30 min (no central phase comes close to that).
+    const fine = STEP / 16;
+    const centralEdge = (dir: 1 | -1): LocalContact | null => {
+      let tOut = tMax;
+      while (Math.abs(tOut - tMax) < 0.5) {
+        const next = tOut + dir * fine;
+        if (centralAt(next) <= 0) {
+          const t = bisectCrossing(centralAt, next, tOut);
+          const g = localGeometryAt(el, t + dir * fine * 0.25, latDeg, lngDeg);
+          return {
+            jd: el.jd0 + t / 24,
+            atHorizon: Math.abs(g.L2) - g.delta > 0,
+          };
+        }
+        tOut = next;
+      }
+      return null;
+    };
+    c2 = centralEdge(-1);
+    c3 = centralEdge(1);
+    if (!c2 || !c3) { c2 = c3 = null; centralKind = null; }
+  }
+  return {
+    max,
+    c1,
+    c4,
+    c2,
+    c3,
+    centralKind,
+    centralDurationSec: c2 && c3 ? (c3.jd - c2.jd) * 86400 : null,
+  };
 }

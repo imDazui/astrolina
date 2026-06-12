@@ -4,12 +4,13 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-// Verify the Eclipses overlay's path mathematics (src/lib/astro/eclipsePath.ts)
-// against NASA/GSFC published eclipse data — the same module the browser runs,
-// driven here through a @swisseph/node adapter with the app's own .se1 files.
+// Verify the Eclipses overlay's mathematics (src/lib/astro/eclipsePath.ts and
+// src/lib/astro/lunarEclipse.ts) against NASA/GSFC published eclipse data —
+// the same modules the browser runs, driven here through a @swisseph/node
+// adapter with the app's own .se1 files.
 //
-// Checks, per reference eclipse (fixtures quote eclipse.gsfc.nasa.gov SEdata
-// pages, Eclipse Predictions by Fred Espenak and Jean Meeus, NASA/GSFC):
+// Solar checks, per reference eclipse (fixtures quote eclipse.gsfc.nasa.gov
+// SEdata pages, Eclipse Predictions by Fred Espenak and Jean Meeus, NASA/GSFC):
 //   1. Swiss event search lands on the published instant and classification.
 //   2. The cubic element fit matches direct ephemeris evaluation (<1e-4 ER).
 //   3. Our Besselian elements match NASA's published polynomials (2024-04-08,
@@ -19,9 +20,20 @@
 //   5. The umbral path width at greatest eclipse matches.
 //   6. Local circumstances at the GE point reproduce the catalog magnitude.
 //   7. The curve generators return sane shapes (central line, band, isolines).
-// Plus catalog integrity for src/lib/astro/data/solarEclipses.json.
+//   8. Local contact times on the published central line reproduce NASA's
+//      totality duration and mid-eclipse instant.
+// Lunar checks, per reference eclipse (fixtures quote the Espenak "prime"
+// pages — same canon as the Five Millennium Catalog):
+//   1. normalizeSwissLunarEclipse undoes the wrapper's one-slot field shift:
+//      every remapped contact lands on the published time, in order.
+//   2. The sub-lunar point at maximum matches the published zenith coords.
+//   3. The visibility polygon ring closes, contains the sub-lunar point and
+//      excludes its antipode; per-place phase visibility behaves.
+// Plus catalog integrity for both committed JSON catalogs (unique ids across
+// the merged set, global chronology, Swiss spot-resolution) and a degenerate
+// sweep building the visibility polygon across the whole lunar catalog.
 //
-// Run: npm run verify:eclipses   (tsx — eclipsePath.ts is imported as-is)
+// Run: npm run verify:eclipses   (tsx — the app modules are imported as-is)
 
 import {
   setEphemerisPath,
@@ -29,6 +41,7 @@ import {
   calculatePosition,
   calculateHouses,
   findNextSolarEclipse,
+  findNextLunarEclipse,
   CalculationFlag,
   EclipseType,
   HouseSystem,
@@ -41,12 +54,20 @@ import {
   magnitudeIsolines,
   greatestEclipsePoint,
   localCircumstances,
+  localContacts,
   normalizeSwissEclipse,
   umbralPathWidthKm,
   type BesselianElements,
   type EclipseEphemeris,
 } from '../src/lib/astro/eclipsePath';
+import { normalizeSwissLunarEclipse } from '../src/lib/astro/eclipseAdapter';
+import {
+  lunarGeometry,
+  lunarLocalView,
+  type LunarEclipseGeometry,
+} from '../src/lib/astro/lunarEclipse';
 import catalog from '../src/lib/astro/data/solarEclipses.json';
+import lunarCatalog from '../src/lib/astro/data/lunarEclipses.json';
 
 setEphemerisPath(process.cwd() + '/public/ephe');
 
@@ -300,6 +321,257 @@ function verifyEdgeCases() {
   check('2021-06-10 central line still drawn', centralLine(ael).length >= 1, 'present');
 }
 
+// ── Solar local contact times ─────────────────────────────────────────────────
+// Reference: the NASA path table for 2024-04-08 (SEpath2001/SE2024Apr08Tpath),
+// central line at 18:42 UT = 32°17.0′N 96°42.0′W, totality 04m22.7s. A point
+// ON the central line must reproduce that duration with mid-totality at the
+// listed instant; a city outside the path (Chicago) must get C1/C4 only.
+function verifyLocalContacts(el: BesselianElements) {
+  console.log('\n2024-04-08 — local contact times');
+  const onCenter = localContacts(el, 32 + 17.0 / 60, -(96 + 42.0 / 60));
+  const midRef = julianDay(2024, 4, 8, 18.7); // 18:42:00 UT
+  if (!onCenter || !onCenter.c2 || !onCenter.c3) {
+    check('central-line point sees totality', false, 'c2/c3 missing');
+  } else {
+    check('central kind', onCenter.centralKind === 'total', `${onCenter.centralKind}`);
+    const dur = onCenter.centralDurationSec!;
+    check('totality duration', Math.abs(dur - 262.7) < 10, `${dur.toFixed(1)} s vs NASA 262.7 s`);
+    const mid = (onCenter.c2.jd + onCenter.c3.jd) / 2;
+    check(
+      'mid-totality instant',
+      Math.abs(mid - midRef) * 86400 < 60,
+      `Δ ${(Math.abs(mid - midRef) * 86400).toFixed(1)} s`,
+    );
+    check(
+      'contact order',
+      onCenter.c1!.jd < onCenter.c2.jd &&
+        onCenter.c2.jd < onCenter.max.jd &&
+        onCenter.max.jd < onCenter.c3.jd &&
+        onCenter.c3.jd < onCenter.c4!.jd,
+      'c1 < c2 < max < c3 < c4',
+    );
+    check(
+      'no horizon truncation',
+      !onCenter.c1!.atHorizon && !onCenter.c4!.atHorizon,
+      'geometric contacts',
+    );
+  }
+  const chicago = localContacts(el, 41.88, -87.63);
+  check(
+    'off-path city: partial only',
+    chicago !== null && chicago.c2 === null && chicago.c3 === null,
+    `centralKind ${chicago?.centralKind}`,
+  );
+  if (chicago) {
+    const spanH = (chicago.c4!.jd - chicago.c1!.jd) * 24;
+    check(
+      'off-path partial window sane',
+      chicago.c1!.jd < chicago.max.jd &&
+        chicago.max.jd < chicago.c4!.jd &&
+        spanH > 1.5 &&
+        spanH < 3.5,
+      `${spanH.toFixed(2)} h`,
+    );
+  }
+}
+
+// ── Lunar eclipses ────────────────────────────────────────────────────────────
+// Contact times from the Espenak prime pages (UT1; Swiss differs by its own
+// ΔT model and shadow-enlargement convention — ≤ ~1 min on umbral contacts).
+interface LunarFixture {
+  id: string;
+  kind: 'total' | 'partial' | 'penumbral';
+  /** [y, m, d] to seed the search. */
+  seed: [number, number, number];
+  /** Published contacts, UT decimal hours; null = phase absent. */
+  contacts: Record<'P1' | 'U1' | 'U2' | 'max' | 'U3' | 'U4' | 'P4', number | null>;
+  zenLat: number;
+  zenLng: number;
+}
+
+const h = (hh: number, mm: number, ss: number) => hh + mm / 60 + ss / 3600;
+const LUNAR_FIXTURES: LunarFixture[] = [
+  {
+    id: '2025-03-14', kind: 'total', seed: [2025, 3, 12],
+    contacts: {
+      P1: h(3, 57, 9), U1: h(5, 9, 23), U2: h(6, 25, 58), max: h(6, 58, 45),
+      U3: h(7, 32, 2), U4: h(8, 48, 19), P4: h(10, 0, 32),
+    },
+    zenLat: 2.68, zenLng: -102.24,
+  },
+  {
+    id: '2024-09-18', kind: 'partial', seed: [2024, 9, 16],
+    contacts: {
+      P1: h(0, 40, 58), U1: h(2, 12, 42), U2: null, max: h(2, 44, 14),
+      U3: null, U4: h(3, 16, 22), P4: h(4, 47, 54),
+    },
+    zenLat: -2.59, zenLng: -42.05,
+  },
+  {
+    id: '2023-05-05', kind: 'penumbral', seed: [2023, 5, 3],
+    contacts: {
+      P1: h(15, 13, 39), U1: null, U2: null, max: h(17, 22, 54),
+      U3: null, U4: null, P4: h(19, 31, 54),
+    },
+    zenLat: -17.24, zenLng: 98.05,
+  },
+];
+
+function swissLunarKind(typeFlags: number): LunarFixture['kind'] {
+  if (typeFlags & EclipseType.Total) return 'total';
+  if (typeFlags & EclipseType.Partial) return 'partial';
+  return 'penumbral';
+}
+
+// Even-odd test against an unwrapped ring, with the point's longitude brought
+// into the ring's (possibly > 360°-wide) domain.
+function pointInRing(ring: [number, number][], lat: number, lng: number): boolean {
+  const min = Math.min(...ring.map((p) => p[0]));
+  let x = lng;
+  while (x < min) x += 360;
+  while (x >= min + 360) x -= 360;
+  let inside = false;
+  for (let i = 1; i < ring.length; i++) {
+    const [x1, y1] = ring[i - 1];
+    const [x2, y2] = ring[i];
+    if (y1 > lat !== y2 > lat && x < x1 + ((lat - y1) / (y2 - y1)) * (x2 - x1)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function verifyLunarFixture(fx: LunarFixture): LunarEclipseGeometry {
+  console.log(`\n${fx.id} (lunar ${fx.kind})`);
+  const [y, m, d] = fx.seed;
+  const raw = findNextLunarEclipse(
+    julianDay(y, m, d, 0),
+    CalculationFlag.SwissEphemeris,
+    0,
+    false,
+  );
+  check('classification', swissLunarKind(raw.type) === fx.kind, swissLunarKind(raw.type));
+  const ev = normalizeSwissLunarEclipse(raw);
+  const got: Record<string, number | null> = {
+    P1: ev.penumbralBegin, U1: ev.partialBegin, U2: ev.totalBegin, max: ev.maximum,
+    U3: ev.totalEnd, U4: ev.partialEnd, P4: ev.penumbralEnd,
+  };
+  const dayJd = Math.floor(got.max! - 0.5) + 0.5; // midnight UT of the eclipse day
+  let worstSec = 0;
+  for (const tag of Object.keys(fx.contacts) as (keyof LunarFixture['contacts'])[]) {
+    const ref = fx.contacts[tag];
+    if (ref === null) {
+      check(`${tag} absent`, got[tag] === null, `${got[tag]}`);
+      continue;
+    }
+    if (got[tag] === null) {
+      check(`${tag} present`, false, 'missing');
+      continue;
+    }
+    const sec = Math.abs(got[tag]! - (dayJd + ref / 24)) * 86400;
+    worstSec = Math.max(worstSec, sec);
+    check(`${tag} contact`, sec < 120, `Δ ${sec.toFixed(0)} s`);
+  }
+  const ordered = (['P1', 'U1', 'U2', 'max', 'U3', 'U4', 'P4'] as const)
+    .map((tag) => got[tag])
+    .filter((v): v is number => v !== null);
+  check(
+    'contacts in order',
+    ordered.every((v, i) => i === 0 || v > ordered[i - 1]),
+    `worst Δ ${worstSec.toFixed(0)} s`,
+  );
+
+  const geo = lunarGeometry(nodeEphemeris, ev);
+  const zenKm = haversineKm(geo.sublunar.lat, geo.sublunar.lng, fx.zenLat, fx.zenLng);
+  check(
+    'sub-lunar point at maximum',
+    zenKm < 60,
+    `${geo.sublunar.lat.toFixed(2)}°, ${geo.sublunar.lng.toFixed(2)}° — ${zenKm.toFixed(0)} km off published`,
+  );
+  const ring = geo.visPolygon;
+  check(
+    'visibility ring closes',
+    ring.length > 100 &&
+      ring[0][0] === ring[ring.length - 1][0] &&
+      ring[0][1] === ring[ring.length - 1][1],
+    `${ring.length} vertices`,
+  );
+  check(
+    'sub-lunar inside / antipode outside',
+    pointInRing(ring, geo.sublunar.lat, geo.sublunar.lng) &&
+      !pointInRing(ring, -geo.sublunar.lat, geo.sublunar.lng + 180),
+    'even-odd test',
+  );
+  const expectedCurves = fx.kind === 'penumbral' ? ['P1', 'P4'] : ['U1', 'U4'];
+  check(
+    'drawn horizon curves',
+    geo.contactHorizons.map((c) => c.phase).join(',') === expectedCurves.join(','),
+    geo.contactHorizons.map((c) => c.phase).join(','),
+  );
+  return geo;
+}
+
+function verifyLunarLocalView(geo: LunarEclipseGeometry) {
+  console.log('\n2025-03-14 — per-place visibility');
+  // Mexico City: the whole eclipse runs near local midnight, Moon up throughout.
+  const cdmx = lunarLocalView(nodeEphemeris, geo, 19.43, -99.13);
+  check(
+    'Mexico City sees every phase',
+    cdmx !== null && cdmx.phases.every((p) => p.visible),
+    `${cdmx?.phases.filter((p) => p.visible).length}/${cdmx?.phases.length} visible`,
+  );
+  check(
+    'Mexico City: no mid-eclipse horizon crossing',
+    cdmx !== null && cdmx.moonrise === null && cdmx.moonset === null,
+    'moon up throughout',
+  );
+  // Helsinki: maximum at 08:58 local with the Moon already set — it catches
+  // the early penumbral/partial phases only, with moonset mid-eclipse.
+  const helsinki = lunarLocalView(nodeEphemeris, geo, 60.17, 24.94);
+  check(
+    'Helsinki: partial view with moonset',
+    helsinki !== null &&
+      helsinki.phases.some((p) => p.visible) &&
+      helsinki.phases.some((p) => !p.visible) &&
+      helsinki.moonset !== null,
+    helsinki
+      ? `${helsinki.phases.filter((p) => p.visible).length}/${helsinki.phases.length} visible`
+      : 'null',
+  );
+  // Perth: the Moon is below the horizon for the entire eclipse.
+  check('Perth sees nothing', lunarLocalView(nodeEphemeris, geo, -31.95, 115.86) === null, 'null');
+}
+
+// Build the visibility polygon across the whole lunar catalog (every ~60th
+// row) — catches sub-lunar degeneracies (equatorial declination, dateline).
+function verifyLunarSweep() {
+  console.log('\nlunar catalog sweep');
+  const rows = lunarCatalog.rows as (string | number | null)[][];
+  let worst = '';
+  let bad = 0;
+  for (let i = 0; i < rows.length; i += 59) {
+    const id = rows[i][0] as string;
+    const [y, m, d] = id.split('-').map(Number);
+    const raw = findNextLunarEclipse(
+      julianDay(y, m, d, 0) - 1.5,
+      CalculationFlag.SwissEphemeris,
+      0,
+      false,
+    );
+    const geo = lunarGeometry(nodeEphemeris, normalizeSwissLunarEclipse(raw));
+    const ring = geo.visPolygon;
+    const closes =
+      ring.length > 100 &&
+      ring[0][0] === ring[ring.length - 1][0] &&
+      ring[0][1] === ring[ring.length - 1][1];
+    if (!closes || !pointInRing(ring, geo.sublunar.lat, geo.sublunar.lng)) {
+      bad++;
+      worst = id;
+    }
+  }
+  check('visibility polygons across catalog', bad === 0, bad ? `${bad} bad, e.g. ${worst}` : `${Math.ceil(rows.length / 59)} sampled`);
+}
+
 // ── Catalog integrity ─────────────────────────────────────────────────────────
 function verifyCatalog() {
   console.log('\nsolarEclipses.json');
@@ -319,6 +591,34 @@ function verifyCatalog() {
     worst = Math.max(worst, Math.abs(ev.maximum - (jd + 0.5)));
   }
   check('rows resolve via Swiss', worst < 1.0, `worst |Δ| ${worst.toFixed(2)} d`);
+
+  console.log('\nlunarEclipses.json');
+  const lrows = lunarCatalog.rows as (string | number | null)[][];
+  check('row count', lrows.length > 1400, `${lrows.length} rows`);
+  const lids = lrows.map((r) => r[0] as string);
+  check('ids unique', new Set(lids).size === lids.length, `${lids.length} ids`);
+  const lsorted = [...lids].sort();
+  check('ids sorted', lids.every((id, i) => id === lsorted[i]), 'chronological');
+  let lworst = 0;
+  for (let i = 0; i < lrows.length; i += 71) {
+    const id = lrows[i][0] as string;
+    const [y, m, d] = id.split('-').map(Number);
+    const jd = julianDay(y, m, d, 0);
+    const ev = findNextLunarEclipse(jd - 1.5, CalculationFlag.SwissEphemeris, 0, false);
+    lworst = Math.max(lworst, Math.abs(ev.maximum - (jd + 0.5)));
+  }
+  check('rows resolve via Swiss', lworst < 1.0, `worst |Δ| ${lworst.toFixed(2)} d`);
+
+  // The merged picker keys selection by id alone, so no date may appear in
+  // both catalogs (physically guaranteed — New vs Full Moon are ≥ ~14 days
+  // apart — but the loader's correctness rests on it, so assert it).
+  console.log('\nmerged catalog');
+  const all = new Set([...ids, ...lids]);
+  check(
+    'ids unique across both catalogs',
+    all.size === ids.length + lids.length,
+    `${all.size} combined ids`,
+  );
 }
 
 // ── Run ───────────────────────────────────────────────────────────────────────
@@ -327,8 +627,18 @@ for (const fx of FIXTURES) {
   const el = verifyFixture(fx);
   if (fx.id === '2024-04-08') el2024 = el;
 }
-if (el2024) verifyNasaElements(el2024);
+if (el2024) {
+  verifyNasaElements(el2024);
+  verifyLocalContacts(el2024);
+}
 verifyEdgeCases();
+let lunar2025: LunarEclipseGeometry | null = null;
+for (const fx of LUNAR_FIXTURES) {
+  const geo = verifyLunarFixture(fx);
+  if (fx.id === '2025-03-14') lunar2025 = geo;
+}
+if (lunar2025) verifyLunarLocalView(lunar2025);
+verifyLunarSweep();
 verifyCatalog();
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nAll checks passed.');

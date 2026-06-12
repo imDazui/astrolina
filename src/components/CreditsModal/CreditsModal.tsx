@@ -98,7 +98,7 @@ const CREDIT_GROUPS: CreditGroup[] = [
         noteKey: 'swisseph',
       },
       {
-        name: 'NASA GSFC Eclipse Catalog',
+        name: 'NASA GSFC Eclipse Catalogs',
         href: 'https://eclipse.gsfc.nasa.gov',
         license: 'NASA',
         noteKey: 'nasaEclipse',

@@ -610,6 +610,8 @@ const LINE_HIT_LAYERS = [
   'eclipse-central',
   'eclipse-limits',
   'eclipse-isolines',
+  'eclipse-penumbral',
+  'eclipse-lunar-horizon',
 ];
 const LINE_HIT_TOLERANCE_PX = 3;
 
@@ -728,7 +730,11 @@ function lineLabelHtml(
         ? t('map.eclipse.central')
         : kind === 'limit'
           ? t('map.eclipse.pathEdge')
-          : t('map.eclipse.isoline', { pct: props.label as string });
+          : kind === 'penumbral-limit'
+            ? t('map.eclipse.outerLimit')
+            : kind === 'lunar-horizon'
+              ? t('map.eclipse.horizon', { phase: props.label as string })
+              : t('map.eclipse.isoline', { pct: props.label as string });
     row = tagHtml(props.dateLabel as string) + what;
   }
   if (!row) return null;
@@ -817,6 +823,11 @@ interface MapProps {
   /** Local circumstances for the eclipse hover tip ("63% obscured at {time}");
    *  null where the eclipse is invisible. Read via ref — may change freely. */
   eclipseTip?: ((lat: number, lng: number) => string | null) | null;
+  /** Click-for-details card in eclipses mode: full local circumstances
+   *  (contact times, phase visibility) as ready-made .ui-tip HTML for the
+   *  clicked point; null when the eclipse is invisible there. Supplying the
+   *  prop arms the click handler; the card closes when it changes. */
+  eclipseCard?: ((lat: number, lng: number) => string | null) | null;
   pin?: { lat: number; lng: number } | null;
   pinType?: 'custom' | 'natal' | null;
   theme: Theme;
@@ -1011,10 +1022,12 @@ function setupCustomLayers(
     },
   });
 
-  // ── Eclipses overlay: the selected solar eclipse's ground track. One mixed-
-  // geometry source; each layer filters on the feature `kind` (colors ride in
-  // feature props, themed by the App). Added here so the shaded umbral band and
-  // the contour lines sit beneath all chart linework; the greatest-eclipse
+  // ── Eclipses overlay: the selected eclipse's ground geometry — a solar
+  // eclipse's track (band/limits/isolines/central) or a lunar eclipse's
+  // visibility hemisphere and moonrise/set contact curves. One mixed-geometry
+  // source; each layer filters on the feature `kind` (colors ride in feature
+  // props, themed by the App). Added here so the shaded fills and contour
+  // lines sit beneath all chart linework; the greatest-eclipse / sub-lunar
   // marker layers are added later, above the lines, beside the zenith stamps.
   map.addSource('eclipse', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer({
@@ -1025,6 +1038,33 @@ function setupCustomLayers(
     paint: {
       'fill-color': ['get', 'color'],
       'fill-opacity': 0.16,
+    },
+  });
+  // The Moon-above-horizon hemisphere at a lunar eclipse's maximum — a wash
+  // even fainter than the umbral band (it spans half the planet).
+  map.addLayer({
+    id: 'eclipse-lunar-vis-fill',
+    source: 'eclipse',
+    type: 'fill',
+    filter: ['==', ['get', 'kind'], 'lunar-vis'],
+    paint: {
+      'fill-color': ['get', 'color'],
+      'fill-opacity': 0.12,
+    },
+  });
+  // The solar 0%-magnitude outer boundary: how far ANY trace of the eclipse
+  // reaches. Faint and solid, so the dashed percentage family stands out
+  // inside it.
+  map.addLayer({
+    id: 'eclipse-penumbral',
+    source: 'eclipse',
+    type: 'line',
+    filter: ['==', ['get', 'kind'], 'penumbral-limit'],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 0.9,
+      'line-opacity': 0.45,
     },
   });
   // Dashed-dotted contours of equal MAXIMUM partial-eclipse magnitude (the
@@ -1043,11 +1083,31 @@ function setupCustomLayers(
       'line-dasharray': [5, 2, 1, 2],
     },
   });
+  // Moonrise/set circles at a lunar eclipse's phase contacts (U1/U4, or P1/P4
+  // for penumbral-only events) — between a phase's two circles, the Moon
+  // rises or sets mid-phase. Same dash-dot family as the solar isolines.
+  map.addLayer({
+    id: 'eclipse-lunar-horizon',
+    source: 'eclipse',
+    type: 'line',
+    filter: ['==', ['get', 'kind'], 'lunar-horizon'],
+    layout: { 'line-join': 'round' },
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 1,
+      'line-opacity': 0.75,
+      'line-dasharray': [5, 2, 1, 2],
+    },
+  });
   map.addLayer({
     id: 'eclipse-isoline-labels',
     source: 'eclipse',
     type: 'symbol',
-    filter: ['==', ['get', 'kind'], 'isoline'],
+    filter: [
+      'in',
+      ['get', 'kind'],
+      ['literal', ['isoline', 'lunar-horizon']],
+    ],
     layout: {
       'symbol-placement': 'line',
       'text-field': ['get', 'label'],
@@ -1536,6 +1596,32 @@ function setupCustomLayers(
       'icon-ignore-placement': true,
     },
   });
+  // The lunar counterpart: the sub-lunar point at maximum — where the
+  // eclipsed Moon stands at zenith.
+  map.addLayer({
+    id: 'eclipse-sublunar-disc',
+    source: 'eclipse',
+    type: 'circle',
+    filter: ['==', ['get', 'kind'], 'sublunar'],
+    paint: {
+      'circle-radius': 10,
+      'circle-color': zenithFill,
+      'circle-stroke-color': ['get', 'color'],
+      'circle-stroke-width': 1.5,
+    },
+  });
+  map.addLayer({
+    id: 'eclipse-sublunar-glyph',
+    source: 'eclipse',
+    type: 'symbol',
+    filter: ['==', ['get', 'kind'], 'sublunar'],
+    layout: {
+      'icon-image': ZENITH_GLYPH_PREFIX + 'Moon',
+      'icon-size': 0.8,
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+  });
 
   // ── Measurement tool: a dashed great-circle segment from the click origin to
   // the cursor, with a disc at each end. Drawn on top of everything else.
@@ -1623,6 +1709,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   overlay,
   eclipse,
   eclipseTip,
+  eclipseCard,
   pin,
   pinType,
   theme,
@@ -1693,9 +1780,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const measureColorRef = useRef(measureColor);
   // Current detail toggles, read inside the (once-bound) load/style.load handlers.
   const detailRef = useRef({ showRoads, showRivers, showLabels });
-  // The eclipse local-circumstances closure, read inside the long-lived hover
-  // handler (it changes with each selected eclipse; a ref avoids re-binding).
+  // The eclipse local-circumstances closures, read inside the long-lived hover
+  // and click handlers (they change with each selected eclipse; refs avoid
+  // re-binding).
   const eclipseTipRef = useRef(eclipseTip);
+  const eclipseCardRef = useRef(eclipseCard);
+  // The pinned local-circumstances card (one per map). Held in a ref so the
+  // close-on-selection-change effect below can reach the instance the
+  // long-lived click handler owns.
+  const eclipseCardPopupRef = useRef<maplibregl.Popup | null>(null);
   // The map's load/style.load/click handlers are bound once and never rebound;
   // refresh these refs after each commit (not during render) so those async
   // handlers always read the latest props.
@@ -1705,6 +1798,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     measureColorRef.current = measureColor;
     detailRef.current = { showRoads, showRivers, showLabels };
     eclipseTipRef.current = eclipseTip;
+    eclipseCardRef.current = eclipseCard;
   });
 
   // Edge badges: glyph + angle code per ACG line, anchored where the line exits
@@ -2296,6 +2390,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       offset: 12,
       className: 'zenith-popup',
     });
+    // The pinned eclipse local-circumstances card (click-to-open, ✕ to close).
+    const eclipseCardPopup = new maplibregl.Popup({
+      closeButton: true,
+      closeOnClick: false,
+      offset: 10,
+      className: 'zenith-popup eclipse-popup',
+      maxWidth: 'none',
+    });
+    eclipseCardPopupRef.current = eclipseCardPopup;
     const clearLine = () => {
       hoveredLine = null;
       linePopup.remove();
@@ -2422,10 +2525,23 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const zen = zenithAtPoint(map, e.point);
       if (zen) {
         // Key by the routing prefix (the tag for overlay-path stamps, '' otherwise) so
-        // the stamp shares one toggle with its label — a promoted stamp shows its tag
+        // the stamp shares one toggle with its label — a promoted stamp shares its tag
         // but keys '' like its natal-source label.
         const prefix = zen.overlay ? (zen.tag ?? '') : '';
         flyToZenith(zenithKey(prefix, zen.planet), zen.lng, zen.lat);
+        return;
+      }
+      // Eclipses mode (the App only supplies the card builder then): any other
+      // click pins the local-circumstances card — contact times for the
+      // clicked point, or a one-liner where the eclipse is invisible, so
+      // clicks always respond. The ✕ closes it; so does changing eclipse.
+      const card = eclipseCardRef.current;
+      if (card) {
+        const html = card(e.lngLat.lat, e.lngLat.lng);
+        eclipseCardPopup
+          .setLngLat(e.lngLat)
+          .setHTML(html ?? `<div class="ui-tip">${t('map.eclipseCard.notVisible')}</div>`);
+        if (!eclipseCardPopup.isOpen()) eclipseCardPopup.addTo(map);
       }
     };
     const handleDoubleClick = (e: maplibregl.MapMouseEvent) => {
@@ -2456,8 +2572,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       clearZenith();
       clearCross();
       clearLine();
+      eclipseCardPopup.remove();
+      eclipseCardPopupRef.current = null;
     };
   }, [onHover, onLeave, onPlacePin, onRightClick, onMapClick, measureActive, flyToZenith, t, labels]);
+
+  // The pinned card describes ONE selection at one place — close it whenever
+  // the selected eclipse changes or eclipses mode exits (the builder closure's
+  // identity tracks both).
+  useEffect(() => {
+    eclipseCardPopupRef.current?.remove();
+  }, [eclipseCard]);
 
   // Measurement tool: press-drag draws a great-circle segment from the origin to
   // the cursor and reports the live distance. Panning is disabled while the tool

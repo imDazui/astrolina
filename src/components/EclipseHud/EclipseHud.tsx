@@ -6,7 +6,7 @@
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { EclipseCatalogRow } from '../../lib/astro/eclipses';
-import type { SolarEclipseKind } from '../../lib/ephemeris';
+import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { useT } from '../../i18n';
 import type { Formatters, TFn } from '../../i18n';
@@ -21,38 +21,59 @@ function fmtRowDate(id: string, fmt: Formatters): string {
   return `${d} ${fmt.monthName(m)} ${y}`;
 }
 
-const kindLabel = (t: TFn, kind: SolarEclipseKind) =>
+const kindLabel = (t: TFn, kind: EclipseCatalogRow['kind']) =>
   t(`settings.eclipses.kind.${kind}`);
 
-const TYPE_FILTERS: (SolarEclipseKind | 'all')[] = [
-  'all',
-  'total',
-  'annular',
-  'hybrid',
-  'partial',
-];
+// ☉/☾ before the type name marks the body at a glance (the type words
+// 'Total'/'Partial' exist on both sides of the merged catalog).
+const bodyGlyph = (body: EclipseCatalogRow['body']) =>
+  PLANET_GLYPHS[body === 'solar' ? 'Sun' : 'Moon'];
+
+type BodyFilter = 'all' | 'solar' | 'lunar';
+const BODY_FILTERS: BodyFilter[] = ['all', 'solar', 'lunar'];
+// Type chips are contextual to the chosen body (hidden on 'all', where mixed
+// 'Total' chips would be ambiguous).
+const TYPE_FILTERS: Record<'solar' | 'lunar', EclipseCatalogRow['kind'][]> = {
+  solar: ['total', 'annular', 'hybrid', 'partial'],
+  lunar: ['total', 'partial', 'penumbral'],
+};
+
+// The trigger's magnitude figure: a solar row's single magnitude; a lunar
+// row's umbral depth (its headline number), penumbral depth when the Moon
+// misses the umbra entirely.
+const rowMagnitude = (row: EclipseCatalogRow) =>
+  row.body === 'solar'
+    ? row.magnitude
+    : row.kind === 'penumbral'
+      ? row.penMag
+      : row.umbMag;
 
 interface EclipseHudProps {
-  /** The full chronological catalog (1800–2399). */
+  /** The full chronological merged catalog (1800–2399, solar + lunar). */
   catalog: EclipseCatalogRow[];
   /** The selected eclipse — never null while the overlay is active. */
   selected: EclipseCatalogRow | null;
-  onSelect: (id: string) => void;
+  /** `source` lets the App fly to menu picks but keep ‹ › stepping still. */
+  onSelect: (id: string, source: 'menu' | 'step') => void;
+  /** The ⌖ button: ease the camera to the selected eclipse's ground point. */
+  onLocate: () => void;
 }
 
 /**
  * Bottom-center bar shown whenever the Eclipses overlay is active — the same
  * slot and movable-bar pattern as the synastry partner picker. It both shows
- * the selected eclipse (date · type, with Saros + magnitude beneath) and is
- * where eclipses are chosen: ‹ › step chronologically through the catalog, and
- * the trigger opens an upward picker with a search box, a type filter, and the
- * full four-century list (auto-scrolled to the selection).
+ * the selected eclipse (date · body-glyph type, with Saros + magnitude
+ * beneath) and is where eclipses are chosen: ‹ › step chronologically through
+ * the merged catalog, ⌖ flies to the selection, and the trigger opens an
+ * upward picker with a search box, body/type filter rows, and the full
+ * six-century list (auto-scrolled to the selection).
  */
-export function EclipseHud({ catalog, selected, onSelect }: EclipseHudProps) {
+export function EclipseHud({ catalog, selected, onSelect, onLocate }: EclipseHudProps) {
   const { t, fmt } = useT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<SolarEclipseKind | 'all'>('all');
+  const [bodyFilter, setBodyFilter] = useState<BodyFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<EclipseCatalogRow['kind'] | 'all'>('all');
   const ref = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   // Shares its movable position with the timeline bar (same bottom slot) so the
@@ -91,7 +112,7 @@ export function EclipseHud({ catalog, selected, onSelect }: EclipseHudProps) {
   }, [open]);
 
   // Localize each row's strings ONCE per locale — fmtRowDate runs a Luxon
-  // month-name lookup, and doing that per row per keystroke for ~1,400 rows
+  // month-name lookup, and doing that per row per keystroke for ~2,900 rows
   // would jank the search box. The deferred query keeps typing responsive
   // while the (large) filtered list re-renders in the background.
   const displayRows = useMemo(
@@ -99,12 +120,14 @@ export function EclipseHud({ catalog, selected, onSelect }: EclipseHudProps) {
       catalog.map((row) => {
         const dateText = fmtRowDate(row.id, fmt);
         const kindText = kindLabel(t, row.kind);
+        const bodyText = t(`settings.eclipses.body.${row.body}`);
         return {
           row,
           dateText,
           kindText,
           sarosText: t('eclipseHud.saros', { n: row.saros }),
-          searchText: `${row.id} ${dateText} ${kindText} saros ${row.saros}`.toLowerCase(),
+          searchText:
+            `${row.id} ${dateText} ${bodyText} ${kindText} saros ${row.saros}`.toLowerCase(),
         };
       }),
     [catalog, t, fmt],
@@ -113,18 +136,19 @@ export function EclipseHud({ catalog, selected, onSelect }: EclipseHudProps) {
   const filtered = useMemo(() => {
     const q = deferredQuery.trim().toLowerCase();
     return displayRows.filter((d) => {
+      if (bodyFilter !== 'all' && d.row.body !== bodyFilter) return false;
       if (typeFilter !== 'all' && d.row.kind !== typeFilter) return false;
-      // Match the date, the localized date, the type name, or "saros NNN".
+      // Match the date, the localized date, body, type name, or "saros NNN".
       return !q || q.split(/\s+/).every((part) => d.searchText.includes(part));
     });
-  }, [displayRows, deferredQuery, typeFilter]);
+  }, [displayRows, deferredQuery, bodyFilter, typeFilter]);
 
   // ‹ › always walk the FULL chronological catalog — the menu's filter is a
   // browsing aid, not a constraint on stepping.
   const index = selected ? catalog.findIndex((r) => r.id === selected.id) : -1;
   const step = (delta: number) => {
     const next = catalog[index + delta];
-    if (next) onSelect(next.id);
+    if (next) onSelect(next.id, 'step');
   };
 
   return (
@@ -177,6 +201,7 @@ export function EclipseHud({ catalog, selected, onSelect }: EclipseHudProps) {
             // defeat the open-centred-on-selection scroll.
             if (!open) {
               setQuery('');
+              setBodyFilter('all');
               setTypeFilter('all');
             }
             setOpen(!open);
@@ -197,7 +222,11 @@ export function EclipseHud({ catalog, selected, onSelect }: EclipseHudProps) {
             <span className="eclipse-hud-label">
               <span className="eclipse-hud-name-row">
                 <span className="eclipse-hud-name">
-                  {fmtRowDate(selected.id, fmt)} · {kindLabel(t, selected.kind)}
+                  {fmtRowDate(selected.id, fmt)} ·{' '}
+                  <span className="astro-glyph" aria-hidden="true">
+                    {bodyGlyph(selected.body)}
+                  </span>{' '}
+                  {kindLabel(t, selected.kind)}
                 </span>
                 <svg
                   className="eclipse-hud-icon"
@@ -223,7 +252,7 @@ export function EclipseHud({ catalog, selected, onSelect }: EclipseHudProps) {
               </span>
               <span className="eclipse-hud-meta">
                 {t('eclipseHud.saros', { n: selected.saros })} ·{' '}
-                {selected.magnitude.toFixed(3)}
+                {rowMagnitude(selected).toFixed(3)}
               </span>
             </span>
           )}
@@ -239,18 +268,39 @@ export function EclipseHud({ catalog, selected, onSelect }: EclipseHudProps) {
               onChange={(e) => setQuery(e.target.value)}
             />
             <div className="eclipse-hud-filters">
-              {TYPE_FILTERS.map((k) => (
+              {BODY_FILTERS.map((b) => (
                 <button
-                  key={k}
+                  key={b}
                   type="button"
-                  className={`eclipse-hud-filter ${typeFilter === k ? 'active' : ''}`}
-                  aria-pressed={typeFilter === k}
-                  onClick={() => setTypeFilter(k)}
+                  className={`eclipse-hud-filter ${bodyFilter === b ? 'active' : ''}`}
+                  aria-pressed={bodyFilter === b}
+                  onClick={() => {
+                    setBodyFilter(b);
+                    // The type chips are body-specific; switching bodies
+                    // resets them so a solar-only type can't strand a lunar
+                    // list (and vice versa).
+                    setTypeFilter('all');
+                  }}
                 >
-                  {k === 'all' ? t('eclipseHud.all') : kindLabel(t, k)}
+                  {b === 'all' ? t('eclipseHud.all') : t(`settings.eclipses.body.${b}`)}
                 </button>
               ))}
             </div>
+            {bodyFilter !== 'all' && (
+              <div className="eclipse-hud-filters">
+                {(['all', ...TYPE_FILTERS[bodyFilter]] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    className={`eclipse-hud-filter ${typeFilter === k ? 'active' : ''}`}
+                    aria-pressed={typeFilter === k}
+                    onClick={() => setTypeFilter(k)}
+                  >
+                    {k === 'all' ? t('eclipseHud.all') : kindLabel(t, k)}
+                  </button>
+                ))}
+              </div>
+            )}
             <ul ref={listRef}>
               {filtered.map((d) => (
                 <li
@@ -261,12 +311,15 @@ export function EclipseHud({ catalog, selected, onSelect }: EclipseHudProps) {
                     type="button"
                     className="eclipse-hud-row"
                     onClick={() => {
-                      onSelect(d.row.id);
+                      onSelect(d.row.id, 'menu');
                       setOpen(false);
                     }}
                   >
                     <span className="eclipse-hud-row-name">{d.dateText}</span>
                     <span className="eclipse-hud-row-meta">
+                      <span className="astro-glyph" aria-hidden="true">
+                        {bodyGlyph(d.row.body)}
+                      </span>{' '}
                       {d.kindText} · {d.sarosText}
                     </span>
                   </button>
@@ -290,6 +343,18 @@ export function EclipseHud({ catalog, selected, onSelect }: EclipseHudProps) {
         aria-label={t('eclipseHud.next')}
       >
         ›
+      </TipButton>
+
+      <TipButton
+        type="button"
+        className="eclipse-hud-step eclipse-hud-locate"
+        onClick={onLocate}
+        disabled={!selected}
+        placement="top"
+        tip={t('eclipseHud.locate')}
+        aria-label={t('eclipseHud.locate')}
+      >
+        ⌖
       </TipButton>
     </div>
   );

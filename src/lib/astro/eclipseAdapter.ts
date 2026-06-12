@@ -69,3 +69,52 @@ export function normalizeSwissEclipse(raw: {
   }
   return { maximum, partialBegin, partialEnd };
 }
+
+/** A lunar eclipse's phase-contact times (UT JDs). Phases the eclipse lacks
+ *  are null (a partial eclipse has no total phase; a penumbral-only eclipse
+ *  has neither umbral phase). */
+export interface LunarEclipseTimes {
+  maximum: number;
+  penumbralBegin: number;        // P1
+  penumbralEnd: number;          // P4
+  partialBegin: number | null;   // U1 — Moon starts entering the umbra
+  partialEnd: number | null;     // U4
+  totalBegin: number | null;     // U2 — Moon fully inside the umbra
+  totalEnd: number | null;       // U3
+}
+
+/**
+ * Correct @swisseph's LunarEclipse field misalignment — the same one-slot
+ * shift as the solar result (each named field holds the PREVIOUS tret[]
+ * slot's value, because tret[1] is unused for lunar eclipses too). Verified
+ * against the published contact times for 2025-03-14: `partialEnd` holds U1,
+ * `totalBegin` holds U4, `totalEnd` holds U2, `penumbralBegin` holds U3 and
+ * `penumbralEnd` holds P1. The true penumbral end (tret[7]) is not exposed
+ * at all; penumbral entry and exit are symmetric about maximum to within
+ * seconds, so P4 is reconstructed as maximum + (maximum − P1).
+ */
+export function normalizeSwissLunarEclipse(raw: {
+  maximum: number;
+  partialEnd: number;     // tret[2] — U1, partial begin
+  totalBegin: number;     // tret[3] — U4, partial end
+  totalEnd: number;       // tret[4] — U2, total begin
+  penumbralBegin: number; // tret[5] — U3, total end
+  penumbralEnd: number;   // tret[6] — P1, penumbral begin
+}): LunarEclipseTimes {
+  const maximum = raw.maximum;
+  // A slot is a real contact only if it lands near the maximum; absent phases
+  // come back zeroed (and a zeroed P1 would put the window at 4713 BC, the
+  // same hazard the solar normalizer guards).
+  const sane = (jd: number, lo: number, hi: number): number | null =>
+    jd > maximum + lo && jd < maximum + hi ? jd : null;
+  const penumbralBegin = sane(raw.penumbralEnd, -0.5, 0) ?? maximum - 3 / 24;
+  return {
+    maximum,
+    penumbralBegin,
+    penumbralEnd: maximum + (maximum - penumbralBegin),
+    partialBegin: sane(raw.partialEnd, -0.5, 0),
+    partialEnd: sane(raw.totalBegin, 0, 0.5),
+    totalBegin: sane(raw.totalEnd, -0.5, 0),
+    totalEnd: sane(raw.penumbralBegin, 0, 0.5),
+  };
+}

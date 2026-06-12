@@ -14,7 +14,10 @@ export const eclipseHud = {
   choose: 'Choose an eclipse',
   prev: 'Previous eclipse',
   next: 'Next eclipse',
-  // The picker's filter row: "All" plus the four type names (from settings).
+  // The ⌖ button: fly the camera to the selected eclipse's ground point.
+  locate: 'Fly to this eclipse',
+  // The picker's filter rows: a body row (All / Solar / Lunar) and a type row
+  // contextual to the chosen body (names from settings.eclipses.*).
   all: 'All',
   searchPlaceholder: 'Search year, type, or Saros…',
   noMatches: 'No eclipses match.',
