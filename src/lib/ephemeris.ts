@@ -166,6 +166,13 @@ export interface RelocatedAngles {
    * whole-sign / equal the angles float off the cusps (handled by Swiss).
    */
   cusps: number[];
+  /**
+   * True when the chosen system (Placidus/Koch) was undefined at this latitude
+   * — above the polar circles — and the cusps are the Porphyry fallback instead.
+   * The UI surfaces this so the wheel never silently shows a different system
+   * than the one selected. The angles themselves are system-independent.
+   */
+  fallback?: boolean;
 }
 
 // ── Swiss Ephemeris init (one-time, async) ────────────────────────────────────
@@ -907,7 +914,25 @@ export function relocate(
   lngDeg: number,
   system: HouseSystem = 'placidus',
 ): RelocatedAngles {
-  const h = eph().calculateHouses(jd, latDeg, lngDeg, HOUSE_MAP[system]);
+  let h;
+  let fallback = false;
+  try {
+    h = eph().calculateHouses(jd, latDeg, lngDeg, HOUSE_MAP[system]);
+  } catch (err) {
+    // Placidus and Koch are mathematically undefined above the polar circles
+    // (some house cusps never rise or set there). The Swiss Ephemeris C library
+    // handles that case by computing Porphyry cusps instead and flagging an
+    // error; the JS wrapper turns the flag into a throw WITHOUT the fallback
+    // values, which would crash any chart relocated to a polar latitude. Apply
+    // the same documented fallback here: Porphyry is defined at every latitude,
+    // and the ASC/MC angles are house-system-independent either way. Only these
+    // two systems get the fallback — a throw from any other system signals a
+    // genuinely bad input and must surface, not silently become Porphyry. (See
+    // docs/calculation-methods.md, "Houses at extreme latitudes".)
+    if (system !== 'placidus' && system !== 'koch') throw err;
+    h = eph().calculateHouses(jd, latDeg, lngDeg, SweHouse.Porphyrius);
+    fallback = true;
+  }
   const asc = norm2pi(h.ascendant * DEG2RAD);
   const mc = norm2pi(h.mc * DEG2RAD);
   // Swiss cusps are 1-indexed (cusps[1] = house 1); re-base to 0-indexed.
@@ -918,5 +943,6 @@ export function relocate(
     dsc: norm2pi(asc + Math.PI),
     ic: norm2pi(mc + Math.PI),
     cusps,
+    ...(fallback ? { fallback } : {}),
   };
 }

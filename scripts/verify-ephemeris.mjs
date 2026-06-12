@@ -84,8 +84,11 @@ function report(label, year, month, day, hour, minute, tzOffset) {
   }
 }
 
-// Einstein: 1879-03-14 11:30 LMT (Ulm 9.9876°E → tz offset ~+0.6166h)
-report('Einstein 1879-03-14 11:30 LMT Ulm', 1879, 3, 14, 11, 30, 0.6166666666666667);
+// Einstein: 1879-03-14 11:30 LMT. Pre-standard-time birth, so the offset is the
+// BIRTHPLACE's local mean time: Ulm 9.9876°E / 15 = +0:39:57 (astro.com records
+// m9e59 for this chart). An earlier revision used +0:37:00 here, which matches
+// neither Ulm nor Europe/Berlin — found and corrected by the June 2026 audit.
+report('Einstein 1879-03-14 11:30 LMT Ulm', 1879, 3, 14, 11, 30, 9.9876 / 15);
 
 // J2000.0 epoch: 2000-01-01 12:00 UTC. Sun's RA should be ~281°, GMST ~280.5°.
 report('J2000.0 reference (2000-01-01 12:00 UTC)', 2000, 1, 1, 12, 0, 0);

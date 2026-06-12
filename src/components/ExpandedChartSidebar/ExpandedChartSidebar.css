@@ -768,6 +768,15 @@
   /* colour set inline from --map-accent (per chart state) */
 }
 
+/* Polar-latitude caution under the wheel title: the chosen quadrant house
+   system is undefined here, so the cusps shown are the Porphyry fallback. */
+.es-house-fallback {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
 .es-overlay-caption {
   display: inline-flex;
   align-items: center;

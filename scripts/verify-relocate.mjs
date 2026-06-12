@@ -44,13 +44,19 @@ function fmt(deg) {
   return `${dd}°${String(mm).padStart(2, '0')}' ${sign}`;
 }
 
-// Einstein 1879-03-14 11:30 LMT Ulm (9.9876E, 48.4011N, tz +0.6167)
-// Published: ASC ~ 11-12° Cancer, MC ~ 13-14° Pisces (depends on source)
-const jd = jdOf(1879, 3, 14, 11, 30, 0.6166666666666667);
+// Einstein 1879-03-14 11:30 LMT Ulm (9.9876E, 48.4011N). Pre-standard-time
+// birth → offset = Ulm's own local mean time, 9.9876/15 = +0:39:57 (astro.com
+// uses m9e59). Published: ASC ~11-12° Cancer, MC ~13-14° Pisces.
+const jd = jdOf(1879, 3, 14, 11, 30, 9.9876 / 15);
 console.log('JD:', jd);
 console.log('GMST°:', gmstDeg(jd).toFixed(3));
 const r = relocate(jd, 48.4011, 9.9876);
 console.log('Ulm  ASC:', fmt(r.asc), '  MC:', fmt(r.mc), '  (cusp1 == asc?', Math.abs(r.cusp1 - r.asc) < 1e-6, ')');
+// Hard assert: the published range for this best-known test chart.
+const ascOk = r.asc > 100 && r.asc < 103; // 10°–13° Cancer
+const mcOk = r.mc > 341 && r.mc < 345; // 11°–15° Pisces
+console.log(ascOk && mcOk ? 'PASS  Einstein angles inside published range' : 'FAIL  Einstein angles outside published range');
+if (!(ascOk && mcOk)) process.exitCode = 1;
 
 // Same time, but New York (40.71N, -74.01W)
 const r2 = relocate(jd, 40.71, -74.01);

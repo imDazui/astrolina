@@ -60,6 +60,10 @@ Maps & places
     https://github.com/openmaptiles/maptiler-basic-gl-style
   - GeoNames — offline place-name search and city lookup. CC BY 4.0.
     https://www.geonames.org
+  - IANA Time Zone Database — the per-zone standard-time adoption dates
+    bundled as lmtEras.json (see scripts/build-lmt-table.mjs), used to cast
+    pre-standard-time births in the birthplace's local mean time.
+    Public domain. https://www.iana.org/time-zones
   - Natural Earth (via the world-atlas package) — country boundaries.
     Public domain. https://www.naturalearthdata.com
 

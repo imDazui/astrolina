@@ -14,8 +14,7 @@
 // the PLANET POSITIONS branch to the midpoint math here (App's two position
 // memos, the directed overlays' natal base, the Returns snap).
 //
-// Conventions (proposed defaults, under review with a practicing astrologer —
-// see docs/calculation-methods.md):
+// Conventions (see docs/calculation-methods.md):
 //  - shorter-arc planet midpoints; an exactly-opposed pair takes the side
 //    nearer the composite Sun
 //  - planets on the ecliptic (latitude 0)

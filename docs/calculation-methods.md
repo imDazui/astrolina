@@ -12,6 +12,26 @@ All astronomical positions come from the **Swiss Ephemeris** (Astrodienst's port
 
 **Calendar.** Dates before the Gregorian reform are cast on the **Julian** calendar (Julian 4 October 1582 was followed by Gregorian 15 October 1582), the conventional handling. Otherwise a pre-1582 birth would land about ten days off, shifting the Sun by roughly ten degrees.
 
+## Astronomical conventions
+
+These are the physical conventions every line, paran, and readout shares. They match standard astrocartography practice (the Jim Lewis maps and the professional desktop tools):
+
+- **Geometric horizon, no refraction.** A rising/setting line marks where the body's true (airless) altitude is exactly 0°. Atmospheric refraction, which lifts the *visible* rise a few minutes earlier, is deliberately not applied — astrological angularity is geometric, not optical.
+- **Geocentric body centers.** Positions are Earth-centered. For the planets the difference from an observer on the surface is arcseconds; for the **Moon** it can reach a degree (her parallax), so the Moon's ASC line is the geocentric convention's line, not the place you would *watch* moonrise at that instant. This is the standard ACG convention.
+- **Apparent positions, frame of date.** All positions are apparent (light-time and aberration applied), referred to the true equator and equinox of date; the sidereal-time reference is Greenwich **apparent** sidereal time and the obliquity is the **true** obliquity of date. One consistent frame end to end — mixing in a mean value anywhere would skew conversions by the ~9″ nutation terms.
+- **Universal Time in, ΔT inside.** The birth moment is converted to a Universal-Time instant; the Swiss Ephemeris applies the ΔT correction to its internal dynamical timescale itself. (Verified against JPL Horizons via the Moon, the fastest hand on the clock.)
+- **Stations.** A body is flagged *stationary* when its longitude motion reverses sign within about a day on either side of the chart moment — a bracket in time, not a speed threshold, so the slow outer planets aren't "stationary" year-round.
+- **Out of bounds.** The declination threshold is the **Sun's maximum declination — the true obliquity at the chart's moment** (≈23°26′), not a hard-coded constant: a fixed value sitting below the real obliquity would absurdly flag the Sun itself as out-of-bounds for a couple of days around each solstice. (Some tools use a fixed 23°26′, 23°27′, or ~23°28′; the spread between those published constants is larger than the fixed-vs-of-date difference.)
+- **Local space geometry.** Azimuth lines are great circles on a spherical Earth (radius 6371 km); the ellipsoid is not modeled, consistent with the astrological local-space literature.
+
+## Time zones & historical births
+
+The birth form detects the IANA time zone from the birthplace and resolves its DST-aware offset at the birth moment (the same tz database browsers and operating systems use — including the historical record: first-generation US DST in 1918, Britain's wartime double summer time, half-hour zones, Lord Howe's 30-minute DST, Nepal's 1986 switch to +5:45, and seconds-precision legal standards like Paris Mean Time all resolve correctly).
+
+- **Births before standard time (LMT).** Before a region adopted a standard time, clocks kept **local mean time**. The tz database carries only its reference city's mean time for that era (all of Germany before April 1893 reads as Berlin's +0:53:28), so AstroLina substitutes the **birthplace's own** mean time — longitude ÷ 15 — exactly as the astrological atlases do. Einstein's Ulm 1879 chart thus gets Ulm's +0:39:57 (the atlas value "m9e59"), not Berlin's. The boundary dates come from the tz database source itself (see `npm run build:lmt`), because they can't be inferred from offsets alone: France's *legal* Paris Mean Time (1891–1911) equals Paris LMT to the second and is correctly kept. If you pick a zone **manually** for an LMT-era birth, the zone's reference-city value is used as given and the chart is flagged for verification.
+- **DST edge cases.** A birth time falling in a spring-forward gap (a clock time that never existed) resolves to the post-gap offset; a time in the fall-back overlap (a clock time that happened twice) takes the **earlier** pass (still on DST). Birth records that straddle these edges deserve a source check either way.
+- **The "verify DST" flag.** Pre-1970 births outside the regions with well-digitized DST history (the Americas, Europe, Hawaii) are flagged so the offset can be checked against an atlas, as are manually-picked zones in their LMT era. Note that regional time practice in the late 19th century (railway times, observatory times) is modeled at tz-database granularity; for rectification-grade work on 19th-century charts, consult a historical atlas.
+
 ## How the lines work (quick model)
 
 An astrocartography line is the set of places on Earth where a chosen body sits exactly on one of the four chart angles at the chart's moment. Each body draws its own four lines: **MC** (the body culminating on the upper meridian), **IC** (the lower meridian, always the exact antipode of the MC), and **ASC / DSC** (the body on the eastern/western horizon, rising/setting). MC and IC lines are straight north–south meridians (lines of constant geographic longitude); ASC and DSC lines are the curves traced as the body's hour angle sweeps out. Each body also gets a **zenith** (sub-planetary) stamp: the single point where it stands exactly overhead, sitting on the MC line at the latitude equal to the body's declination.
@@ -27,12 +47,19 @@ The app computes all **planet-to-planet** parans:
 - **Meridian × horizon:** planet A on the **MC** or **IC** while planet B is on the horizon (rising or setting).
 - **Horizon × horizon:** both planets on the horizon together, in any rising/setting combination. This is solved in closed form rather than by iteration: the two-on-the-horizon condition reduces to a linear equation in the local sidereal time, `cos(θ − raA) = k · cos(θ − raB)` with `k = tan(decA) / tan(decB)`, giving two latitudes per pair.
 
+**Latitude band.** Paran rows are listed to **±72°** of latitude, while the angle lines themselves draw on to ±85°: rising/setting geometry degrades toward the circumpolar zone, so in the 72°–85° band you may see two lines visibly cross with no paran row for the crossing.
+
+**The intersection point.** Each paran's badge offers a fly-to target — the spot where planet A's meridian (or its own horizon curve) crosses the paran latitude. That point follows the same meridian mapping as the drawn lines, so it lands on the visible crossing in both the Celestial and the Geodetic ("Mundane") line systems; the paran *latitudes* themselves are identical in both systems, since the two bodies' mutual geometry doesn't depend on how meridians map to longitudes.
+
 **Fixed-star parans** (planet-to-star and star-to-star) are not computed yet. The prerequisite star catalog now exists — the bundled 40-star set (extracted from the Swiss Ephemeris star file, with proper motion) that drives the fixed-star angle lines — so the remaining work is applying the same meridian/horizon machinery to star positions.
 
-## Zodiac mode (Tropical vs Sidereal)
+## Local space
 
-*Under review: the sidereal conventions in this section are proposed defaults
-awaiting confirmation by a practicing astrologer.*
+Local-space lines are compass bearings: each body's line leaves the **origin** — the placed pin by default (relocated local space), or the birthplace via the Origin setting — at the body's azimuth, and is extended as a **great circle** (not a rhumb line: a constant-compass course would miss the body's sub-point by thousands of kilometres, while the great circle passes exactly through it, which is what the line labels' click-to-fly relies on). Each body draws two halves, *out* toward the body and *in* the opposite way, on a spherical Earth.
+
+One consistency note: with **In Zodiaco** or **Mundane** selected, local-space bearings follow the same ecliptic-projected positions as the rest of the linework (so the lines still thread the drawn zenith stamps), while the Advanced table's azimuth column always reports each body's *true* sky position — for a high-latitude body like Pluto the two can differ by a few degrees.
+
+## Zodiac mode (Tropical vs Sidereal)
 
 The **Advanced ▸ Zodiac** setting reads the chart in the **tropical** zodiac
 (the default: 0° Aries pinned to the March equinox) or a **sidereal** one
@@ -65,8 +92,8 @@ Conventions:
   zodiac-independent).
 - **Geodetic (Mundane) lines stay tropical** — that technique maps the
   *tropical* zodiac onto Earth's longitudes by definition here (see the
-  Geodetic section's conventions); a sidereal-geodetic variant is a separate
-  convention question for the review.
+  Geodetic section's conventions); a sidereal-geodetic variant would be a
+  separate convention.
 - The equatorial/horizontal tables (RA, declination, azimuth, altitude) read
   identically either way, and WITHIN one chart aspect orbs are unchanged (a
   uniform shift cancels in every separation). CROSS-chart separations — the
@@ -75,12 +102,9 @@ Conventions:
 - **The eclipse Contacts list stays tropical** (the 3°-orb eclipse-degree
   doctrine is applied in the tropical frame), so in sidereal mode its orbs can
   differ from the bi-wheel's cross-aspect orbs for the same pair by the
-  inter-epoch precession — flagged for the same review.
+  inter-epoch precession.
 
 ## Relationship charts (Davison & Composite)
-
-*Under review: the Composite conventions in this section are proposed defaults
-awaiting confirmation by a practicing astrologer.*
 
 The Synastry overlay's **Generate** button turns the active chart + partner into
 a relationship chart by one of two methods, saved to the library with the
@@ -126,6 +150,15 @@ overlays — is ordinary natal math.
 The expanded chart wheel draws all twelve house cusps in any of **eight** systems, switchable from the **Advanced** section of the sidebar (houses shape the wheel only — no map line moves with this setting): **Placidus** (the default), **Koch**, **Regiomontanus**, **Campanus**, **Porphyry**, **Alcabitus**, **Whole Sign**, and **Equal**. All are computed natively by the Swiss Ephemeris, including polar-circle behaviour for the quadrant systems.
 
 The four angle axes (ASC/MC/DSC/IC) are drawn as bold diameters regardless of system; intermediate cusps that don't fall on an angle are drawn as spokes, so a system like Equal (whose 4th and 10th float off the meridian) renders correctly. The mini wheel shows the angles only, to stay legible at small size.
+
+### Houses at extreme latitudes
+
+Above the polar circles (beyond about ±66.5°) house division gets genuinely ambiguous: the Ascendant has two competing definitions (the *eastern* horizon–ecliptic intersection vs the *ascending* node of the ecliptic on the horizon), the MC two (the *southern* meridian intersection vs the one *above the horizon*), and the definitions stop agreeing. The conventions here are inherited from the Swiss Ephemeris:
+
+- **Placidus and Koch are undefined** at such latitudes (some cusps never rise or set). When that happens the cusps are computed with **Porphyry** instead — the documented Swiss Ephemeris fallback — so a chart relocated to Svalbard still renders, and the wheel shows a caution under its title so the substitution is never silent. The angles themselves (ASC/MC/DSC/IC) are house-system-independent and unaffected.
+- The returned **Ascendant is the eastern intersection**, which inside the polar circles can be the *descending* node of the ecliptic (and can sit west of the MC); Regiomontanus and Campanus flip the MC to its above-horizon branch, while Porphyry, Alcabitus, Equal, and Whole Sign keep the southern one. Cusp sequences from the quadrant systems can run backward through the zodiac there. None of this is an error — it is what these systems *are* at polar latitudes — but intermediate cusps polewards of the circles deserve a skeptical eye.
+- **Equal houses** degenerate for an instant exactly *on* the polar circles, where once a day the horizon momentarily coincides with the ecliptic; this affects only that infinitesimal band and moment, not practice.
+- The **map lines** never use houses and are exact at every latitude.
 
 ## Geodetic ("Mundane") lines
 
@@ -175,12 +208,10 @@ Open the sidebar and click the **Calculation** header to expand it (the sidebar 
 - **Greenwich = 0° Aries.** This is the Sepharial zodiacal convention; a competing scheme (often credited to L. Edward Johndro) anchors Greenwich differently. The app uses Sepharial-zodiacal, labelled "Mundane".
 - **Projecting off-ecliptic bodies.** Forcing every body onto the ecliptic makes the MC exact, but it computes Pluto's and the Moon's ASC/DSC and zenith from their zero-latitude positions rather than their true-sky positions. This is intended for the angles other than MC/IC.
 - **The ecliptic reference line.** In Mundane mode the ecliptic reference circle on the map follows the geodetic mapping.
-- **Hybrid frame for parans / local space.** In Mundane mode parans and local space keep the celestial sidereal-time placement but are built from ecliptic-projected (zero-latitude) bodies, so they differ both from a true-sky celestial map and from a fully geodetic one. *Under review: whether local space should be shown at all in Mundane mode is being confirmed with the reviewing astrologer.*
+- **Hybrid frame for parans / local space.** In Mundane mode parans and local space are built from ecliptic-projected (zero-latitude) bodies; local space keeps the celestial sidereal-time placement, so it differs both from a true-sky celestial map and from a fully geodetic one. Paran *latitudes* are identical in both line systems, and each paran's recorded intersection point follows the drawn lines' meridian mapping, so its badge lands on the visible crossing in either mode.
 - **Tropical, not sidereal.** The geodetic MC lands on the *tropical* zodiacal longitude; no ayanamsa offset is applied.
 
 ## Progressions & directions
-
-*Under review: the progression methods and the Primary Directions treatment in this section are still being verified with a practicing astrologer.*
 
 These are chosen from the top-bar **Overlay** menu (None, Transits, Progressed, Solar Arc, Primary Directions, Synastry); "Progressed" is secondary progressions. Selecting one of the time-based modes (Progressed, Solar Arc, Primary Directions, Transits) draws a second, tagged set of lines over the natal map and reveals a timeline bar to set the target moment; Synastry adds its own line-set but has no timeline (there is no date to scrub). Two dropdowns in the **Calculation** tab choose the underlying method: **Chart angle progression** (drives Solar Arc + Progressed) and **Primary directions rate** (drives Primary Directions).
 
@@ -194,9 +225,9 @@ The solar arc itself is the progressed Sun's distance from the natal Sun (the da
 | **SA in RA** | Each body advanced by the true solar arc, measured in right ascension | Angles advanced by the true solar arc in RA |
 | **Naibod in Long** | Each body advanced by the Naibod mean rate (0.985647°/yr), in longitude | Angles advanced by the Naibod arc, in longitude |
 | **Naibod in RA** | Each body advanced by the Naibod mean rate, in RA | Angles advanced by the Naibod arc, in RA |
-| **Mean Quotidian** *(default)* | *No distinct quotidian solar-arc → behaves as SA in Longitude* | The progressed sidereal time (the angle of the progressed chart) |
+| **Natal Frame** *(default)* | *No distinct natal-frame solar-arc → behaves as SA in Longitude* | Angles hold the natal RAMC: the progressed planets read against the birth chart's angular frame (the true quotidian progressed angle — the progressed chart's own sidereal time — is a planned option) |
 
-**The default is Mean Quotidian, and it deliberately changes nothing:** it preserves exactly the behaviour that existed before this dropdown was added. On Secondary Progressions it gives the genuine progressed sidereal time (the quotidian progressed angle); on Solar Arc, where "quotidian" has no distinct meaning, it behaves as **SA in Longitude**. So an astrologer who never opens the dropdown gets SA-in-longitude on the Solar Arc map and the progressed-angle on the Progressed map, the prior defaults.
+**The default is Natal Frame, and it deliberately changes nothing:** it preserves exactly the behaviour that existed before this dropdown was added. On Secondary Progressions the angles hold the natal RAMC — the progressed planets fall through the birth chart's angular frame, consistent with the Transits overlay's default — and on Solar Arc it behaves as **SA in Longitude**. So an astrologer who never opens the dropdown gets SA-in-longitude on the Solar Arc map and natal-framed progressions, the prior defaults. (This option was labelled "Mean Quotidian" until the June 2026 audit; the label promised progressed-angle motion the overlay deliberately doesn't perform. The true quotidian progressed angle — the progressed chart's own sidereal time — remains a planned option.)
 
 ### Primary Directions
 
@@ -228,14 +259,14 @@ All three settings are remembered between sessions.
 
 With an overlay active, the expanded chart wheel becomes a bi-wheel (natal inner ring, overlay outer ring). Two implementation notes from this layer:
 
-- **Overlay MC/IC/AS/DS marks.** The outer ring marks the overlay chart's own four angles (with the same degree·sign·minute readout as the natal ring), gated by the same MC/IC/ASC/DSC filter toggles. For the **time-based** overlays (**Transits, Progressed, Synastry**) the second moment is a real Julian Day, so the angles come straight from `relocate(jd, …)` at the active point. For the **directed** overlays (**Solar Arc, Primary Directions**) there is no second JD — the bundled Swiss-Ephemeris wrapper exposes only JD-based houses (no `houses_armc`) — so the angles are **inferred**: the relocated natal angles are advanced by the overlay's arc using the *same* frame the bodies use (ecliptic longitude for the "…in Long" methods; a right-ascension shift, declination fixed, for the "…in RA" methods and Primary Directions). This keeps the directed angles moving coherently with the directed bodies, and `MC + 180° = IC` / `ASC + 180° = DSC` are preserved by construction.
+- **Overlay MC/IC/AS/DS marks.** The outer ring marks the overlay chart's own four angles (with the same degree·sign·minute readout as the natal ring), gated by the same MC/IC/ASC/DSC filter toggles. For the overlays with a genuine second moment (**Transits, Synastry**) the angles come straight from `relocate(jd, …)` at the active point. For the **directed and progressed** overlays (**Solar Arc, Primary Directions, Progressed**) the angles are **inferred**: the relocated *natal* angles are advanced by the overlay's arc using the *same* frame its map gmst uses (ecliptic longitude for the "…in Long" methods; a right-ascension shift, declination fixed, for the "…in RA" methods and Primary Directions; no advance at all under the Natal Frame default), so the wheel's angle marks and the map's frame always agree. `MC + 180° = IC` / `ASC + 180° = DSC` are preserved by construction. *(Before the June 2026 audit the Progressed wheel showed the true-quotidian angles — `relocate(progressed JD)` — regardless of the chosen method, drifting ~1°/yr from the map's frame.)*
 
 - **Primary Directions in the bi-wheel.** On the *map*, primary directions are described above as the RAMC advancing while the bodies hold their natal RA/dec (a rigid westward rotation of the line-set). The bi-wheel uses the mathematically-equivalent view (the bodies carry the arc in right ascension, declination unchanged, against the natal frame), which draws the **identical** lines (the hour angle is unchanged) but lets the overlay ring show the bodies at their **directed** zodiac positions instead of duplicating the natal ring. Both are the same rigid rotation; only the chosen frame differs.
 
 ### Conventions used
 
-- **Mean-Quotidian default on Solar Arc.** Because it is the default and has no distinct solar-arc form, it gives SA-in-longitude on Solar Arc and the progressed-angle on Progressed, matching the behaviour that existed before the method dropdown was added.
-- **"SA in RA" definition.** This computes the arc as a raw RA difference (progressed-Sun RA minus natal-Sun RA) and adds it directly to every body's RA, leaving declination fixed. That differs from an along-the-ecliptic arc and from how some programs define "solar arc in RA"; here a literal RA increment is intended.
+- **Natal Frame default on Solar Arc.** Because it is the default and has no distinct solar-arc form, it gives SA-in-longitude on Solar Arc and natal-framed angles on Progressed, matching the behaviour that existed before the method dropdown was added.
+- **"SA in RA" definition.** This computes the arc as a raw RA difference (progressed-Sun RA minus natal-Sun RA) and adds it directly to every body's RA, leaving declination fixed. That differs from an along-the-ecliptic arc and from how some programs define "solar arc in RA"; here a literal RA increment is intended. The same declination-fixed shift drives the bi-wheel's directed **angles** under the "…in RA" methods, which lands the directed MC ~2.4° away (at age 30) from the alternative of reading the ecliptic point on the advanced meridian (`RAMC + arc`) — the convention the Progressed overlay's map frame uses.
 - **Angles anchored to Greenwich.** All directed angles advance the natal *Greenwich* RAMC, not the birthplace's local sidereal time. For astrocartography this is internally consistent: the directed MC is referenced to Greenwich rather than the birthplace meridian.
 - **Forward only.** Primary Directions (and the positive-only user rate) always direct *forward*; there is no converse/backward option.
 - **"Placidus: True SA in RA" naming.** This rate is the true secondary-progressed solar arc in RA, not a Placidian semi-arc / mundane primary direction, so the label should not be read as classical Placidus directions.
@@ -252,10 +283,20 @@ With an overlay active, the expanded chart wheel becomes a bi-wheel (natal inner
 - **Ptolemy key:** the "one degree for one year" rate (1°/yr), the simplest primary-directions time-key.
 - **Quotidian:** "of each day", the progressed angle obtained from the day-for-a-year sidereal time (the genuine progressed chart angle).
 - **Mundane / geodetic:** placing the zodiac directly onto the Earth's longitudes (here Greenwich = 0° Aries), so each angle's location is fixed by zodiacal position rather than by birth time.
-- **Zenith / sub-planetary point:** the single spot on Earth where a body stands exactly overhead (altitude 90°), sitting on its MC line at the latitude equal to its declination.
+- **Zenith / sub-planetary point:** the single spot on Earth where a body stands exactly overhead (altitude 90°), sitting on its MC line at the latitude equal to its declination. With **In Zodiaco** (or Mundane) selected, the stamp marks the sub-point of the body's *ecliptic-projected* position — keeping it on the In-Zodiaco MC line — which for an off-ecliptic body is not the physical overhead point (Pluto can differ by ~17° of latitude, the Moon by ~5°). The lunar nodes draw no stamp: the nodal axis renders as one merged two-toned line, and its two antipodal sub-points would label the same axis twice.
 
 ## How this was validated
 
 The astronomical engine is the Swiss Ephemeris running client-side, reading self-hosted JPL DE441 data files, the same data lineage the desktop tools rely on. A June 2026 ephemeris audit verified those files against JPL Horizons; agreement with the professional desktop tools is well under an arcsecond. A single obliquity (true-of-date) and a single Greenwich apparent sidereal-time reference drive every line, paran, local-space, geodetic, and directed calculation, so the systems stay mutually consistent at the chart instant.
 
-The geodetic mode is checked by the round-trip identity that makes it work: projecting a body onto the ecliptic and converting back, the MC lands exactly on its zodiacal longitude. The Progressions & Directions defaults are chosen to change nothing already in use: Mean Quotidian reproduces the prior Solar Arc (SA-in-longitude) and Progressed (progressed-angle) behaviour exactly. The Primary Directions overlay uses standard mean-rate and solar-rate time-keys applied as a rigid rotation of the angles, conventional for an angle-only treatment. Directed and progressed positions follow the sidebar's Lunar-node setting (default **True** node), the same convention used everywhere else in the chart; there is no separate node setting for the directed math.
+A second, deeper audit (June 2026) verifies the app's **own geometry code** — not a re-derivation, the very modules the app ships — under Node against independent oracles (`scripts/verify-*.ts`, run via a harness that swaps the WASM ephemeris for the native one over the same data files):
+
+- every ASC/DSC line vertex sits on the geometric horizon and is genuinely *rising* on ASC lines / *setting* on DSC lines (altitude finite-differences), and the Swiss Ephemeris's independent rise/transit/set search reproduces the chart instant at points on the lines to seconds;
+- polyline sampling strays at most ~0.004° off the true curves;
+- every paran latitude is confirmed by event simultaneity, and an independent brute-force scan finds *exactly* the paran set the closed forms produce — nothing missing, nothing extra;
+- local-space azimuths match JPL Horizons and the navigation bearing to the body's sub-point;
+- relocated angles match an independent closed-form ASC/MC computation to machine precision, and a polar-latitude battery covers all eight house systems;
+- the time chain is pinned by tz-database goldens (LMT-era, Paris Mean Time, 1918 DST, double summer time, half-hour zones), calendar-reform continuity, and Horizons checks of the Moon and apparent sidereal time (≤0.1″);
+- progression ratios, solar-arc and primary-direction keys, transit frames, synastry framing, and the Davison midpoints are each pinned by exact assertions.
+
+The geodetic mode is checked by the round-trip identity that makes it work: projecting a body onto the ecliptic and converting back, the MC lands exactly on its zodiacal longitude. The Progressions & Directions defaults are chosen to change nothing already in use: Natal Frame reproduces the prior Solar Arc (SA-in-longitude) and Progressed (natal-framed) behaviour exactly. The Primary Directions overlay uses standard mean-rate and solar-rate time-keys applied as a rigid rotation of the angles, conventional for an angle-only treatment. Directed and progressed positions follow the sidebar's Lunar-node setting (default **True** node), the same convention used everywhere else in the chart; there is no separate node setting for the directed math.

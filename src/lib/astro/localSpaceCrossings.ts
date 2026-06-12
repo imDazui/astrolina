@@ -66,26 +66,42 @@ interface SegSet {
   maxY: number;
 }
 
-// Normalise a polyline to [-180,180] and split it into planar segments, dropping
-// any segment that jumps the antimeridian (so a wrapped/unwrapped line never makes
-// a phantom coast-to-coast segment). Also tracks the bounding box for pre-filtering.
+// Normalise a polyline to [-180,180] and split it into planar segments. A segment
+// that straddles the ±180° seam is SPLIT at the boundary into two in-range pieces
+// (with the crossing latitude interpolated) rather than dropped: the map draws
+// these segments continuously across the dateline, so a dropped piece would leave
+// a blind strip where visible crossings get no dot — while a naive keep would make
+// a phantom coast-to-coast segment. Also tracks the bounding box for pre-filtering.
 function buildSegs(coords: [number, number][]): SegSet {
   const segs: Seg[] = [];
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (let i = 1; i < coords.length; i++) {
-    const x1 = normLng(coords[i - 1][0]);
-    const y1 = coords[i - 1][1];
-    const x2 = normLng(coords[i][0]);
-    const y2 = coords[i][1];
-    if (Math.abs(x1 - x2) > 180) continue; // antimeridian jump — skip
+  const push = (x1: number, y1: number, x2: number, y2: number) => {
     segs.push({ x1, y1, x2, y2 });
     minX = Math.min(minX, x1, x2);
     maxX = Math.max(maxX, x1, x2);
     minY = Math.min(minY, y1, y2);
     maxY = Math.max(maxY, y1, y2);
+  };
+  for (let i = 1; i < coords.length; i++) {
+    const x1 = normLng(coords[i - 1][0]);
+    const y1 = coords[i - 1][1];
+    const x2 = normLng(coords[i][0]);
+    const y2 = coords[i][1];
+    if (Math.abs(x1 - x2) > 180) {
+      // Seam-straddling: unwrap the far end next to the near one, find where the
+      // segment meets the boundary, and emit the two halves on their own sides.
+      const x2u = x2 + (x1 > x2 ? 360 : -360);
+      const s = x1 > 0 ? 180 : -180;
+      const t = (s - x1) / (x2u - x1);
+      const yc = y1 + t * (y2 - y1);
+      push(x1, y1, s, yc);
+      push(-s, yc, x2, y2);
+      continue;
+    }
+    push(x1, y1, x2, y2);
   }
   return { segs, minX, minY, maxX, maxY };
 }
@@ -143,6 +159,9 @@ export function generateLocalSpaceCrossings(
           if (!segBoxOverlap(a, b)) continue;
           const hit = segIntersect(a, b);
           if (!hit) continue;
+          // Normalize a hit exactly on the seam (found at −180 by one split half,
+          // +180 by the other) so the dedup key sees one point, not two.
+          hit[0] = normLng(hit[0]);
           // Dedup vertex double-hits (same point, same line pair).
           const key = `${hit[0].toFixed(2)}|${hit[1].toFixed(2)}|${ls.planet}|${ap.planet}|${ap.lineType}`;
           if (seen.has(key)) continue;

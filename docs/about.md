@@ -9,10 +9,10 @@ This page explains what the app computes, what it deliberately doesn't do yet, a
 - **Bodies:** the ten classical planets (Sun through Pluto), the lunar nodes (mean or true, your choice), Black Moon Lilith (mean apogee), Chiron, and the four main asteroids (Ceres, Pallas, Juno, Vesta).
 - **Lines:** for every body, a line for each of the four chart angles (MC, IC, ASC, DSC), color-coded per planet and dashed per angle, plus each body's zenith point (the spot on Earth where it passes directly overhead, also called the sub-planetary point).
 - **Parans:** all planet-to-planet parans: any latitude where two bodies are simultaneously on angles (MC, IC, ASC, or DSC), whether one is on the meridian while the other rises or sets, or both share the horizon.
-- **Local space:** directional lines radiating from the birthplace, each one following a body's actual compass bearing (azimuth) on the local horizon.
+- **Local space:** directional lines radiating from the origin (the placed pin by default, or the birthplace), each launched along a body's compass bearing (azimuth) and extended as a great circle — so each line passes exactly through the spot on Earth where that body is overhead.
 - **House systems:** eight, switchable, Placidus (default), Koch, Regiomontanus, Campanus, Porphyry, Alcabitus, Whole Sign, and Equal.
 - **Line conventions:** switch the entire map between Celestial (standard astrocartography, placed by sidereal time) and Mundane (the geodetic technique, mapping the zodiac onto Earth's longitudes). You can also switch between In Mundo and In Zodiaco calculations for planetary positions before mapping.
-- **Time overlays:** lay transits, secondary progressions, solar-arc directions, or primary directions over the natal map, with a timeline you can scrub or animate to sweep the lines across the map over time.
+- **Time overlays:** lay transits, secondary or tertiary progressions, solar-arc directions, primary directions, cyclo·carto·graphy (progressed inners with transiting outers), or eclipse charts over the natal map, with a timeline you can scrub or animate to sweep the lines across the map over time.
 - **Relationship maps:** overlay a second chart's lines, with a bi-wheel and natal-to-overlay cross-aspects in the expanded view.
 - **Relocation:** hover or drop a pin anywhere on the map; the relocated angles and chart wheel update in real time, with the place name and coordinates resolved as you go.
 - **Import and library:** paste an AstroDataBank-style text block or a comma-delimited export (or drop a `.txt` / `.csv`) to add charts in bulk; charts live in a local library you can switch between, edit, and delete.
@@ -35,12 +35,12 @@ Set against full-featured desktop software, these are the deliberate gaps:
 
 - **Fixed-star parans.** Fixed-star angle lines shipped (a 40-star catalog with proper motion, Regulus to Acrux, toggleable in Filters), but planet-to-star and star-to-star parans are not computed yet.
 - **A full classical primary-directions engine.** The map's directions (solar arc, secondary progressions, primary directions) are an angle-only treatment: the directed angles and their lines, not individual promissor-to-significator directions with latitude, semi-arc proportions, converse motion, or a dated event list.
-- **Sidereal conventions under review.** A sidereal zodiac mode ships (Lahiri
-  and Fagan/Bradley ayanamsas, as a reading layer over the wheel and readouts —
-  the map lines mark zodiac-independent events and don't move), but its
-  conventions are still being reviewed with a practicing astrologer, and the
-  Geodetic technique stays tropical by definition.
-- **Relationship-chart conventions under review.** Synastry (two charts overlaid), Davison, and composite-midpoint charts all ship; the composite's conventions (shorter-arc planet midpoints on the ecliptic, a synthesized midpoint sidereal frame) are documented in [Calculation Methods](calculation-methods.md) and still being reviewed with a practicing astrologer.
+- **Sidereal mode is a reading layer.** A sidereal zodiac mode ships (Lahiri
+  and Fagan/Bradley ayanamsas) over the wheel and readouts — the map lines mark
+  zodiac-independent events and don't move — and the Geodetic technique stays
+  tropical by definition. Its conventions are documented in
+  [Calculation Methods](calculation-methods.md).
+- **Relationship charts.** Synastry (two charts overlaid), Davison, and composite-midpoint charts all ship; the composite's conventions (shorter-arc planet midpoints on the ecliptic, a synthesized midpoint sidereal frame) are documented in [Calculation Methods](calculation-methods.md).
 - **A hand-curated historical atlas.** Birthplaces are geocoded and timezones resolved from open data, not from a proprietary hand-curated historical atlas (see Accuracy & limitations).
 - **Date entry before 1800.** The birth-data form accepts years 1800–2200. An imported chart with an earlier date still computes its planets, nodes, and Lilith, but its asteroids are omitted (see [Calculation Methods](calculation-methods.md) for why).
 - **Hypothetical bodies.** Transpluto and the Uranian points are omitted (there is no consensus ephemeris for them), and centaurs beyond Chiron aren't bundled.

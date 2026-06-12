@@ -1,0 +1,67 @@
+// AstroLina: web-based astrocartography for curious minds.
+// Copyright (C) 2026 AstroLina <https://astrolina.org>
+// SPDX-License-Identifier: AGPL-3.0-only
+// Licensed under the GNU AGPL v3.0 with an additional attribution term under
+// AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+
+// Verify-script harness: bundles a TypeScript verify script TOGETHER WITH the
+// real src/lib modules it imports, then runs the bundle under Node. This lets
+// the verify suite test the code the app actually ships instead of re-deriving
+// the same math in a parallel .mjs copy (where a shared mistake would hide).
+//
+// Three things keep the browser-targeted source happy under Node:
+//   1. '@swisseph/browser' is aliased to swisseph-browser-shim.ts, which
+//      delegates to @swisseph/node (same Swiss Ephemeris C core, same .se1
+//      files from public/ephe).
+//   2. The Vite-only `swisseph.wasm?url` import is stubbed (no WASM in Node).
+//   3. `import.meta.env.BASE_URL` is defined to '/' (Vite injects it at build
+//      time; esbuild does the same here).
+//
+// Usage: node scripts/harness/run.mjs scripts/verify-something.ts
+import { build } from 'esbuild';
+import { basename, dirname, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const entry = process.argv[2];
+if (!entry) {
+  console.error('usage: node scripts/harness/run.mjs <verify-script.ts>');
+  process.exit(2);
+}
+
+const here = dirname(fileURLToPath(import.meta.url));
+const outFile = resolve(here, '.cache', basename(entry).replace(/\.[cm]?tsx?$/, '') + '.mjs');
+
+const browserShim = {
+  name: 'swisseph-browser-shim',
+  setup(b) {
+    b.onResolve({ filter: /^@swisseph\/browser$/ }, () => ({
+      path: resolve(here, 'swisseph-browser-shim.ts'),
+    }));
+    b.onResolve({ filter: /swisseph\.wasm\?url$/ }, () => ({
+      path: 'swisseph-wasm-url',
+      namespace: 'wasm-url-stub',
+    }));
+    b.onLoad({ filter: /.*/, namespace: 'wasm-url-stub' }, () => ({
+      contents: 'export default "";',
+      loader: 'js',
+    }));
+  },
+};
+
+await build({
+  entryPoints: [entry],
+  outfile: outFile,
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node20',
+  // Inline source maps so assertion failures point at real src/ lines.
+  sourcemap: 'inline',
+  define: { 'import.meta.env.BASE_URL': '"/"' },
+  // Native binding — must stay a runtime require, never bundled.
+  external: ['@swisseph/node'],
+  plugins: [browserShim],
+  logLevel: 'warning',
+});
+
+await import(pathToFileURL(outFile).href);

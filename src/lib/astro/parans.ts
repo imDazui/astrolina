@@ -6,8 +6,14 @@
 
 import type { Feature, FeatureCollection, LineString } from 'geojson';
 import { PLANET_CODES, PLANET_COLORS, type PlanetName, type PlanetPosition } from '../ephemeris';
+import type { MeridianLng } from './lines';
 
 const RAD2DEG = 180 / Math.PI;
+
+// Paran rows are listed only to ±72° latitude, while the angle lines themselves
+// draw on to ±85°: rising/setting geometry degrades toward the circumpolar zone,
+// so the high-latitude band deliberately shows line crossings without paran rows.
+const PARAN_LAT_LIMIT = 72;
 
 export interface ParanProps {
   planetA: PlanetName;
@@ -65,10 +71,10 @@ function paranLat(
   const tanD = Math.tan(decB);
   if (Math.abs(tanD) < 1e-6) return null;
   const tanPhi = (sign * Math.cos(dAlpha)) / tanD;
-  if (!Number.isFinite(tanPhi) || Math.abs(tanPhi) > 6) return null;
+  if (!Number.isFinite(tanPhi)) return null;
   const phi = Math.atan(tanPhi);
   const latDeg = phi * RAD2DEG;
-  if (latDeg < -72 || latDeg > 72) return null;
+  if (latDeg < -PARAN_LAT_LIMIT || latDeg > PARAN_LAT_LIMIT) return null;
   return latDeg;
 }
 
@@ -101,9 +107,9 @@ function horizonParans(a: PlanetPosition, b: PlanetPosition): HorizonParan[] {
   const out: HorizonParan[] = [];
   for (const theta of [theta0, theta0 + Math.PI]) {
     const tanPhi = -Math.cos(theta - a.ra) / tanDecA;
-    if (!Number.isFinite(tanPhi) || Math.abs(tanPhi) > 6) continue;
+    if (!Number.isFinite(tanPhi)) continue;
     const latDeg = Math.atan(tanPhi) * RAD2DEG;
-    if (latDeg < -72 || latDeg > 72) continue;
+    if (latDeg < -PARAN_LAT_LIMIT || latDeg > PARAN_LAT_LIMIT) continue;
     const hA = normalizeDelta(theta - a.ra);
     const hB = normalizeDelta(theta - b.ra);
     out.push({
@@ -116,9 +122,15 @@ function horizonParans(a: PlanetPosition, b: PlanetPosition): HorizonParan[] {
   return out;
 }
 
+// `meridianLng` is the SAME meridian→longitude mapping the drawn lines use
+// (celestial: RA − GMST; geodetic: the zodiacal longitude), so the recorded
+// intersection point — the paran badge's fly-to target — always lands where the
+// drawn lines visibly cross the paran latitude, in either line system. The paran
+// LATITUDES are frame-independent (the bodies' mutual hour-angle geometry
+// survives the remapping); only this longitude metadata follows the frame.
 export function generateParans(
   positions: PlanetPosition[],
-  gmst: number,
+  meridianLng: MeridianLng,
 ): FeatureCollection<LineString, ParanProps> {
   const features: Feature<LineString, ParanProps>[] = [];
 
@@ -130,7 +142,7 @@ export function generateParans(
         const lat = paranLat(a.ra, b.ra, b.dec, aOnIc);
         if (lat === null) continue;
         const aRA = a.ra + (aOnIc ? Math.PI : 0);
-        const intersectionLng = normLng((aRA - gmst) * RAD2DEG);
+        const intersectionLng = normLng(meridianLng(aRA));
         const hB = normalizeDelta(aRA - b.ra);
         const angleB: 'ASC' | 'DSC' = hB < 0 ? 'ASC' : 'DSC';
 
@@ -164,7 +176,7 @@ export function generateParans(
       const a = positions[i];
       const b = positions[j];
       for (const sol of horizonParans(a, b)) {
-        const intersectionLng = normLng((sol.theta - gmst) * RAD2DEG);
+        const intersectionLng = normLng(meridianLng(sol.theta));
         features.push({
           type: 'Feature',
           properties: {

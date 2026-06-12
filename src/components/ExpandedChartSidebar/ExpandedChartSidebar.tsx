@@ -6,6 +6,7 @@
 
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -13,6 +14,8 @@ import {
 } from 'react';
 import {
   PLANET_COLORS,
+  birthDataToJD,
+  obliquity,
   type AngleCoords,
   type EclipticPosition,
   type HorizontalCoords,
@@ -61,14 +64,13 @@ function planetRank(name: PlanetName): number {
   return i === -1 ? PLANET_ORDER.length : i;
 }
 
-// The Sun's maximum declination (Earth's obliquity, 23°26'). A body past it on
-// either side is "out of bounds" — astrologically notable — so the readout flags
-// it in a single colour (the Glass theme paints it pink, the others dark pink;
-// see the CSS). Within the limit the declination is unremarkable, so it keeps
-// the default text colour.
-const OOB_DEC_DEG = 23 + 26 / 60;
-function decClass(decRad: number): string {
-  return Math.abs((decRad * 180) / Math.PI) > OOB_DEC_DEG ? 'es-dec-oob' : '';
+// "Out of bounds": declination past the Sun's maximum — the true obliquity of
+// the chart's date, not a fixed 23°26′ (a fixed value would flag the SUN itself
+// for a couple of days around each solstice whenever the real obliquity sits
+// above it). The readout flags it in a single colour (the Glass theme paints it
+// pink, the others dark pink; see the CSS).
+function decClass(decRad: number, limitDeg: number): string {
+  return Math.abs((decRad * 180) / Math.PI) > limitDeg ? 'es-dec-oob' : '';
 }
 
 const RAD2DEG = 180 / Math.PI;
@@ -77,11 +79,13 @@ const RAD2DEG = 180 / Math.PI;
 // numeric column of the Advanced planet table (speed, latitude, RA, declination,
 // azimuth, altitude). Azimuth/RA pass signed=false (they read 0–360).
 function fmtDM(deg: number, signed = false): string {
-  const sign = deg < 0 ? '-' : signed ? '+' : '';
   const abs = Math.abs(deg);
   let d = Math.floor(abs);
   let m = Math.round((abs - d) * 60);
   if (m === 60) { m = 0; d += 1; }
+  if (d >= 360 && !signed) d -= 360; // 359°59.6' is "0°00'", not "360°00'"
+  // A value rounding to zero shows unsigned (no "-0°00'").
+  const sign = d === 0 && m === 0 ? '' : deg < 0 ? '-' : signed ? '+' : '';
   return `${sign}${d}°${pad2(m)}'`;
 }
 
@@ -90,7 +94,7 @@ function fmtDM(deg: number, signed = false): string {
 function Longitude({ lon, advanced }: { lon: number; advanced: boolean }) {
   const { labels } = useT();
   const lonDeg = ((lon * 180) / Math.PI + 360) % 360;
-  const signIdx = Math.floor(lonDeg / 30);
+  let signIdx = Math.floor(lonDeg / 30);
   const inSign = lonDeg % 30;
   const d = Math.floor(inSign);
   const mFull = (inSign - d) * 60;
@@ -100,9 +104,19 @@ function Longitude({ lon, advanced }: { lon: number; advanced: boolean }) {
   let ss = Math.round((mFull - m) * 60);
   if (ss === 60) { ss = 0; mm += 1; }
   if (mm === 60) { mm = 0; dd += 1; }
+  // The seconds cascade can carry 29°59'59.6" up to a full 30°: that is 0° of
+  // the NEXT sign, never "30°" of this one.
+  if (dd === 30 && advanced) { dd = 0; signIdx = (signIdx + 1) % 12; }
+  // Compact branch ROUNDS to the minute (like SignLon, which replaces this
+  // column on narrow panels — the two must not disagree at the width cutoff),
+  // with the same 60'-and-sign rollover.
+  let cd = d;
+  let cm = Math.round(mFull);
+  if (cm === 60) { cm = 0; cd += 1; }
+  if (cd === 30 && !advanced) { cd = 0; signIdx = (signIdx + 1) % 12; }
   const dms = advanced
     ? `${dd}°${pad2(mm)}'${pad2(ss)}"`
-    : `${d}°${pad2(m)}'`;
+    : `${cd}°${pad2(cm)}'`;
   return (
     <>
       {dms}{' '}
@@ -502,6 +516,14 @@ export function ExpandedChartSidebar({
       ].filter((a) => visibleAngles.has(a.code))
     : [];
 
+  // The out-of-bounds limit IS the Sun's maximum declination — the true
+  // obliquity at the chart's moment (~23°26'; drifts ~47" per century). Epoch
+  // differences to any overlay rows are arcseconds and don't matter here.
+  const oobLimitDeg = useMemo(
+    () => (chart ? obliquity(birthDataToJD(chart)) * RAD2DEG : 23.44),
+    [chart],
+  );
+
   // Bold state title for the wheel's top-left corner (always shown when a chart is
   // up). Coloured by the live map state via --map-accent — neutral natal, blue
   // hover, gold pinned, green natal-pin — so it tracks the same palette as the pin.
@@ -773,6 +795,11 @@ export function ExpandedChartSidebar({
                   <span className="es-wheel-title" style={{ color: 'var(--map-accent)' }}>
                     {wheelTitle}
                   </span>
+                  {angles.fallback && (
+                    <span className="es-house-fallback">
+                      {t('expandedSidebar.houseFallback')}
+                    </span>
+                  )}
                 </div>
               )}
               {angles && overlayName && !showDual && (
@@ -914,7 +941,7 @@ export function ExpandedChartSidebar({
         // from advancedCoords (computed for the relocated observer).
         const renderAdvRow = (p: EclipticPosition) => {
           const hc = advancedCoords.get(p.name);
-          const decCls = p.dec !== undefined ? decClass(p.dec) : '';
+          const decCls = p.dec !== undefined ? decClass(p.dec, oobLimitDeg) : '';
           const dec = p.dec !== undefined ? fmtDM(p.dec * RAD2DEG, true) : '—';
           return (
             <tr key={p.name}>

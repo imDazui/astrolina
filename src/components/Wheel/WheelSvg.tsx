@@ -246,17 +246,18 @@ export function computeDeclinationAspects(
   return out;
 }
 
-// Aspects BETWEEN two charts (bi-wheel): every inner planet against every outer
-// planet. `a` is the inner (natal) body, `b` the outer (overlay) body. Used for
-// transit-to-natal, progressed-to-natal, and synastry aspect lines.
+// Aspects BETWEEN two charts (bi-wheel). Every call site passes the OVERLAY
+// bodies first: the overlay body is the aspect's subject ("transiting Mars
+// conjunct natal Sun"), so it lands in the result's `a` slot and reads first in
+// the lists. The separation math is symmetric; only the labeling order matters.
 export function computeCrossAspects(
-  inner: EclipticPosition[],
-  outer: EclipticPosition[],
+  subject: EclipticPosition[],
+  natal: EclipticPosition[],
   orbs: AspectOrbs = DEFAULT_ASPECT_ORBS,
 ): Aspect[] {
   const out: Aspect[] = [];
-  for (const a of inner) {
-    for (const b of outer) {
+  for (const a of subject) {
+    for (const b of natal) {
       const asp = aspectBetween(
         a.lon,
         b.lon,
@@ -328,6 +329,35 @@ function signSectorPath(
 // sized to give ~16px of arc at the given ring radius. Returns display
 // longitudes keyed by planet name; the true longitude is still marked by a
 // tick at the planet's real position by the caller.
+// Relax SORTED ring offsets (degrees, ascending in [0,360)) so neighbours sit at
+// least `sep` apart, treating the ring as CIRCULAR: a 1°-wide pair straddling
+// the 0°/360° seam (bodies conjunct on either side of the ASC) is 1° apart, not
+// 359°. A linear pass can't see that — and worse, it can push a near-360
+// cluster past 360 into an untouched body just after 0. So the pass runs in a
+// frame rotated to start just after the LARGEST circular gap (whose two ends
+// are the only neighbours guaranteed already clear), then maps back mod 360.
+function relaxRing(arr: { off: number }[], sep: number): void {
+  if (arr.length < 2) return;
+  let gapIdx = arr.length - 1; // gap between the last entry and the first (+360)
+  let gapSize = arr[0].off + 360 - arr[arr.length - 1].off;
+  for (let i = 1; i < arr.length; i++) {
+    const g = arr[i].off - arr[i - 1].off;
+    if (g > gapSize) {
+      gapSize = g;
+      gapIdx = i - 1;
+    }
+  }
+  const start = (gapIdx + 1) % arr.length;
+  let prev = -Infinity;
+  for (let k = 0; k < arr.length; k++) {
+    const idx = (start + k) % arr.length;
+    let v = arr[idx].off + (start + k >= arr.length ? 360 : 0);
+    if (v - prev < sep && k > 0) v = prev + sep;
+    prev = v;
+    arr[idx].off = ((v % 360) + 360) % 360;
+  }
+}
+
 function spreadOnRing(
   planets: EclipticPosition[],
   ascRad: number,
@@ -342,12 +372,7 @@ function spreadOnRing(
     20,
     Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(ringRadius, 1))),
   );
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i].off - arr[i - 1].off < sep) arr[i].off = arr[i - 1].off + sep;
-  }
-  for (let i = arr.length - 2; i >= 0; i--) {
-    if (arr[i + 1].off - arr[i].off < sep) arr[i].off = arr[i + 1].off - sep;
-  }
+  relaxRing(arr, sep);
   const m = new Map<string, number>();
   for (const e of arr) m.set(e.name, ascRad + (e.off * Math.PI) / 180);
   return m;
@@ -616,12 +641,7 @@ export function WheelSvg({
       ? Math.max(rReadout - readoutFan, 1)
       : Math.max(rReadout, 1);
     const sep = Math.min(20, Math.max(4, (16 * 360) / (2 * Math.PI * sepRadius)));
-    for (let i = 1; i < arr.length; i++) {
-      if (arr[i].off - arr[i - 1].off < sep) arr[i].off = arr[i - 1].off + sep;
-    }
-    for (let i = arr.length - 2; i >= 0; i--) {
-      if (arr[i + 1].off - arr[i].off < sep) arr[i].off = arr[i + 1].off - sep;
-    }
+    relaxRing(arr, sep);
     for (const e of arr) {
       displayLon.set(e.name, angles.asc + (e.off * Math.PI) / 180);
     }

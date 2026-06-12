@@ -911,8 +911,8 @@ export default function App() {
     [linePositions, meridianLng],
   );
   const allParans = useMemo(
-    () => generateParans(linePositions, gmst),
-    [linePositions, gmst],
+    () => generateParans(linePositions, meridianLng),
+    [linePositions, meridianLng],
   );
   // Local-space origin: follow the pin (default) or stay on the birthplace.
   const [lsOrigin, setLsOrigin] = useState(loadLsOrigin);
@@ -1431,10 +1431,10 @@ export default function App() {
             filterParans(
               isCyclo
                 ? tagLabelsBy(
-                    generateParans(ovPositions, overlayLayer.gmst),
+                    generateParans(ovPositions, ovMeridianLng),
                     paranCycloTag,
                   )
-                : tagLabels(generateParans(ovPositions, overlayLayer.gmst), prefix),
+                : tagLabels(generateParans(ovPositions, ovMeridianLng), prefix),
               visiblePlanets,
             ),
             visiblePlanets,
@@ -1581,10 +1581,10 @@ export default function App() {
             filterParans(
               isCyclo
                 ? tagLabelsBy(
-                    generateParans(ovPositions, overlayLayer.gmst),
+                    generateParans(ovPositions, ovMeridianLng),
                     paranCycloTag,
                   )
-                : tagLabels(generateParans(ovPositions, overlayLayer.gmst), prefix),
+                : tagLabels(generateParans(ovPositions, ovMeridianLng), prefix),
               visiblePlanets,
             ),
             visiblePlanets,
@@ -1738,19 +1738,19 @@ export default function App() {
     );
   }, [overlayMode, eclipseDetails, eclipsesMod, ecliptic, visiblePlanets, birthAngles]);
   // The overlay chart's own MC/IC/AS/DS for the bi-wheel, at the same place as the natal
-  // angles. Time-based overlays (transits / progressed / synastry) have a genuine second
-  // moment → relocate(jd) at the active point. The directed overlays (solar-arc, primary)
-  // have no such moment: their angles are the NATAL angles advanced by the arc, so we
-  // relocate the natal angles to the active point and apply the overlay's directAngle
-  // closure (same arc + frame the bodies use). See docs/calculation-methods.md
-  // ("Directed-overlay angles").
+  // angles. Time-based overlays (transits / synastry) have a genuine second moment →
+  // relocate(jd) at the active point. The directed overlays (solar-arc, primary,
+  // progressed) have no such moment: their angles are the NATAL angles (angleJd, the
+  // birth moment for progressed) advanced by the arc, so we relocate those and apply the
+  // overlay's directAngle closure (same arc + frame its map gmst uses). See
+  // docs/calculation-methods.md ("Directed-overlay angles").
   const overlayAngles = useMemo(() => {
     if (!overlayLayer || !current) return null;
     const lat = activePoint?.lat ?? current.birthplace.lat;
     const lng = activePoint?.lng ?? current.birthplace.lng;
-    const base = relocate(overlayLayer.jd, lat, lng, houseSystem);
+    const base = relocate(overlayLayer.angleJd ?? overlayLayer.jd, lat, lng, houseSystem);
     const direct = overlayLayer.directAngle;
-    if (!direct) return base; // transits / progressed / synastry
+    if (!direct) return base; // transits / synastry / natal-frame progressed
     const wrap = (x: number) => ((x % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
     const asc = direct(base.asc);
     const mc = direct(base.mc);

@@ -27,6 +27,9 @@ export const chartForm = {
     autoTip: 'Reset to the zone detected from the birthplace ({iana})',
     setPlace: 'Set a birthplace to choose a time zone',
     verifyDst: 'verify DST',
+    // Shown when the birth predates standard time in this region: the offset is
+    // the birthplace's own local mean time, derived from its longitude.
+    lmt: 'LMT (local mean time of the birthplace)',
   },
   // The Star toggle beside the time inputs: a "Tag" caption over a button whose label
   // is the tag name; its .ui-tip explains what it does.

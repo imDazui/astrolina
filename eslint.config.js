@@ -12,7 +12,10 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // scratch/ holds gitignored throwaway scripts (see scratch/README.md) and the
+  // harness .cache holds generated bundles — neither should gate the lint run
+  // the way shipped code does.
+  globalIgnores(['dist', 'scratch', 'scripts/harness/.cache']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

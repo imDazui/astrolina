@@ -149,9 +149,12 @@ export function BirthDataFields({
   // The zone actually in effect (override if set, else detected) and its resolved
   // offset/DST-confidence. Recomputing the override here keeps it DST-aware as the
   // date changes; on the detected path we reuse `detected` rather than resolve twice.
+  // Picking the very zone that auto-detection chose counts as the detected path —
+  // otherwise re-selecting the displayed zone would silently swap an LMT-era
+  // birth from the birthplace's mean time to the zone reference city's.
   const effective = useMemo(
     () =>
-      zoneOverride
+      zoneOverride && zoneOverride !== detected?.iana
         ? resolveZoneInfo(zoneOverride, year, month, day, hour, minute)
         : detected,
     [zoneOverride, detected, year, month, day, hour, minute],
@@ -453,6 +456,9 @@ export function BirthDataFields({
             {selectedPlace ? (
               <>
                 {formatUtcOffset(effectiveOffset)}
+                {effective?.lmt && !zoneOverride && (
+                  <span> · {t('chartForm.tz.lmt')}</span>
+                )}
                 {effective?.uncertain && (
                   <span className="tz-warn"> · ⚠ {t('chartForm.tz.verifyDst')}</span>
                 )}

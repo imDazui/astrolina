@@ -30,6 +30,11 @@ export const expandedSidebar = {
     label: 'Hide',
   },
 
+  // Shown under the wheel-state title when the chosen quadrant house system is
+  // undefined at this latitude (above the polar circles) and Porphyry cusps are
+  // drawn instead — so the wheel never silently shows a different system.
+  houseFallback: 'Porphyry cusps — chosen system undefined at this latitude',
+
   // Pre-1970 timezone DST caution glyph in the meta row.
   tzUncertain: 'Timezone uncertain',
   tzUncertainHint: 'Pre-1970 timezone outside US/EU: verify DST against an atlas',

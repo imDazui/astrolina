@@ -59,7 +59,7 @@ export type AngleProgression =
   | 'sa-ra'          // solar arc, applied in right ascension
   | 'naibod-long'    // Naibod mean rate, applied in longitude
   | 'naibod-ra'      // Naibod mean rate, applied in right ascension
-  | 'mean-quotidian'; // quotidian progressed angle (one day per year)
+  | 'mean-quotidian'; // "Natal Frame": angles hold the natal RAMC (historical storage key)
 
 // Group B — the time-key (arc per year) for the Primary Directions overlay.
 export type PrimaryRate =
@@ -165,9 +165,15 @@ export interface OverlayLayer {
    *  "second moment": their angles are the NATAL angles advanced by the arc. This closure
    *  takes a (relocated) natal angle's ecliptic longitude and returns the directed one,
    *  applying the SAME arc + frame the bodies use, so the bi-wheel's directed angles move
-   *  coherently with the directed bodies. Absent for transits / progressed / synastry,
-   *  whose overlay angles come straight from relocate() at the target moment. */
+   *  coherently with the directed bodies. Absent for transits / synastry, whose overlay
+   *  angles come straight from relocate() at the target moment. */
   directAngle?: (lon: number) => number;
+  /** The moment whose relocated angles seed the bi-wheel's overlay ring (defaults to
+   *  `jd`). The progressed overlay sets it to the BIRTH moment: its angle methods direct
+   *  the NATAL angles (matching the map frame's RAMC treatment — the default holds them),
+   *  while `jd` stays the progressed instant for the planets' positions. Without this the
+   *  wheel showed the true-quotidian angles regardless of the chosen method. */
+  angleJd?: number;
 }
 
 const TROPICAL_YEAR_DAYS = 365.2422;
@@ -223,15 +229,19 @@ function directionContext(
   // ALWAYS the real Sun's day-for-a-year travel from the chart's stored moment
   // — for a composite that keeps arc(birth) = 0 and ~1°/yr thereafter (the
   // composite Sun is a midpoint, not a moving body to progress against).
+  // Look the Sun up BY NAME rather than trusting array order — the position
+  // list drops bodies that lack data, so an index would silently misread.
+  const sunOf = (list: PlanetPosition[]) => list.find((p) => p.name === 'Sun') ?? list[0];
+  const natalSun = sunOf(real);
   const arcLong = () => {
-    const s = getPlanetPositions(progressedJD, nodeType)[0];
+    const s = sunOf(getPlanetPositions(progressedJD, nodeType));
     return normalizeAngle(
       raDecToEclipticLon(s.ra, s.dec, eps) -
-        raDecToEclipticLon(real[0].ra, real[0].dec, eps),
+        raDecToEclipticLon(natalSun.ra, natalSun.dec, eps),
     );
   };
   const arcRA = () =>
-    normalizeAngle(getPlanetPositions(progressedJD, nodeType)[0].ra - real[0].ra);
+    normalizeAngle(sunOf(getPlanetPositions(progressedJD, nodeType)).ra - natalSun.ra);
   // Advance the MC's ecliptic longitude by Δλ and return the matching RAMC (gmst).
   // eclipticToRaDec(eclipticLonOfRA(g),0).ra round-trips to g, so Δλ=0 ⇒ natalGMST.
   const ramcOfLong = (dLon: number) =>
@@ -306,23 +316,36 @@ export function buildOverlay(
       // primary overlays). The sa-/naibod- options instead advance the natal RAMC by
       // the arc; the true quotidian progressed sidereal time — gmstRadians(progressedJD)
       // — can be re-exposed as its own option when the angle-frame UI toggle is built.
+      // The map frame (gmst) and the bi-wheel's angle marks (directAngle, applied
+      // to the relocated NATAL angles via angleJd below) advance by the same arc
+      // in the same frame, so wheel and map always agree. The Natal Frame default
+      // leaves both untouched.
       let gmst: number;
+      let directAngle: ((lon: number) => number) | undefined;
       switch (angleProgression) {
         case 'naibod-ra':
           gmst = norm2pi(c.natalGMST + naibodArc);
+          directAngle = directAngleFn(naibodArc, 'ra', c.eps);
           break;
-        case 'sa-ra':
-          gmst = norm2pi(c.natalGMST + c.arcRA());
+        case 'sa-ra': {
+          const arc = c.arcRA();
+          gmst = norm2pi(c.natalGMST + arc);
+          directAngle = directAngleFn(arc, 'ra', c.eps);
           break;
-        case 'sa-long':
-          gmst = c.ramcOfLong(c.arcLong());
+        }
+        case 'sa-long': {
+          const arc = c.arcLong();
+          gmst = c.ramcOfLong(arc);
+          directAngle = directAngleFn(arc, 'long', c.eps);
           break;
+        }
         case 'naibod-long':
           gmst = c.ramcOfLong(naibodArc);
+          directAngle = directAngleFn(naibodArc, 'long', c.eps);
           break;
         case 'mean-quotidian':
         default:
-          gmst = c.natalGMST; // relative-to-natal (default)
+          gmst = c.natalGMST; // Natal Frame (default): angles stay natal
           break;
       }
       // Tertiary swaps only the symbolic clock (day per tropical month instead
@@ -345,6 +368,8 @@ export function buildOverlay(
         jd: progJD,
         positions: getPlanetPositions(progJD, nodeType),
         gmst,
+        directAngle,
+        angleJd: c.birthJD,
         originLat: chart.birthplace.lat,
         originLng: chart.birthplace.lng,
       };

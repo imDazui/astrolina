@@ -28,3 +28,4 @@ scratch/*
 !scratch/README.md
 docs/local
 .claude
+scripts/harness/.cache

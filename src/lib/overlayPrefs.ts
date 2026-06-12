@@ -90,8 +90,9 @@ export function saveOverlayStep(unit: TimeUnit) {
   localStorage.setItem(STEP_KEY, unit);
 }
 
-// Default 'mean-quotidian': a no-op for both existing directed overlays (Solar Arc
-// stays SA-in-longitude, Progressed keeps the progressed-RAMC angle).
+// Default 'mean-quotidian' — the storage key behind the "Natal Frame" option
+// (historical name, kept for saved prefs): a no-op for both directed overlays
+// (Solar Arc stays SA-in-longitude, Progressed holds the natal RAMC).
 export function loadAngleProgression(): AngleProgression {
   const v = localStorage.getItem(ANGLE_PROG_KEY);
   return v && (ANGLE_PROGS as string[]).includes(v)

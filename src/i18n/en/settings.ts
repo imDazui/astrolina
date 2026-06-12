@@ -227,7 +227,11 @@ export const settings = {
     'sa-ra': { label: 'SA in RA', hint: 'Solar arc measured in right ascension.' },
     'naibod-long': { label: 'Naibod in Long', hint: 'Mean solar rate 0.9856°/yr, applied in longitude.' },
     'naibod-ra': { label: 'Naibod in RA', hint: 'Mean solar rate 0.9856°/yr, applied in right ascension.' },
-    'mean-quotidian': { label: 'Mean Quotidian', hint: 'Quotidian progressed angle (one day per year); on Solar Arc it matches SA in Longitude.' },
+    // Storage key is historical ('mean-quotidian'); the behavior is the natal
+    // frame — progressed angles do NOT advance. Relabeled by the June 2026
+    // audit: the old "Mean Quotidian" label promised angle motion the overlay
+    // deliberately doesn't perform (true quotidian angles are a planned option).
+    'mean-quotidian': { label: 'Natal Frame', hint: 'Angles hold the natal RAMC — progressed planets read against the birth chart’s frame. On Solar Arc this applies the arc in longitude (the classic default).' },
   },
 
   // Synastry ▸ Relationships: derive one chart from the two synastry charts.
@@ -238,7 +242,7 @@ export const settings = {
     },
     composite: {
       label: 'Comp. Midpoints',
-      hint: 'Every planet at the midpoint of the two charts, on the ecliptic; the map frame is the midpoint of their sidereal times. Conventions under review.',
+      hint: 'Every planet at the midpoint of the two charts, on the ecliptic; the map frame is the midpoint of their sidereal times.',
     },
     generate: {
       title: 'Generate',
