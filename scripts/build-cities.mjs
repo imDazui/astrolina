@@ -21,6 +21,9 @@
 // Outputs (committed to the repo, like world-atlas ships its one JSON):
 //   src/lib/atlas/data/cities15000.json — positional rows, population desc:
 //       [name, asciiname, lat, lng, countryCode, admin1Code, population]
+//       where asciiname is 0 when it equals name (~80% of rows — most place
+//       names are plain ASCII; the read side falls back r[1] || r[0]), and
+//       lat/lng carry 3 decimals (~110 m), plenty for a city centroid.
 //   src/lib/atlas/data/admin1.json      — { "US.CA": "California", ... }
 //   src/lib/atlas/data/countries.json   — { "US": "United States", ... }
 //
@@ -124,9 +127,14 @@ async function main() {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
     rows.push([
       c[1], // name
-      c[2], // asciiname (accent-folded; drives accent-insensitive search)
-      Math.round(lat * 1e5) / 1e5,
-      Math.round(lng * 1e5) / 1e5,
+      // asciiname (romanised; drives accent-insensitive search). Most names are
+      // already plain ASCII and equal it — emit 0 then, which both JSON-encodes
+      // far smaller and reads back falsy for the consumer's `r[1] || r[0]`.
+      c[2] === c[1] ? 0 : c[2],
+      // 3 decimals ≈ 110 m — far inside the consumer's 4 km same-place radius,
+      // and a meaningful slice off the file (5-decimal floats dominate it).
+      Math.round(lat * 1e3) / 1e3,
+      Math.round(lng * 1e3) / 1e3,
       c[8], // country code
       c[10], // admin1 code
       Number(c[14]) || 0, // population

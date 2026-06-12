@@ -107,8 +107,8 @@ const GESTURES: Record<
     icon: true,
     afterKey: 'missions.gesture.drag',
   },
-  'ctrl-drag': {
-    beforeKey: 'missions.gesture.ctrl',
+  'right-drag': {
+    beforeKey: 'missions.gesture.right',
     icon: true,
     afterKey: 'missions.gesture.drag',
   },

@@ -35,16 +35,18 @@ import { useMissions } from './lib/useMissions';
 import { SEED_BIRTHS } from './lib/birthData';
 import { useReverseGeocode } from './lib/atlas/useReverseGeocode';
 import { useNearestCityLabel } from './lib/atlas/useNearestCityLabel';
-import { countryOf } from './lib/atlas/countryOf';
+import { useCountryOf } from './lib/atlas/useCountryOf';
 import {
   birthDataToJD,
   eclipticLonOfRA,
+  ensureAsteroidEphemeris,
   getAngleCoords,
   getEclipticPositions,
   getHorizontalCoords,
   getPlanetPositions,
   gmstRadians,
   jdToCivil,
+  needsAsteroidEphemeris,
   obliquity,
   PLANET_NAMES,
   projectOntoEcliptic,
@@ -57,15 +59,9 @@ import {
   type NodeType,
   type PlanetName,
 } from './lib/ephemeris';
-import {
-  buildEclipseDetails,
-  buildEclipseMap,
-  jdToMs,
-  loadEclipseCatalog,
-  nearestEclipse,
-  resolveEclipse,
-} from './lib/astro/eclipses';
-import { localCircumstances } from './lib/astro/eclipsePath';
+// Eclipse machinery (the NASA catalog JSON + the Besselian-element fitting in
+// eclipsePath) is dynamic-imported when eclipse mode first opens — see the
+// eclipsesMod state below — so none of it weighs on the main bundle.
 import {
   generateEcliptic,
   generateLines,
@@ -736,17 +732,54 @@ export default function App() {
     saveCurrentId(current?.id ?? null);
   }, [current]);
 
+  // The asteroid ephemeris file loads on demand (see ensureAsteroidEphemeris):
+  // until it's in, Chiron/Ceres/Pallas/Juno/Vesta drop out of every sampling
+  // call. This counter bumps once it lands, and sits in the position memos'
+  // deps so the same chart instant resamples with the asteroid data present.
+  const [ephemerisEpoch, setEphemerisEpoch] = useState(0);
+  // Once loaded the data never goes away, so bump exactly once (the ref) — later
+  // planet toggles must not re-trigger a resample that would find nothing new.
+  const asteroidsLoadedRef = useRef(false);
+  useEffect(() => {
+    if (asteroidsLoadedRef.current) return;
+    // The expanded sidebar's table lists every body unconditionally, so opening
+    // it needs the data even when no asteroid is toggled visible on the map.
+    if (!wheelExpanded && !needsAsteroidEphemeris(visiblePlanets)) return;
+    let stale = false;
+    ensureAsteroidEphemeris().then(
+      () => {
+        if (stale) return;
+        asteroidsLoadedRef.current = true;
+        setEphemerisEpoch((e) => e + 1);
+      },
+      (err: unknown) => {
+        // Fetch failed (offline?) — asteroids stay absent, same as out-of-range
+        // dates. ensureAsteroidEphemeris resets itself, so any later run of
+        // this effect (a planet toggle, the wheel opening) retries; warn so the
+        // silent absence is at least explained in the console.
+        console.warn('[ephemeris] failed to load the asteroid data file', err);
+      },
+    );
+    return () => {
+      stale = true;
+    };
+  }, [visiblePlanets, wheelExpanded]);
+
   const jd = useMemo(
     () => (current ? birthDataToJD(current) : 0),
     [current],
   );
   const positions = useMemo(
     () => (current ? getPlanetPositions(jd, nodeType) : []),
-    [current, jd, nodeType],
+    // ephemerisEpoch isn't read by the calc — it marks the deferred asteroid
+    // file arriving, so the same jd resamples with the new data.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [current, jd, nodeType, ephemerisEpoch],
   );
   const ecliptic = useMemo(
     () => (current ? getEclipticPositions(jd, nodeType) : []),
-    [current, jd, nodeType],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [current, jd, nodeType, ephemerisEpoch],
   );
   const gmst = useMemo(() => gmstRadians(jd), [jd]);
   const eps = useMemo(() => obliquity(jd), [jd]);
@@ -911,45 +944,78 @@ export default function App() {
   // Catalog → selected row → Swiss-resolved event + fitted Besselian elements →
   // the GeoJSON the map draws. Each link memoizes separately, so a display
   // tweak (isoline step, theme) never re-runs the ~20-call Swiss fit.
-  const eclipseCatalog = useMemo(() => loadEclipseCatalog(), []);
+  //
+  // The whole module (catalog JSON + eclipsePath fitting) code-splits behind
+  // this state: it loads on the first entry into eclipse mode (or right away
+  // when the persisted overlay mode restores to it) and every memo below
+  // no-ops until it lands — the HUD simply lists an empty catalog for that
+  // brief gap, the same state it shows for an unknown selection.
+  const [eclipsesMod, setEclipsesMod] = useState<
+    typeof import('./lib/astro/eclipses') | null
+  >(null);
+  useEffect(() => {
+    if (overlayMode !== 'eclipses' || eclipsesMod) return;
+    let stale = false;
+    import('./lib/astro/eclipses').then(
+      (m) => {
+        if (!stale) setEclipsesMod(m);
+      },
+      (err: unknown) => {
+        // Chunk fetch failed (offline, or a stale deploy's hash 404ing). The
+        // mode keeps its empty-catalog state; leaving and re-entering eclipse
+        // mode re-runs this effect and retries the import.
+        console.warn('[eclipses] failed to load the eclipse module', err);
+      },
+    );
+    return () => {
+      stale = true;
+    };
+  }, [overlayMode, eclipsesMod]);
+  const eclipseCatalog = useMemo(
+    () => (eclipsesMod ? eclipsesMod.loadEclipseCatalog() : []),
+    [eclipsesMod],
+  );
   const eclipseRow = useMemo(() => {
-    if (overlayMode !== 'eclipses') return null;
+    if (overlayMode !== 'eclipses' || !eclipsesMod) return null;
     return (
       eclipseCatalog.find((r) => r.id === eclipseId) ??
-      nearestEclipse(eclipseCatalog, targetDate)
+      eclipsesMod.nearestEclipse(eclipseCatalog, targetDate)
     );
-  }, [overlayMode, eclipseCatalog, eclipseId, targetDate]);
+  }, [overlayMode, eclipsesMod, eclipseCatalog, eclipseId, targetDate]);
   // Pin the fallback selection: entering the mode with no (or a stale) saved id
   // lands on the eclipse nearest the overlay date; persist that id immediately
   // so timeline scrubbing in other modes can't silently change the selection.
   // Adjusted during render (the playing-pause precedent above), not an effect.
   if (eclipseRow && eclipseRow.id !== eclipseId) setEclipseId(eclipseRow.id);
   const resolvedEclipse = useMemo(
-    () => (eclipseRow ? resolveEclipse(eclipseRow) : null),
-    [eclipseRow],
+    () => (eclipseRow && eclipsesMod ? eclipsesMod.resolveEclipse(eclipseRow) : null),
+    [eclipseRow, eclipsesMod],
   );
   const eclipseMapData = useMemo(
     () =>
-      resolvedEclipse
-        ? buildEclipseMap(
+      resolvedEclipse && eclipsesMod
+        ? eclipsesMod.buildEclipseMap(
             resolvedEclipse,
             eclipseIsoStep,
             theme,
             `${resolvedEclipse.row.id} · ${t(`settings.eclipses.kind.${resolvedEclipse.row.kind}`)}`,
           )
         : null,
-    [resolvedEclipse, eclipseIsoStep, theme, t],
+    [resolvedEclipse, eclipsesMod, eclipseIsoStep, theme, t],
   );
   const eclipseDetails = useMemo(
-    () => (resolvedEclipse ? buildEclipseDetails(resolvedEclipse) : null),
-    [resolvedEclipse],
+    () =>
+      resolvedEclipse && eclipsesMod
+        ? eclipsesMod.buildEclipseDetails(resolvedEclipse)
+        : null,
+    [resolvedEclipse, eclipsesMod],
   );
   // Local circumstances under the cursor, for the eclipse-curve hover tip.
   const eclipseTip = useMemo(() => {
-    if (!resolvedEclipse) return null;
+    if (!resolvedEclipse || !eclipsesMod) return null;
     const el = resolvedEclipse.elements;
     return (lat: number, lng: number) => {
-      const lc = localCircumstances(el, lat, lng);
+      const lc = eclipsesMod.localCircumstances(el, lat, lng);
       if (!lc) return null;
       const civil = jdToCivil(lc.jd);
       const p = (n: number) => String(n).padStart(2, '0');
@@ -958,18 +1024,19 @@ export default function App() {
         time: `${p(civil.hour)}:${p(civil.minute)}`,
       });
     };
-  }, [resolvedEclipse, t]);
+  }, [resolvedEclipse, eclipsesMod, t]);
 
   const overlayLayer = useMemo(() => {
     if (overlayMode === 'off' || !current) return null;
     if (overlayMode === 'eclipses') {
       // The optional "eclipse chart lines": planet/angle lines for the sky at
       // the eclipse maximum — a transit overlay pinned to that instant.
-      if (!showEclipseChartLines || !resolvedEclipse) return null;
+      // (resolvedEclipse non-null implies the lazy eclipses module is in.)
+      if (!showEclipseChartLines || !resolvedEclipse || !eclipsesMod) return null;
       return buildOverlay(
         current,
         'eclipses',
-        jdToMs(resolvedEclipse.event.maximum),
+        eclipsesMod.jdToMs(resolvedEclipse.event.maximum),
         null,
         nodeType,
         angleProgression,
@@ -991,6 +1058,9 @@ export default function App() {
       transitFrame,
       t,
     );
+    // ephemerisEpoch resamples the overlay instant too when the deferred
+    // asteroid file arrives (it isn't read by buildOverlay itself).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     overlayMode,
     current,
@@ -1003,7 +1073,9 @@ export default function App() {
     transitFrame,
     showEclipseChartLines,
     resolvedEclipse,
+    eclipsesMod,
     t,
+    ephemerisEpoch,
   ]);
 
   const overlay = useMemo<OverlayData | null>(() => {
@@ -1226,10 +1298,7 @@ export default function App() {
     detailZoom,
   );
   const hoverCity = useNearestCityLabel(mapTool === 'measure' ? null : hover);
-  const hoverCountry = useMemo(
-    () => (hover ? countryOf(hover.lat, hover.lng) : null),
-    [hover],
-  );
+  const hoverCountry = useCountryOf(hover);
   // Once pinned, hover stays frozen on the clicked point (onHover/onLeave are gated
   // on !pinned), so this hovered-point label doubles as the pin's placeholder while
   // the reverse-geocode loads.

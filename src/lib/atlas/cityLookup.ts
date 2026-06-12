@@ -21,8 +21,10 @@ import countriesJson from './data/countries.json';
 // rows: [name, asciiname, lat, lng, countryCode, admin1Code, population],
 // sorted by population DESC (see scripts/build-cities.mjs). resolveJsonModule
 // infers loose/literal types from the generated files, so pin them to the
-// shapes the build script emits.
-type Row = [string, string, number, number, string, string, number];
+// shapes the build script emits. asciiname is 0 (not a string) when it equals
+// name — the build script dedupes the ~80% of rows whose name is plain ASCII
+// to keep the dataset small; `r[1] || r[0]` below restores the folding source.
+type Row = [string, string | 0, number, number, string, string, number];
 const rows = rowsJson as unknown as Row[];
 const admin1: Record<string, string> = admin1Json;
 const countries: Record<string, string> = countriesJson;
@@ -31,7 +33,7 @@ const N = rows.length;
 
 // A canonical sample row used when checking label formatting in dev; kept out of
 // `rows` above, so it never appears in search or reverse-geocode results.
-export const SAMPLE_ROW: Row = ['Ellinbridge', 'Ellinbridge', 52.41663, -1.83092, 'GB', 'GB.CALDWICK', 18240];
+export const SAMPLE_ROW: Row = ['Ellinbridge', 0, 52.417, -1.831, 'GB', 'GB.CALDWICK', 18240];
 
 // Accent-folded, lowercased name per row — drives accent-insensitive forward
 // search ("sao" and "são" both match "São Paulo"). The GeoNames asciiname is
@@ -39,6 +41,16 @@ export const SAMPLE_ROW: Row = ['Ellinbridge', 'Ellinbridge', 52.41663, -1.83092
 const fold = (s: string): string =>
   s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 const folded: string[] = rows.map((r) => fold(r[1] || r[0]));
+// GeoNames sometimes romanises by respelling rather than just dropping accents
+// (Zürich → "Zuerich"), so a user who types the plain accent-stripped form
+// ("zurich") would miss the asciiname key above. Index the folded DISPLAY name
+// as a second key for the rows where it differs; 0 elsewhere keeps the search
+// loops' extra checks short-circuited for the common case.
+const foldedAlt: (string | 0)[] = rows.map((r, i) => {
+  if (!r[1]) return 0;
+  const f = fold(r[0]);
+  return f === folded[i] ? 0 : f;
+});
 
 // Spatial index for reverse lookups, built lazily on the first nearestCity call
 // (forward-only sessions never pay for it). kdbush/geokdbush take (lng, lat).
@@ -111,8 +123,12 @@ export function searchCity(query: string, limit = 8): GeocodeResult[] {
   const prefix: Row[] = [];
   const substr: Row[] = [];
   for (let i = 0; i < N; i++) {
-    if (folded[i].startsWith(q)) prefix.push(rows[i]);
-    else if (folded[i].includes(q)) substr.push(rows[i]);
+    const alt = foldedAlt[i];
+    if (folded[i].startsWith(q) || (alt && alt.startsWith(q))) {
+      prefix.push(rows[i]);
+    } else if (folded[i].includes(q) || (alt && alt.includes(q))) {
+      substr.push(rows[i]);
+    }
   }
   return [...prefix, ...substr].slice(0, limit).map(toResult);
 }
@@ -189,8 +205,9 @@ export function searchPlaces(query: string, limit = 8): PlaceResult[] {
 
   for (let i = 0; i < N; i++) {
     const f = folded[i];
-    const pre = f.startsWith(q);
-    if (!pre && !f.includes(q)) continue;
+    const alt = foldedAlt[i];
+    const pre = f.startsWith(q) || (alt !== 0 && alt.startsWith(q));
+    if (!pre && !f.includes(q) && !(alt !== 0 && alt.includes(q))) continue;
     const r = rows[i];
     cands.push({ kind: 'city', label: labelFor(r), lat: r[2], lng: r[3], pop: r[6], prefix: pre });
   }

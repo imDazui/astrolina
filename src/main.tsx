@@ -39,6 +39,8 @@ const slowTimer = window.setTimeout(() => {
 }, 6000)
 
 try {
+  // Two stages now: the asteroid tables no longer load at startup — they fetch on
+  // demand the first time an asteroid body is enabled (see ensureAsteroidEphemeris).
   await initEphemeris((stage) => {
     reachedData = true
     if (stage === 'planets') {
@@ -46,10 +48,7 @@ try {
       load.floor = Math.max(load.floor, 55)
     } else if (stage === 'moon') {
       setStatus('Loading lunar tables…')
-      load.floor = Math.max(load.floor, 72)
-    } else if (stage === 'asteroids') {
-      setStatus('Loading asteroid tables…')
-      load.floor = Math.max(load.floor, 88)
+      load.floor = Math.max(load.floor, 80)
     }
   })
 } catch (err) {

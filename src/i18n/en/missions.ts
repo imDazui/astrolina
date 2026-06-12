@@ -23,13 +23,12 @@ export const missions = {
   guidePosition: 'Guide {current} of {total}',
 
   // Words shown in the hotkey pill around the cursor icon (see GESTURES in
-  // MissionGuide). e.g. "Double 🖱", "Shift 🖱 Drag", "Ctrl/⌘ 🖱 Drag".
+  // MissionGuide). e.g. "Double 🖱", "Shift 🖱 Drag", "Right 🖱 Drag".
   gesture: {
     double: 'Double',
     right: 'Right',
     hold: 'Hold',
     shift: 'Shift',
-    ctrl: 'Ctrl/⌘',
     drag: 'Drag',
     click: 'Click',
   },

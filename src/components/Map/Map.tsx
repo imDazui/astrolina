@@ -62,12 +62,18 @@ const EMPTY_FC = <T,>(): FeatureCollection<LineString, T> => ({
   features: [],
 });
 
-// Tile options for the line / paran / zenith sources. A maximal buffer makes
-// neighbouring tiles overlap so an antimeridian-crossing line has no hairline seam
-// at the ±180° world boundary (geojson-vt wraps the out-of-range longitudes into the
-// adjacent world copy; the overlap hides the join), and tolerance:0 keeps the lines
-// un-simplified — so the crossing stays precise even when zoomed all the way out.
-const LINE_SOURCE_OPTS = { buffer: 512, tolerance: 0 } as const;
+// Tile options for the line / paran / zenith sources. The buffer makes neighbouring
+// tiles overlap so an antimeridian-crossing line has no hairline seam at the ±180°
+// world boundary (geojson-vt wraps the out-of-range longitudes into the adjacent
+// world copy; the overlap hides the join), and tolerance is geojson-vt's per-zoom
+// line simplification. Both are tuned for render cost: an earlier {512, 0} kept
+// every vertex of every line in maximal-overlap tiles, which made low zooms — where
+// the world copies multiply the geometry — disproportionately expensive to tile and
+// tessellate. 128/0.375 (the geojson-vt defaults) render visually identical output,
+// including the ±180° crossing at world zoom. Before touching these again, re-check
+// the seam: centre on lng 180 with every line overlay on and screenshot z1/z2/z4 in
+// 2D and tilted 3D — any gap, kink, or dash-phase jump at the join is a regression.
+const LINE_SOURCE_OPTS = { buffer: 128, tolerance: 0.375 } as const;
 
 // Angle code shown in each line / paran badge (As/Ds match the wheel's shorthand).
 // Covers all four angles — a paran's body A may sit on the MC/IC or the horizon.
@@ -113,6 +119,21 @@ function readHudRects(map: maplibregl.Map): AvoidRect[] {
     });
   }
   return out;
+}
+
+// Shallow equality over arrays of flat badge records. computeBadges runs on every
+// data push and settled moveend even when nothing on screen moved; handing React
+// the PREVIOUS array back when a recompute lands on identical output lets its
+// Object.is bailout skip re-rendering this (large) component for nothing.
+function sameBadges<T extends object>(a: T[], b: T[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i] as Record<string, unknown>;
+    const y = b[i] as Record<string, unknown>;
+    for (const k in x) if (x[k] !== y[k]) return false;
+    for (const k in y) if (!(k in x)) return false;
+  }
+  return true;
 }
 
 // Pick dark or white text for a badge from its fill luminance, so the glyph/code
@@ -179,13 +200,6 @@ const CLOSE_ZOOM = 8.5;
 // Once zoomed past CLOSE_ZOOM (LS labels at full radius) a subtle "Zoom out"
 // escape button appears; clicking it eases back to this wide overview in one step.
 const ZOOM_OUT_TARGET = 3;
-// SECONDARY badge sets — aspect/midpoint and paran labels — only render once
-// zoomed in past this (a step or two in from the world view). At world zoom the
-// secondary sets can run to hundreds of badges that bury the base-line labels
-// and block each other's clicks; the lines themselves (and their hover tips)
-// stay visible at every zoom. Same gating idea as the CLOSE_ZOOM features,
-// just at a much shallower threshold.
-const SECONDARY_BADGE_ZOOM = 3;
 // The horizon compass starts fading in once zoomed in this far — well before the LS
 // labels finish spreading, so it shows up quickly.
 const COMPASS_ZOOM = 4;
@@ -1551,48 +1565,50 @@ function setupCustomLayers(
   });
 }
 
-function pushData(map: maplibregl.Map, data: MapData) {
-  const acg = map.getSource('acg-lines') as maplibregl.GeoJSONSource | undefined;
-  const ang = map.getSource('angle-lines') as maplibregl.GeoJSONSource | undefined;
-  if (ang) ang.setData(data.angleLines);
-  const par = map.getSource('parans') as maplibregl.GeoJSONSource | undefined;
-  const ls = map.getSource('local-space') as maplibregl.GeoJSONSource | undefined;
-  const lsx = map.getSource('acg-ls-cross') as maplibregl.GeoJSONSource | undefined;
-  const zen = map.getSource('acg-zenith') as maplibregl.GeoJSONSource | undefined;
-  const ecl = map.getSource('ecliptic') as maplibregl.GeoJSONSource | undefined;
-  const ecp = map.getSource('eclipse') as maplibregl.GeoJSONSource | undefined;
-  if (acg) acg.setData(data.lines);
-  if (par) par.setData(data.parans);
-  if (ls) ls.setData(data.localSpace);
-  if (lsx) lsx.setData(data.localSpaceCross);
-  if (zen) zen.setData(data.zenith);
-  if (ecl) ecl.setData(data.ecliptic ?? EMPTY_FC());
-  if (ecp) ecp.setData(data.eclipse ?? EMPTY_FC());
+// The FeatureCollection last pushed to each source (by object identity, keyed per
+// map). Every collection arrives memoized from the App, so identity is a reliable
+// change signal — and it lets pushData skip the sources whose data didn't change.
+// Without this, the data effect re-fed ALL sources whenever ANY one collection
+// changed, and each setData makes geojson-vt re-tile that source's full geometry:
+// during timeline playback (~8 recomputes/s, only the overlay actually changing)
+// that re-tiled the natal lines, aspect/midpoint overlays, parans etc. for nothing.
+const lastPushed = new WeakMap<maplibregl.Map, Record<string, unknown>>();
 
-  const acgOv = map.getSource('acg-lines-ov') as
-    | maplibregl.GeoJSONSource
-    | undefined;
-  const parOv = map.getSource('parans-ov') as
-    | maplibregl.GeoJSONSource
-    | undefined;
-  const lsOv = map.getSource('local-space-ov') as
-    | maplibregl.GeoJSONSource
-    | undefined;
-  const zenOv = map.getSource('acg-zenith-ov') as
-    | maplibregl.GeoJSONSource
-    | undefined;
-  const eclOv = map.getSource('ecliptic-ov') as
-    | maplibregl.GeoJSONSource
-    | undefined;
+// Identity-stable "nothing here" collection for the gated sources (a fresh
+// `EMPTY_FC()` per call would look like new data and defeat the skip above).
+const EMPTY_DATA: FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+// `freshSources` forces every push: pass it right after setupCustomLayers (initial
+// load and theme/style reloads), where the just-recreated sources hold empty data
+// regardless of what was pushed before.
+function pushData(map: maplibregl.Map, data: MapData, freshSources = false) {
+  if (freshSources || !lastPushed.has(map)) lastPushed.set(map, {});
+  const prev = lastPushed.get(map)!;
+  const push = (id: string, fc: Parameters<maplibregl.GeoJSONSource['setData']>[0]) => {
+    if (prev[id] === fc) return;
+    const src = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData(fc);
+    prev[id] = fc;
+  };
+  push('acg-lines', data.lines);
+  push('angle-lines', data.angleLines);
+  push('parans', data.parans);
+  push('local-space', data.localSpace);
+  push('acg-ls-cross', data.localSpaceCross);
+  push('acg-zenith', data.zenith);
+  push('ecliptic', data.ecliptic ?? EMPTY_DATA);
+  push('eclipse', data.eclipse ?? EMPTY_DATA);
+
   const ov = data.overlay;
-  if (acgOv) acgOv.setData(ov ? ov.lines : EMPTY_FC());
-  if (parOv) parOv.setData(ov ? ov.parans : EMPTY_FC());
-  if (lsOv) lsOv.setData(ov ? ov.localSpace : EMPTY_FC());
+  push('acg-lines-ov', ov ? ov.lines : EMPTY_DATA);
+  push('parans-ov', ov ? ov.parans : EMPTY_DATA);
+  push('local-space-ov', ov ? ov.localSpace : EMPTY_DATA);
   // Overlay zenith stamps + the overlay ecliptic — already empty unless Overlay ▸
   // Display ▸ Zenith is on (the App gates ov.zenith / ov.ecliptic), so this just
   // mirrors the source data.
-  if (zenOv) zenOv.setData(ov ? ov.zenith : EMPTY_FC());
-  if (eclOv) eclOv.setData(ov ? ov.ecliptic : EMPTY_FC());
+  push('acg-zenith-ov', ov ? ov.zenith : EMPTY_DATA);
+  push('ecliptic-ov', ov ? ov.ecliptic : EMPTY_DATA);
 }
 
 export const Map = forwardRef<MapHandle, MapProps>(function Map({
@@ -1777,34 +1793,51 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     [flyToPoint],
   );
 
-  const computeBadges = useCallback(() => {
+  // `reuseHudRects` is passed by the per-frame rAF path (scheduleBadges): the HUD
+  // panels can't move during a pan/zoom — anything that CAN move them (a HUD drag,
+  // a map resize) clears hudRectsRef first — so mid-move frames reuse the cached
+  // rects instead of paying 9 querySelectorAll + getBoundingClientRect layouts per
+  // frame. Every other caller (moveend, data pushes, theme reloads) reads fresh.
+  const hudRectsRef = useRef<AvoidRect[] | null>(null);
+  const computeBadges = useCallback((reuseHudRects = false) => {
     const map = mapRef.current;
     if (!map) return;
     const z = map.getZoom();
-    setZoom(z);
-    // Secondary badge sets (aspect/midpoint + paran labels) only past the
-    // shallow zoom threshold — see SECONDARY_BADGE_ZOOM. Recomputed on every
-    // move, so they pop in/out as the camera crosses it.
-    const secondary = z >= SECONDARY_BADGE_ZOOM;
+    // Rounded so an easing's trailing sub-0.01 zoom deltas can't defeat React's
+    // same-value bailout; nothing reading `zoom` cares about finer granularity.
+    setZoom(Math.round(z * 100) / 100);
     const data = dataRef.current;
-    const natal = computeLineBadges(map, data.lines.features, BADGE_INSET, false);
-    const ov = data.overlay?.lines
-      ? computeLineBadges(map, data.overlay.lines.features, BADGE_INSET, true)
-      : [];
-    // Aspect/midpoint lines ride the natal badge path (they're natal-derived);
-    // their aspect/planetB props give them distinct group keys and badge faces.
-    const ang = secondary
-      ? computeLineBadges(map, data.angleLines.features, BADGE_INSET, false, 'ang')
-      : [];
     const cont = map.getContainer();
-    const dodged = dodgeBadges(
-      natal.concat(ov, ang),
-      readHudRects(map),
-      cont.clientWidth,
-      cont.clientHeight,
-      BADGE_INSET,
-    );
-    setBadges(dodged);
+    // Edge badges are skipped while the camera is in motion: they fade out
+    // within ~0.12s of movestart (.is-moving — in motion they'd float detached
+    // from their lines) and the moveend pass re-anchors them before the fade-in,
+    // so recomputing them per move frame is pure waste. It is also the heaviest
+    // badge set by far — with the aspect/midpoint overlays on it anchors and
+    // dodges hundreds of badges (they render at ALL zooms; an earlier zoom gate
+    // was a render-cost mitigation this skip makes unnecessary). The paran and
+    // local-space sections below still run per frame: the compass and paran
+    // rows track the camera live and are far cheaper.
+    if (!map.isMoving()) {
+      const natal = computeLineBadges(map, data.lines.features, BADGE_INSET, false);
+      const ov = data.overlay?.lines
+        ? computeLineBadges(map, data.overlay.lines.features, BADGE_INSET, true)
+        : [];
+      // Aspect/midpoint lines ride the natal badge path (they're natal-derived);
+      // their aspect/planetB props give them distinct group keys and badge faces.
+      const ang = computeLineBadges(map, data.angleLines.features, BADGE_INSET, false, 'ang');
+      const hudRects =
+        reuseHudRects && hudRectsRef.current
+          ? hudRectsRef.current
+          : (hudRectsRef.current = readHudRects(map));
+      const dodged = dodgeBadges(
+        natal.concat(ov, ang),
+        hudRects,
+        cont.clientWidth,
+        cont.clientHeight,
+        BADGE_INSET,
+      );
+      setBadges((cur) => (sameBadges(cur, dodged) ? cur : dodged));
+    }
 
     // Paran centre badges: one per visible paran, parked on its latitude row at the
     // map's centre longitude (the visible meridian arc). In 2D that's screen-centre;
@@ -1836,11 +1869,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         });
       });
     };
-    if (secondary) {
-      pushParans(data.parans, false);
-      if (data.overlay?.parans) pushParans(data.overlay.parans, true);
-    }
-    setParanBadges(pbadges);
+    pushParans(data.parans, false);
+    if (data.overlay?.parans) pushParans(data.overlay.parans, true);
+    setParanBadges((cur) => (sameBadges(cur, pbadges) ? cur : pbadges));
 
     // Local-space badges: one "LS + glyph" per planet, on a fixed-pixel ring around
     // the origin at the outward (toward-planet) azimuth — measured from the on-screen
@@ -1854,7 +1885,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       !isOccluded(map, origin.lng, origin.lat)
     ) {
       const oc = map.project([origin.lng, origin.lat]);
-      setOriginScreen({ x: oc.x, y: oc.y });
+      setOriginScreen((cur) =>
+        cur && cur.x === oc.x && cur.y === oc.y ? cur : { x: oc.x, y: oc.y },
+      );
       const north = screenAngleOfNorth(map, origin.lng, origin.lat);
       setOriginNorthDeg((north * 180) / Math.PI);
       const r = lsBadgeRadius(map.getZoom());
@@ -1942,13 +1975,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     } else {
       setOriginScreen(null);
     }
-    setLocalSpaceBadges(lsbadges);
+    setLocalSpaceBadges((cur) => (sameBadges(cur, lsbadges) ? cur : lsbadges));
   }, []);
   const scheduleBadges = useCallback(() => {
     if (badgeRafRef.current) return;
     badgeRafRef.current = requestAnimationFrame(() => {
       badgeRafRef.current = 0;
-      computeBadges();
+      // The rAF path fires per move frame — reuse the cached HUD rects (see
+      // computeBadges; anything that moves a panel clears the cache first).
+      computeBadges(true);
     });
   }, [computeBadges]);
 
@@ -2091,7 +2126,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         measureColorRef.current,
         ZENITH_DISC_COLORS[themeRef.current],
       );
-      pushData(map, dataRef.current);
+      pushData(map, dataRef.current, true);
       computeBadgesRef.current();
     });
 
@@ -2108,11 +2143,29 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // The timeline bar can be dragged anywhere; it dispatches 'astro:hud-moved'
     // when it moves, so re-dodge the labels off its new rect right away rather
     // than waiting for the next pan/zoom. A stable wrapper (created once with the
-    // map) lets add/removeEventListener pair on the same reference.
-    const onHudMoved = () => scheduleBadgesRef.current();
+    // map) lets add/removeEventListener pair on the same reference. The drag has
+    // invalidated the cached HUD rects, so drop them before the recompute.
+    const onHudMoved = () => {
+      hudRectsRef.current = null;
+      scheduleBadgesRef.current();
+    };
     window.addEventListener('astro:hud-moved', onHudMoved);
+    // A container resize reflows the HUD panels too (and the rects are measured
+    // in container coordinates), so the cache is stale the same way.
+    map.on('resize', () => {
+      hudRectsRef.current = null;
+      scheduleBadgesRef.current();
+    });
 
     mapRef.current = map;
+
+    // Console / automation escape hatch for performance diagnosis (e.g. counting
+    // 'render' events while idle). Always on in dev; in built output it is a
+    // runtime opt-in via the sessionStorage flag — deliberately, so a deployed
+    // build can be probed too. Exposes nothing devtools can't already reach.
+    if (import.meta.env.DEV || sessionStorage.getItem('astro:perf-probe')) {
+      (window as unknown as { __astroMap?: maplibregl.Map }).__astroMap = map;
+    }
 
     return () => {
       if (badgeRafRef.current) cancelAnimationFrame(badgeRafRef.current);
@@ -2145,7 +2198,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       await ensureGlyphImages(map, theme === 'dark' ? '' : LABEL_HALO_COLORS[theme], ZENITH_DISC_COLORS[theme], theme);
       applyDetailToggles(map, detailRef.current);
       setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current, ZENITH_DISC_COLORS[theme]);
-      pushData(map, dataRef.current);
+      pushData(map, dataRef.current, true);
       computeBadges();
     });
   }, [theme, computeBadges]);
@@ -2331,7 +2384,26 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }
       onHover?.(e.lngLat.lat, e.lngLat.lng);
     };
+    // Mousemove can fire well above the display rate (high-polling mice), and each
+    // processed event pays three queryRenderedFeatures hit-tests plus the onHover
+    // chain in the App — coalesce to at most one processed event per animation
+    // frame, always handling the latest cursor position.
+    let moveRaf = 0;
+    let pendingMove: maplibregl.MapMouseEvent | null = null;
+    const queueMove = (e: maplibregl.MapMouseEvent) => {
+      pendingMove = e;
+      if (moveRaf) return;
+      moveRaf = requestAnimationFrame(() => {
+        moveRaf = 0;
+        const ev = pendingMove;
+        pendingMove = null;
+        if (ev) handleMove(ev);
+      });
+    };
     const handleLeave = () => {
+      // Drop any queued move so a stale frame can't resurrect the tips just
+      // after the cursor left the map.
+      pendingMove = null;
       clearZenith();
       clearCross();
       clearLine();
@@ -2369,13 +2441,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // Remove the pin, or — with none placed — drop the natal pin.
       onRightClick?.();
     };
-    map.on('mousemove', handleMove);
+    map.on('mousemove', queueMove);
     map.on('mouseout', handleLeave);
     map.on('click', handleClick);
     map.on('dblclick', handleDoubleClick);
     map.on('contextmenu', handleContext);
     return () => {
-      map.off('mousemove', handleMove);
+      if (moveRaf) cancelAnimationFrame(moveRaf);
+      map.off('mousemove', queueMove);
       map.off('mouseout', handleLeave);
       map.off('click', handleClick);
       map.off('dblclick', handleDoubleClick);
@@ -2578,7 +2651,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         .setLngLat([pin.lng, pin.lat])
         .addTo(map);
     } else {
+      const prev = markerRef.current.getLngLat();
+      const moved = prev.lng !== pin.lng || prev.lat !== pin.lat;
       markerRef.current.setLngLat([pin.lng, pin.lat]);
+      // The placement pulses are finite (see Map.css — they'd otherwise keep the
+      // compositor busy forever), so replay them when the pin relocates: swapping
+      // each inert pulse span for a fresh clone restarts its CSS animation. The
+      // glass body (and the listeners, which live on the marker root) stay put.
+      if (moved) {
+        for (const span of markerRef.current
+          .getElement()
+          .querySelectorAll('.map-pin-aura, .map-pin-glow')) {
+          span.replaceWith(span.cloneNode(false));
+        }
+      }
     }
     const el = markerRef.current.getElement();
     el.classList.toggle('natal', pinType === 'natal');

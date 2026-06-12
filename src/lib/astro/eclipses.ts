@@ -40,6 +40,12 @@ import { SIGN_GLYPHS } from './glyphChars';
 import type { EclipseIsoStep } from '../overlayPrefs';
 import type { Theme } from '../theme';
 
+// Re-exported so the App can reach the per-location lookup through its one lazy
+// `import('./lib/astro/eclipses')` — this module (with its catalog JSON and the
+// eclipsePath fitting code) stays out of the main bundle until eclipse mode is
+// first opened, and a second entry point would split the chunk for nothing.
+export { localCircumstances } from './eclipsePath';
+
 // ── Catalog ───────────────────────────────────────────────────────────────────
 
 export interface EclipseCatalogRow {

@@ -60,63 +60,18 @@
 
 import { unwrapLongitudes } from './dateline';
 
-// ── Ephemeris adapter ─────────────────────────────────────────────────────────
-
-/** Apparent geocentric Sun + Moon at one UT instant, equinox of date. */
-export interface SunMoonSample {
-  sunRa: number;     // radians
-  sunDec: number;
-  sunDistAu: number; // AU
-  moonRa: number;
-  moonDec: number;
-  moonDistAu: number;
-  gast: number;      // Greenwich apparent sidereal time, radians
-}
-
-export interface EclipseEphemeris {
-  sunMoon(jdUT: number): SunMoonSample;
-}
-
-/** The slice of a Swiss eclipse-search result the geometry needs (UT JDs). */
-export interface EclipseEventTimes {
-  maximum: number;
-  /** First/last external penumbral contact (P1/P4) — the global eclipse window. */
-  partialBegin: number;
-  partialEnd: number;
-}
-
-/**
- * Correct @swisseph's SolarEclipse field misalignment. The wrapper names its
- * fields as if the C library's tret[] array started with the phase contacts,
- * but tret[1] is actually "eclipse at local apparent noon", so every named
- * field is one slot off (verified against NASA's published contact times for
- * 2024-04-08): `partialEnd` holds P1, `centralBegin` holds P4, and the true
- * center-line end (tret[7]) is not exposed at all. We take only the fields
- * with reliable meanings; the axis-on-Earth window is re-derived from our own
- * elements in computeElements, which the lost tret slots would have fed.
- */
-export function normalizeSwissEclipse(raw: {
-  maximum: number;
-  partialEnd: number;   // tret[2] — P1, partial begin
-  centralBegin: number; // tret[3] — P4, partial end
-}): EclipseEventTimes {
-  const maximum = raw.maximum;
-  let partialBegin = raw.partialEnd;
-  let partialEnd = raw.centralBegin;
-  // Extreme grazing eclipses (e.g. 1935-01-05, magnitude 0.0013 — the penumbra
-  // barely kisses Earth) come back from Swiss with ZEROED contact slots, and
-  // JD 0 would send the element sampler to 4713 BC, far outside the ephemeris
-  // files. P1/P4 physically fall within ~3 h of maximum, so substitute a ±3 h
-  // window when a slot is not a sane contact time; an over-wide window is
-  // harmless downstream (off-Earth instants already trace as gaps).
-  if (!(partialBegin > maximum - 1 && partialBegin < maximum)) {
-    partialBegin = maximum - 3 / 24;
-  }
-  if (!(partialEnd > maximum && partialEnd < maximum + 1)) {
-    partialEnd = maximum + 3 / 24;
-  }
-  return { maximum, partialBegin, partialEnd };
-}
+// The ephemeris adapter (SunMoonSample / EclipseEphemeris / EclipseEventTimes /
+// normalizeSwissEclipse) lives in eclipseAdapter.ts so the entry bundle's
+// ephemeris.ts can import it without dragging this module — which is meant to
+// ride the lazy eclipses chunk — into the main bundle. Re-exported here for
+// the consumers of this module's geometry API (eclipses.ts, verify scripts).
+export {
+  normalizeSwissEclipse,
+  type EclipseEphemeris,
+  type EclipseEventTimes,
+  type SunMoonSample,
+} from './eclipseAdapter';
+import type { EclipseEphemeris, EclipseEventTimes, SunMoonSample } from './eclipseAdapter';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

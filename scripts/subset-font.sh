@@ -13,8 +13,19 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SYM="src/fonts/NotoSansSymbols/NotoSansSymbols-VariableFont_wght.ttf"
-SYM2="src/fonts/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+# The source TTFs aren't kept in the repo (~1.5 MB of binaries that only this
+# script reads) — fetch them from the google/fonts mirror of the upstream Noto
+# releases. The OFL.txt files under src/fonts/ stay committed: they license the
+# shipped subset, not just the sources.
+GF="https://raw.githubusercontent.com/google/fonts/main/ofl"
+SYM="$TMP/NotoSansSymbols-VariableFont_wght.ttf"
+SYM2="$TMP/NotoSansSymbols2-Regular.ttf"
+curl -fsSL "$GF/notosanssymbols/NotoSansSymbols%5Bwght%5D.ttf" -o "$SYM"
+curl -fsSL "$GF/notosanssymbols2/NotoSansSymbols2-Regular.ttf" -o "$SYM2"
+
 OUT="src/fonts/subset-NotoSansSymbols-Regular.woff2"
 
 # Codepoints drawn from Noto Sans Symbols: PLANET_GLYPHS (minus Pluto) + the 12
@@ -27,9 +38,6 @@ SYM_UNICODES="2609-260D,263D,263F,2640-2646,2648-2653,26B3-26B9,FE0E"
 # From Noto Sans Symbols 2: Pluto Form Two, plus the square (U+25A1) and trine
 # (U+25B3) aspect shapes (ASPECT_GLYPHS) — Geometric Shapes live only here.
 SYM2_UNICODES="25A1,25B3,2BD3"
-
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
 
 # Pin the Symbols weight axis to Regular (400) → a small static font, then subset.
 python -m fontTools.varLib.instancer "$SYM" wght=400 -o "$TMP/sym-reg.ttf" >/dev/null

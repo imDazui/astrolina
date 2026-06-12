@@ -29,7 +29,10 @@ import {
 // under Vite chunking + static hosting).
 import wasmUrl from '@swisseph/browser/dist/swisseph.wasm?url';
 import type { BirthData } from './birthData';
-import { normalizeSwissEclipse, type SunMoonSample } from './astro/eclipsePath';
+// From the adapter module, NOT eclipsePath — a static import of eclipsePath
+// here would hoist the whole Besselian-fitting module into the entry bundle,
+// defeating the lazy eclipses chunk (see eclipseAdapter.ts).
+import { normalizeSwissEclipse, type SunMoonSample } from './astro/eclipseAdapter';
 
 export type PlanetName =
   | 'Sun'
@@ -171,30 +174,42 @@ let initPromise: Promise<void> | null = null;
 // engine silently fell back to Moshier. Exposed via isEphemerisDataVerified().
 let dataFilesVerified = false;
 
-// JPL-grade Swiss data we self-host under public/ephe/ (covers 1800–2399 AD):
-// planets (sepl), Moon (semo), and the main-belt asteroids incl. Chiron (seas).
-const EPHE_FILES = ['sepl_18.se1', 'semo_18.se1', 'seas_18.se1'].map((name) => ({
+// JPL-grade Swiss data we self-host under public/ephe/ (covers 1800–2399 AD).
+// Planets (sepl) and the Moon (semo) load at startup — every chart needs them.
+// The main-belt asteroids incl. Chiron (seas) load on demand instead (see
+// ensureAsteroidEphemeris): most sessions never enable an asteroid body, so its
+// download shouldn't gate first paint or cost those sessions the bandwidth.
+const epheFile = (name: string) => ({
   name,
   url: `${import.meta.env.BASE_URL}ephe/${name}`,
-}));
+});
+const CORE_EPHE_FILES = [epheFile('sepl_18.se1'), epheFile('semo_18.se1')];
+const SEAS_EPHE_FILE = epheFile('seas_18.se1');
 
 export function initEphemeris(
-  onStage?: (stage: 'planets' | 'moon' | 'asteroids') => void,
+  onStage?: (stage: 'planets' | 'moon') => void,
 ): Promise<void> {
   if (!initPromise) {
     initPromise = (async () => {
       const inst = new SwissEphemeris();
       await inst.init(wasmUrl);
-      // Load the .se1 files one at a time so the loading screen can report each
-      // step (semo, the lunar file, is by far the largest). Each call fetches the
-      // file into the WASM virtual FS and re-points the ephemeris path; the
-      // SwissEphemeris flag then finds them.
+      // Fetch both core files concurrently — total wait is the larger file
+      // (semo) rather than the sum. Each call fetches into the WASM virtual FS
+      // and (re)points the ephemeris path; the SwissEphemeris flag then finds
+      // them. The stage callbacks keep the loading screen honest: "planets"
+      // fires as the downloads start, "moon" once the smaller file is in and
+      // only the lunar tables are still streaming. The stage hop rides a
+      // two-handler then() (error side a no-op) and the single wait/rejection
+      // point is the Promise.all — awaiting the files one at a time would
+      // leave the other's rejection unhandled when the first one fails.
       onStage?.('planets');
-      await inst.loadEphemerisFiles([EPHE_FILES[0]]); // sepl — planets
-      onStage?.('moon');
-      await inst.loadEphemerisFiles([EPHE_FILES[1]]); // semo — Moon
-      onStage?.('asteroids');
-      await inst.loadEphemerisFiles([EPHE_FILES[2]]); // seas — asteroids
+      const sepl = inst.loadEphemerisFiles([CORE_EPHE_FILES[0]]);
+      const semo = inst.loadEphemerisFiles([CORE_EPHE_FILES[1]]);
+      sepl.then(
+        () => onStage?.('moon'),
+        () => {},
+      );
+      await Promise.all([sepl, semo]);
       swe = inst;
       // Confirm the engine is actually reading the .se1 files and not silently
       // on Moshier (a failed file load throws nothing). See ephemerisReadsSwissData.
@@ -209,6 +224,43 @@ export function initEphemeris(
     })();
   }
   return initPromise;
+}
+
+// ── Deferred asteroid data ────────────────────────────────────────────────────
+// Chiron/Ceres/Pallas/Juno/Vesta come from seas_18.se1 (Lilith is a lunar point
+// and needs no asteroid file). Until the file is in, sampleBody throws for these
+// five and they simply drop out of charts — same shape as an out-of-range date —
+// so loading late is safe: the App bumps a state counter when this resolves and
+// the chart memos resample with the new data.
+const SEAS_BODIES: ReadonlySet<PlanetName> = new Set([
+  'Chiron',
+  'Ceres',
+  'Pallas',
+  'Juno',
+  'Vesta',
+]);
+
+/** True when `names` contains a body whose positions need the asteroid file. */
+export function needsAsteroidEphemeris(names: Iterable<PlanetName>): boolean {
+  for (const n of names) if (SEAS_BODIES.has(n)) return true;
+  return false;
+}
+
+let seasPromise: Promise<void> | null = null;
+
+/** Fetch the asteroid ephemeris once, after core init. Re-callable on failure. */
+export function ensureAsteroidEphemeris(): Promise<void> {
+  if (!seasPromise) {
+    seasPromise = (async () => {
+      await initEphemeris();
+      await eph().loadEphemerisFiles([SEAS_EPHE_FILE]);
+    })().catch((err: unknown) => {
+      // Reset so a later toggle retries the download instead of failing forever.
+      seasPromise = null;
+      throw err;
+    });
+  }
+  return seasPromise;
 }
 
 function eph(): SwissEphemeris {

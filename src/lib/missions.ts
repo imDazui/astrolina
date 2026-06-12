@@ -40,7 +40,7 @@ export type MissionGesture =
   | 'shift'
   | 'click'
   | 'shift-drag'
-  | 'ctrl-drag';
+  | 'right-drag';
 
 export interface Mission {
   /** Stable id, unique within its set (used for progress + React keys). */
@@ -142,7 +142,7 @@ export const MISSION_SETS: readonly MissionSet[] = [
       },
       {
         id: 'perspective',
-        gesture: 'ctrl-drag',
+        gesture: 'right-drag',
         labelKey: 'missions.zoomBasics.perspective',
         event: 'pitch-rotate',
         only3d: true,

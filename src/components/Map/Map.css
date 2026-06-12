@@ -302,7 +302,16 @@
 /* Location-color aura radiating from the pin's centre, dissipating outward — the
    inverted edge-glow: once a pin is placed the screen-edge vignette gives way to
    this, concentrated on the pin. currentColor tracks the .natal state (gold for a
-   pinned spot, green for the natal pin), matching the old edge glow's per-state hue. */
+   pinned spot, green for the natal pin), matching the old edge glow's per-state hue.
+
+   The pulse is FINITE (a few breaths after each placement, then a calm static
+   aura). An infinite animation would keep the compositor producing frames at full
+   refresh rate for as long as a pin exists — measurable idle CPU/GPU burn over a
+   full-screen WebGL canvas. The keyframes start and end on the resting opacity,
+   so when the animation releases the property nothing visibly jumps. Replays per
+   placement: a re-placed pin builds fresh marker DOM, and a RELOCATED pin (whose
+   marker persists) gets its pulse spans swapped for clones in the Map's pin
+   effect — don't remove that swap; nothing else restarts these animations. */
 .map-pin-aura {
   position: absolute;
   left: 50%;
@@ -312,24 +321,28 @@
   margin: -170px 0 0 -170px;
   border-radius: 50%;
   background: radial-gradient(circle closest-side, currentColor, transparent 72%);
-  opacity: 0.2;
+  opacity: 0.18;
   pointer-events: none;
-  animation: map-pin-aura-pulse 5.2s ease-in-out infinite;
+  animation: map-pin-aura-pulse 5.2s ease-in-out 4;
 }
 
 @keyframes map-pin-aura-pulse {
   0%,
   100% {
-    opacity: 0.12;
+    opacity: 0.18;
   }
   50% {
-    opacity: 0.26;
+    opacity: 0.3;
   }
 }
 
 /* Pulse ring centered on the pin TIP — the actual point on the map — so it pings
    out from the exact location, not the icon's middle. currentColor tracks the
-   .natal state set on .map-pin. (84/88 of the viewBox height ≈ the tip.) */
+   .natal state set on .map-pin. (84/88 of the viewBox height ≈ the tip.)
+   Finite for the same idle-power reason as the aura: four pings, then the settle
+   animation (delayed to start as the last ping ends, 4 × 1.8s) eases the ring into
+   its static resting look — which equals the base style, so once both animations
+   finish nothing moves or jumps. */
 .map-pin-glow {
   position: absolute;
   left: 50%;
@@ -339,9 +352,11 @@
   margin: -11px 0 0 -11px;
   border-radius: 50%;
   border: 2px solid currentColor;
-  opacity: 0.7;
+  opacity: 0.5;
   pointer-events: none;
-  animation: map-pin-pulse 1.8s ease-out infinite;
+  animation:
+    map-pin-pulse 1.8s ease-out 4,
+    map-pin-settle 0.6s ease 7.2s;
 }
 
 @keyframes map-pin-pulse {
@@ -352,6 +367,17 @@
   100% {
     transform: scale(2.1);
     opacity: 0;
+  }
+}
+
+@keyframes map-pin-settle {
+  from {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 0.5;
   }
 }
 
@@ -372,16 +398,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .map-pin-body {
-    animation: none;
-  }
-  .map-pin-glow {
-    animation: none;
-    opacity: 0.5;
-  }
+  /* The finite pulses end on these same base values, so dropping the animations
+     lands on exactly the steady-state look. */
+  .map-pin-body,
+  .map-pin-glow,
   .map-pin-aura {
     animation: none;
-    opacity: 0.18;
   }
 }
 

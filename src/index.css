@@ -348,26 +348,29 @@ body,
 
 /* Color comes from the single --map-accent source (root data-mapstate). Only the
    pin-less hover state lights the edges now; natal (nothing placed) stays dark, and
-   the pinned states hand off to the pin-centered .map-pin-aura. */
+   the pinned states hand off to the pin-centered .map-pin-aura.
+   The pulse is finite (same idle-power reasoning as .map-pin-aura — a cursor parked
+   over the map shouldn't keep the compositor busy forever): a few breaths around the
+   steady opacity it then rests at, restarting whenever the hover state re-applies. */
 .map-edge-glow[data-state='hover'] {
   --glow-color: rgba(var(--map-accent-rgb), 0.85);
-  animation: edge-pulse 5.2s ease-in-out infinite;
+  opacity: 0.38;
+  animation: edge-pulse 5.2s ease-in-out 4;
 }
 
 @keyframes edge-pulse {
   0%,
   100% {
-    opacity: 0.22;
+    opacity: 0.38;
   }
   50% {
-    opacity: 0.5;
+    opacity: 0.55;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .map-edge-glow[data-state='hover'] {
     animation: none;
-    opacity: 0.38;
   }
 }
 
