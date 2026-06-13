@@ -533,29 +533,32 @@ export function BirthDataFields({
             {/* Quick UTC-offset picker, synced with the IANA dropdown through the
                 shared effective zone (both write zoneOverride): for users who know
                 their offset and don't want to scroll the full list. Choosing one
-                sets the matching fixed Etc/GMT zone. */}
-            <select
-              className="tz-select tz-utc-select"
-              aria-label={t('chartForm.tz.utcLabel')}
-              disabled={!tzReady || !!initial?.composite}
-              value={tzReady ? utcSelectValue : ''}
-              onChange={(e) => setZoneOverride(e.target.value || null)}
-            >
-              {!tzReady && <option value="">—</option>}
-              {/* Labels drop the "UTC" prefix (e.g. "+05:30") so they fit the narrow
-                  box; the field's aria-label still says it's the UTC offset. */}
-              {tzReady && !offsetIsWholeHour && (
-                <option value={effectiveZone ?? ''}>
-                  {formatUtcOffset(effectiveOffset).replace('UTC', '')}
-                </option>
-              )}
-              {tzReady &&
-                UTC_OFFSETS.map((o) => (
-                  <option key={o} value={etcZoneForOffset(o)}>
-                    {formatUtcOffset(o).replace('UTC', '')}
+                sets the matching fixed Etc/GMT zone. Hidden until a birthplace is
+                chosen — there's no offset to show before then. */}
+            {selectedPlace && (
+              <select
+                className="tz-select tz-utc-select"
+                aria-label={t('chartForm.tz.utcLabel')}
+                disabled={!tzReady || !!initial?.composite}
+                value={tzReady ? utcSelectValue : ''}
+                onChange={(e) => setZoneOverride(e.target.value || null)}
+              >
+                {!tzReady && <option value="">—</option>}
+                {/* Labels keep the full "UTC±HH:MM" (acronym included); the box is
+                    sized to fit it. */}
+                {tzReady && !offsetIsWholeHour && (
+                  <option value={effectiveZone ?? ''}>
+                    {formatUtcOffset(effectiveOffset)}
                   </option>
-                ))}
-            </select>
+                )}
+                {tzReady &&
+                  UTC_OFFSETS.map((o) => (
+                    <option key={o} value={etcZoneForOffset(o)}>
+                      {formatUtcOffset(o)}
+                    </option>
+                  ))}
+              </select>
+            )}
             <TipButton
               type="button"
               className="tz-auto"

@@ -249,6 +249,24 @@ export function saveLsOrigin(o: LsOriginPref) {
   localStorage.setItem(LS_ORIGIN_KEY, o);
 }
 
+// Local-space line/compass visibility (Location view). Both use "hide" polarity so
+// the stored default (absent / not '1') leaves everything shown — the prior behavior.
+const LS_HIDE_INBOUND_KEY = 'astro:ls-hide-inbound:v1';
+export function loadLsHideInbound(): boolean {
+  return localStorage.getItem(LS_HIDE_INBOUND_KEY) === '1';
+}
+export function saveLsHideInbound(v: boolean) {
+  localStorage.setItem(LS_HIDE_INBOUND_KEY, v ? '1' : '0');
+}
+
+const LS_HIDE_COMPASS_KEY = 'astro:ls-hide-compass:v1';
+export function loadLsHideCompass(): boolean {
+  return localStorage.getItem(LS_HIDE_COMPASS_KEY) === '1';
+}
+export function saveLsHideCompass(v: boolean) {
+  localStorage.setItem(LS_HIDE_COMPASS_KEY, v ? '1' : '0');
+}
+
 // The 'progressed' overlay's symbolic clock (secondary vs tertiary).
 const PROGRESSION_TYPE_KEY = 'astro:progression-type:v1';
 const PROGRESSION_TYPES: ProgressionType[] = ['secondary', 'tertiary'];

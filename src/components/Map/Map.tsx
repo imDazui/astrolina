@@ -202,7 +202,9 @@ interface ParanBadge {
 // size, the map's "Zoom out" escape button appears, AND the pin's reverse-geocode
 // upgrades to the precise network lookup (App reads it via onDetailZoomChange →
 // detailZoom). Lower it to make all of those kick in a little earlier.
-const CLOSE_ZOOM = 8.5;
+// Exported so the Location view's "Fly to origin" can land at exactly this zoom —
+// deep enough that the "Zoom out" escape button (gated on zoom >= CLOSE_ZOOM) shows.
+export const CLOSE_ZOOM = 8.5;
 // Once zoomed past CLOSE_ZOOM (LS labels at full radius) a subtle "Zoom out"
 // escape button appears; clicking it eases back to this wide overview in one step.
 const ZOOM_OUT_TARGET = 3;
@@ -867,6 +869,9 @@ interface MapProps {
   /** Origin the local-space lines radiate from (pin or birthplace) — the centre of
    *  the LS label ring. Null when local space is hidden. */
   localSpaceOrigin?: { lat: number; lng: number } | null;
+  /** Hide the local-horizon compass wheel (Location ▸ Local Space ▸ Hide compass).
+   *  Render-time gating only — not draw data, so it's a plain prop, not in MapData. */
+  hideCompass?: boolean;
   /** Planet-glyph stamps at each body's zenith (sub-planetary) point, on its MC line. */
   zenith: FeatureCollection<Point, ZenithProps>;
   /** The ecliptic great circle (zodiac) projected to its sub-points — a subtle
@@ -951,14 +956,19 @@ interface MapData {
 export interface MapHandle {
   /** Recenter the map on a coordinate. Without `zoom`, eases to a usable zoom if
    *  zoomed out (keeping the current zoom otherwise); with `zoom`, sets it exactly
-   *  (so Teleport can frame a country wide vs a city tight). */
+   *  (so the Location search can frame a country wide vs a city tight). */
   flyTo: (lat: number, lng: number, zoom?: number) => void;
-  /** Like flyTo, but first stashes the current view as the Teleport "go back"
-   *  target (so a search jump can be undone). */
-  teleportTo: (lat: number, lng: number, zoom?: number) => void;
+  /** Like flyTo, but first stashes the current view as the Location "go back"
+   *  target (so a search jump can be undone). The method keeps its "teleport"
+   *  name — it describes the camera mechanic, not the (renamed) view. Returns the
+   *  coordinate "Go back" would now fly to (the pre-jump centre), so the caller can
+   *  label it; null if there's no map. */
+  teleportTo: (lat: number, lng: number, zoom?: number) => { lat: number; lng: number } | null;
   /** Fly to the stashed "go back" view, swapping it for the current one — so the
-   *  same control toggles between the two locations (two-deep back/forward). */
-  teleportBack: () => void;
+   *  same control toggles between the two locations (two-deep back/forward).
+   *  Returns the coordinate the NEXT press would fly to (so the caller can label it
+   *  and know it moved), or null when there's no stashed view yet. */
+  teleportBack: () => { lat: number; lng: number } | null;
   zoomIn: () => void;
   zoomOut: () => void;
 }
@@ -1865,6 +1875,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   localSpace,
   localSpaceCross,
   localSpaceOrigin,
+  hideCompass,
   zenith,
   ecliptic,
   overlay,
@@ -1896,7 +1907,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const { t, labels } = useT();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  // One-slot "go back" view for the Teleport window: teleportTo() stashes the
+  // One-slot "go back" view for the Location window: teleportTo() stashes the
   // pre-jump camera here; teleportBack() swaps current<->saved so the same button
   // toggles between the two locations (two-deep, like browser back/forward).
   const teleportBackRef = useRef<SavedView | null>(null);
@@ -1909,15 +1920,18 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     },
     teleportTo: (lat: number, lng: number, zoom?: number) => {
       const map = mapRef.current;
-      if (!map) return;
+      if (!map) return null;
       // Remember where we are so "Go back" can return here.
       teleportBackRef.current = snapshotView(map);
       flyWithSidebarOffset(map, lng, lat, zoom ?? Math.max(map.getZoom(), 4));
+      // [lng, lat] -> {lat, lng}: the pre-jump centre "Go back" now targets.
+      const c = teleportBackRef.current.center;
+      return { lat: c[1], lng: c[0] };
     },
     teleportBack: () => {
       const map = mapRef.current;
       const saved = teleportBackRef.current;
-      if (!map || !saved) return;
+      if (!map || !saved) return null;
       // Swap: stash the current view so a second press goes forward again.
       teleportBackRef.current = snapshotView(map);
       map.flyTo({
@@ -1927,6 +1941,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         pitch: saved.pitch,
         essential: true,
       });
+      // The just-stashed current view is what the NEXT press will fly to.
+      const c = teleportBackRef.current.center;
+      return { lat: c[1], lng: c[0] };
     },
     zoomIn: () => mapRef.current?.zoomIn(),
     zoomOut: () => mapRef.current?.zoomOut(),
@@ -3244,7 +3261,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           );
         })}
       </div>
-      {compassP !== null && originScreen && (
+      {!hideCompass && compassP !== null && originScreen && (
         <LocalHorizonWheel
           cx={originScreen.x}
           cy={originScreen.y}

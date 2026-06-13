@@ -212,8 +212,8 @@
   gap: 4px;
 }
 
-/* The Parans / Local Space toggles sit under Lines without their own heading, so
-   add a little breathing room a section title would otherwise provide. */
+/* The Parans / Aspect / Midpoint toggles sit under Lines without their own heading,
+   so add a little breathing room a section title would otherwise provide. */
 .sidebar .line-type-grid + .technique-list {
   margin-top: 7px;
 }

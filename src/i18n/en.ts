@@ -34,8 +34,8 @@ import { importChartModal } from './en/importChartModal';
 import { lineMeanings } from './en/lineMeanings';
 import { map } from './en/map';
 import { missions } from './en/missions';
+import { locationHud } from './en/locationHud';
 import { synastryHud } from './en/synastryHud';
-import { teleportHud } from './en/teleportHud';
 import { wheel } from './en/wheel';
 
 export const en = {
@@ -58,7 +58,7 @@ export const en = {
   lineMeanings,
   map,
   missions,
+  locationHud,
   synastryHud,
-  teleportHud,
   wheel,
 } as const;

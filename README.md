@@ -16,7 +16,7 @@
 **A modern, web-based astrocartography tool for curious minds.** Plot a natal
 chart's planetary lines on an interactive world map and drag to relocate with the
 chart wheel updating live. It features planet-to-planet parans and local space,
-eight house systems, geodetic (Mundane) lines, time overlays (transits, secondary
+ten house systems, geodetic (Mundane) lines, time overlays (transits, secondary
 progressions, solar-arc and primary directions) with an animated timeline, and
 synastry. Every position is computed client-side with the Swiss Ephemeris. Runs
 on any device, no install.
@@ -51,8 +51,8 @@ geocoding.
   on the active pin.
 - **Relocated chart wheel**: a compact wheel beside the map, plus an expandable
   detailed view with an Advanced mode (degree · sign · minute readouts and the
-  aspect grid). Eight house systems: Placidus (default), Koch, Regiomontanus,
-  Campanus, Porphyry, Alcabitus, Whole Sign, Equal.
+  aspect grid). Ten house systems: Placidus (default), Koch, Regiomontanus,
+  Campanus, Porphyry, Alcabitus, Meridian, Morinus, Whole Sign, Equal.
 - **Calculation conventions** as live toggles: Celestial vs geodetic (Mundane)
   line placement, In Mundo vs In Zodiaco, house system, tropical vs sidereal
   zodiac (Lahiri / Fagan-Bradley), lunar-node type (mean/true), and the

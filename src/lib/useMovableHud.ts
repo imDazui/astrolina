@@ -61,7 +61,7 @@ export interface MovableHudOptions {
   /** localStorage key for the saved position. Default: the shared bottom-bar key
    *  (timeline + synastry occupy one slot, so they share it). */
   posKey?: string;
-  /** A free-floating window (e.g. Teleport) rather than a bottom-docked bar: it
+  /** A free-floating window (e.g. the Location window) rather than a bottom-docked bar: it
    *  always carries an explicit position (starting from `initial`), never snaps to
    *  a CSS dock, and double-click re-centres it instead of docking. */
   floating?: boolean;

@@ -55,7 +55,7 @@ The app computes all **planet-to-planet** parans:
 
 ## Local space
 
-Local-space lines are compass bearings: each body's line leaves the **origin** — the placed pin by default (relocated local space), or the birthplace via the Origin setting — at the body's azimuth, and is extended as a **great circle** (not a rhumb line: a constant-compass course would miss the body's sub-point by thousands of kilometres, while the great circle passes exactly through it, which is what the line labels' click-to-fly relies on). Each body draws two halves, *out* toward the body and *in* the opposite way, on a spherical Earth.
+Local-space lines are compass bearings: each body's line leaves the **origin** — the placed pin by default (relocated local space), or the birthplace via the Origin setting — at the body's azimuth, and is extended as a **great circle** (not a rhumb line: a constant-compass course would miss the body's sub-point by thousands of kilometres, while the great circle passes exactly through it, which is what the line labels' click-to-fly relies on). Each body draws two halves, *out* toward the body and *in* the opposite way (the inbound half can be hidden), on a spherical Earth.
 
 One consistency note: with **In Zodiaco** or **Mundane** selected, local-space bearings follow the same ecliptic-projected positions as the rest of the linework (so the lines still thread the drawn zenith stamps), while the Advanced table's azimuth column always reports each body's *true* sky position — for a high-latitude body like Pluto the two can differ by a few degrees.
 
@@ -124,7 +124,7 @@ overlays — is ordinary natal math.
   the lunar nodes follow the sidebar's mean/true setting; the South Node
   midpoint stays exactly antipodal to the North Node midpoint by construction.
 - **The map frame** (which fixes every MC/IC/ASC/DSC line, the relocated
-  angles, all eight house systems, parans, and local space) is the
+  angles, all ten house systems, parans, and local space) is the
   **shorter-arc midpoint of the two charts' Greenwich sidereal times**. It is
   realized as a real stored moment: the UT minute nearest the Davison
   time-midpoint whose sidereal time matches that midpoint frame (the

@@ -25,5 +25,8 @@ export const common = {
     // a double-click) — then the plain-text explanation after it.
     dockKey: 'Double',
     dockHint: 'to dock · snaps to centre',
+    // Same "Double 🖱" pill, but for the floating windows (Location / Guides) that
+    // recentre on double-click instead of docking — they have no dock home.
+    recentreHint: 'to recentre',
   },
 } as const;

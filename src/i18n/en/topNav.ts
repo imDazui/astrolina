@@ -78,7 +78,7 @@ export const topNav = {
     coordinates: 'Coordinates',
     minimap: 'Minimap',
     settings: 'Settings',
-    teleport: 'Teleport',
+    location: 'Location',
     info: 'Info',
     // Opens the guides as a reference — a glossary of the map controls you can revisit.
     guides: 'Guides',

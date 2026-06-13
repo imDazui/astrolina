@@ -27,7 +27,7 @@ import { Sidebar, type SidebarSection } from './components/Sidebar/Sidebar';
 import { TimelineHud } from './components/TimelineHud/TimelineHud';
 import { SynastryHud } from './components/SynastryHud/SynastryHud';
 import { EclipseHud } from './components/EclipseHud/EclipseHud';
-import { TeleportHud } from './components/TeleportHud/TeleportHud';
+import { LocationHud } from './components/LocationHud/LocationHud';
 import { TopNav, type MapTool } from './components/TopNav/TopNav';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
@@ -130,6 +130,8 @@ import {
   loadOverlayMode,
   loadOverlayPartner,
   loadLsOrigin,
+  loadLsHideInbound,
+  loadLsHideCompass,
   loadOverlayStep,
   loadOrbZoneKm,
   loadParanOrbDeg,
@@ -154,6 +156,8 @@ import {
   saveOverlayMode,
   saveOverlayPartner,
   saveLsOrigin,
+  saveLsHideInbound,
+  saveLsHideCompass,
   saveOverlayStep,
   saveOrbZoneKm,
   saveParanOrbDeg,
@@ -308,10 +312,18 @@ function mergeNodeParans(
 function filterLocalSpace(
   fc: FeatureCollection<LineString, LocalSpaceProps>,
   planets: Set<PlanetName>,
+  // Drop the inbound (antipodal) half of each line when hiding inbound. Filtering
+  // here covers natal, overlay, and promoted in one place — and because the crossing
+  // dots derive from the filtered set, their inbound dots drop with the lines.
+  hideInbound = false,
 ): FeatureCollection<LineString, LocalSpaceProps> {
   return {
     type: 'FeatureCollection',
-    features: fc.features.filter((f) => planets.has(f.properties.planet)),
+    features: fc.features.filter(
+      (f) =>
+        planets.has(f.properties.planet) &&
+        (!hideInbound || f.properties.direction !== 'in'),
+    ),
   };
 }
 function filterZenith(
@@ -466,14 +478,15 @@ export default function App() {
     () => localStorage.getItem('astro:view-settings:v1') !== '0',
   );
   // The active-systems status chip (View ▸ Info), above the map attribution.
-  // Off by default (like Teleport) — an opt-in detail, not always-on chrome.
+  // Off by default (like the Location window) — an opt-in detail, not always-on chrome.
   const [showInfo, setShowInfo] = useState(
     () => localStorage.getItem('astro:view-info:v1') === '1',
   );
-  // The movable Teleport search window (View ▸ Teleport) — an on-demand tool, so
-  // it defaults OFF (unlike the always-on readouts above).
-  const [showTeleport, setShowTeleport] = useState(
-    () => localStorage.getItem('astro:view-teleport:v1') === '1',
+  // The movable Location window (View ▸ Location) — search/relocate the camera plus
+  // the local-space controls. An on-demand tool, so it defaults OFF (unlike the
+  // always-on readouts above).
+  const [showLocation, setShowLocation] = useState(
+    () => localStorage.getItem('astro:view-location:v1') === '1',
   );
   // The expanded wheel's Advanced reading mode (degree rim, aspect grid,
   // coordinate tables). Lifted here — same storage key the sidebar always
@@ -497,11 +510,16 @@ export default function App() {
   // guideIndex is which met-guide the pager is showing (reset to the first on open).
   const [showGuides, setShowGuides] = useState(false);
   const [guideIndex, setGuideIndex] = useState(0);
-  // Teleport "Go back" toggle state: 'none' until the first jump, then 'back'
+  // Location "Go back" toggle state: 'none' until the first jump, then 'back'
   // (next press returns to where you were) <-> 'forward' (returns to the place you
   // jumped to). Held here so it survives the window closing/reopening.
-  const [teleportReturn, setTeleportReturn] = useState<'none' | 'back' | 'forward'>(
+  const [locationReturn, setLocationReturn] = useState<'none' | 'back' | 'forward'>(
     'none',
+  );
+  // The coordinate the next Go back / Return press would fly to — surfaced in the
+  // Location view as a rough place name so the user sees where they're about to jump.
+  const [teleportTarget, setTeleportTarget] = useState<{ lat: number; lng: number } | null>(
+    null,
   );
   // Overlay ▸ Display ▸ Timeline: when off, the bottom timeline collapses to just
   // its draggable nub (no ruler/transport).
@@ -613,6 +631,14 @@ export default function App() {
     saveProjection(projection);
   }, [projection]);
 
+  // Settings toggles that the global hotkeys below flip (Shift+S / N / O). Declared
+  // here, ahead of the keydown effect that references their setters, so the shortcut
+  // closures bind to live state. Their persistence effects and companions (starSet,
+  // orb widths) stay with the rest of the map state further down.
+  const [showStarLines, setShowStarLines] = useState(loadShowStarLines);
+  const [showNightShade, setShowNightShade] = useState(loadShowNightShade);
+  const [showOrbZones, setShowOrbZones] = useState(loadShowOrbZones);
+
   // Global keyboard shortcuts. Space centers the map on the active pin (or drops
   // a natal pin and centers if none is set); 'b' toggles the chart sidebar; the
   // other letter keys toggle the View items / tools / add a chart. All are ignored
@@ -678,16 +704,45 @@ export default function App() {
         }
         return;
       }
+      // Backspace → Location ▸ Go back / Go forward, available anywhere (the Location
+      // window needn't be open). It swaps between the current view and the one before
+      // the last jump; teleportBack reports whether it actually moved, so an unused
+      // Backspace falls through to the browser. Skipped while typing so text fields
+      // keep their native delete.
+      if (e.key === 'Backspace') {
+        if (isTypingField(el)) return;
+        const target = mapRef.current?.teleportBack();
+        if (target) {
+          setLocationReturn((d) => (d === 'forward' ? 'back' : 'forward'));
+          setTeleportTarget(target);
+          e.preventDefault();
+        }
+        return;
+      }
       if (isTypingField(el)) return;
-      // Shift+letter: the Map-filters technique toggles (Parans / Local Space /
-      // Aspect Lines / Midpoint Lines). Kept on Shift so the plain letters stay
-      // free for the view/tool hotkeys below.
+      // Shift+letter: Settings toggles (map-filter lines, Appearance details, and
+      // projection mode). Kept on Shift so the plain letters stay free for the
+      // view/tool hotkeys below; each is mirrored by a "Shift X" pill in the sidebar.
+      // (Local space moved to the Location view — plain 'L'.)
       if (e.shiftKey) {
         switch (e.key.toLowerCase()) {
+          // Map filters ▸ line toggles.
           case 'p': setShowParans((v) => !v); break;
-          case 'l': setShowLocalSpace((v) => !v); break;
           case 'a': setShowAspectLines((v) => !v); break;
           case 'm': setShowMidpointLines((v) => !v); break;
+          case 's': setShowStarLines((v) => !v); break;
+          // Appearance ▸ Details toggles.
+          case 'r':
+            // Roads + rivers move together (one Details switch), so stay in sync.
+            setShowRoads((v) => !v);
+            setShowRivers((v) => !v);
+            break;
+          case 'l': setShowLabels((v) => !v); break;
+          case 'n': setShowNightShade((v) => !v); break;
+          case 'o': setShowOrbZones((v) => !v); break;
+          // Appearance ▸ Projection (absolute mode, not a toggle).
+          case 'f': setProjection('2d'); break;
+          case 'g': setProjection('3d'); break;
           default: return;
         }
         e.preventDefault();
@@ -697,8 +752,10 @@ export default function App() {
         case 'm': setShowChart((v) => !v); break;
         case 'c': setShowCoords((v) => !v); break;
         case 's': setShowSettings((v) => !v); break;
+        case 'l': setShowLocation((v) => !v); break;
+        // Guides (re)opens at the first guide; Info is a plain toggle.
+        case 'g': setGuideIndex(0); setShowGuides((v) => !v); break;
         case 'i': setShowInfo((v) => !v); break;
-        case 'g': setShowTeleport((v) => !v); break;
         case 'o':
           setOverlayMode(
             (mode) =>
@@ -757,8 +814,8 @@ export default function App() {
     localStorage.setItem('astro:view-info:v1', showInfo ? '1' : '0');
   }, [showInfo]);
   useEffect(() => {
-    localStorage.setItem('astro:view-teleport:v1', showTeleport ? '1' : '0');
-  }, [showTeleport]);
+    localStorage.setItem('astro:view-location:v1', showLocation ? '1' : '0');
+  }, [showLocation]);
   useEffect(() => {
     localStorage.setItem('astro:sidebar-section:v1', sidebarSection ?? 'none');
   }, [sidebarSection]);
@@ -925,6 +982,12 @@ export default function App() {
   // Local-space origin: follow the pin (default) or stay on the birthplace.
   const [lsOrigin, setLsOrigin] = useState(loadLsOrigin);
   useEffect(() => saveLsOrigin(lsOrigin), [lsOrigin]);
+  // Local-space line/compass visibility (Location view). "Hide" polarity, default
+  // false → inbound lines and compass both shown until the user hides them.
+  const [hideLsInbound, setHideLsInbound] = useState(loadLsHideInbound);
+  useEffect(() => saveLsHideInbound(hideLsInbound), [hideLsInbound]);
+  const [hideLsCompass, setHideLsCompass] = useState(loadLsHideCompass);
+  useEffect(() => saveLsHideCompass(hideLsCompass), [hideLsCompass]);
   // Local space radiates from the placed pin (relocated local space) — or the
   // birthplace, either when nothing is pinned or when the Origin setting pins
   // it home explicitly. Also the anchor for the LS ring labels.
@@ -955,15 +1018,15 @@ export default function App() {
   // (Named *Line to avoid colliding with the `ecliptic` projection-mode variable.)
   const eclipticLine = useMemo(() => generateEcliptic(jd, meridianLng), [jd, meridianLng]);
 
-  // Fixed-star lines toggle + which bundled set draws.
-  const [showStarLines, setShowStarLines] = useState(loadShowStarLines);
+  // Which bundled fixed-star set draws (the showStarLines toggle is declared up top
+  // with the other hotkey-driven settings).
   const [starSet, setStarSet] = useState(loadStarSet);
   useEffect(() => saveShowStarLines(showStarLines), [showStarLines]);
   useEffect(() => saveStarSet(starSet), [starSet]);
 
-  // Night-side shading toggle (the wash itself is computed below, after the
-  // eclipse selection it keys its moment from is known).
-  const [showNightShade, setShowNightShade] = useState(loadShowNightShade);
+  // Night-side shading persistence (the showNightShade toggle is declared up top
+  // with the other hotkey-driven settings; the wash itself is computed below, after
+  // the eclipse selection it keys its moment from is known).
   useEffect(() => saveShowNightShade(showNightShade), [showNightShade]);
 
 
@@ -1047,19 +1110,28 @@ export default function App() {
     [allParans, visiblePlanets, showParans],
   );
 
+  // Local space renders only while the Location view (its home) is open: closing the
+  // view hides the lines as if LS were off, but showLocalSpace keeps the user's last
+  // on/off preference, so reopening the view restores it. The in-view toggle still
+  // reads/writes the raw showLocalSpace preference (it's only shown when the view is
+  // open, where lsActive === showLocalSpace anyway).
+  const lsActive = showLocation && showLocalSpace;
   const localSpace = useMemo(
     () =>
-      showLocalSpace
-        ? withDarkMoon(filterLocalSpace(allLocalSpace, visiblePlanets), theme)
+      lsActive
+        ? withDarkMoon(
+            filterLocalSpace(allLocalSpace, visiblePlanets, hideLsInbound),
+            theme,
+          )
         : EMPTY_FC,
-    [allLocalSpace, visiblePlanets, showLocalSpace, theme],
+    [allLocalSpace, visiblePlanets, lsActive, hideLsInbound, theme],
   );
   // Dots where the (visible) local-space lines cross the (visible) birth-chart
   // lines — only while local space is shown.
   const localSpaceCross = useMemo(
     () =>
-      showLocalSpace ? generateLocalSpaceCrossings(localSpace, lines) : EMPTY_FC,
-    [showLocalSpace, localSpace, lines],
+      lsActive ? generateLocalSpaceCrossings(localSpace, lines) : EMPTY_FC,
+    [lsActive, localSpace, lines],
   );
   const zenith = useMemo(
     () =>
@@ -1448,7 +1520,7 @@ export default function App() {
             visiblePlanets,
           )
         : EMPTY_FC,
-      localSpace: showLocalSpace
+      localSpace: lsActive
         ? withDarkMoon(
             filterLocalSpace(
               generateLocalSpace(
@@ -1458,6 +1530,7 @@ export default function App() {
                 overlayLayer.originLng,
               ),
               visiblePlanets,
+              hideLsInbound,
             ),
             theme,
           )
@@ -1486,7 +1559,7 @@ export default function App() {
         ? generateEcliptic(overlayLayer.jd, ovMeridianLng)
         : EMPTY_FC,
     };
-  }, [overlayLayer, visiblePlanets, visibleLineTypes, showParans, showLocalSpace, showOverlayZenith, coordSystem, lineSystem, theme]);
+  }, [overlayLayer, visiblePlanets, visibleLineTypes, showParans, lsActive, hideLsInbound, showOverlayZenith, coordSystem, lineSystem, theme]);
 
   // Overlay planets in ecliptic coords for the bi-wheel. (For solar-arc the
   // speed/retrograde sampling is meaningless, but the wheel only reads `lon`.)
@@ -1518,8 +1591,8 @@ export default function App() {
 
   // Orb-of-influence zones (Filters ▸ Orb Zones): bands around whatever line set
   // the map is actually drawing (natal, or the promoted overlay standing in for
-  // it), so the zones always shadow the visible lines.
-  const [showOrbZones, setShowOrbZones] = useState(loadShowOrbZones);
+  // it), so the zones always shadow the visible lines. The showOrbZones toggle is
+  // declared up top with the other hotkey-driven settings; its widths live here.
   const [orbZoneKm, setOrbZoneKm] = useState(loadOrbZoneKm);
   const [paranOrbDeg, setParanOrbDeg] = useState(loadParanOrbDeg);
   useEffect(() => saveShowOrbZones(showOrbZones), [showOrbZones]);
@@ -1568,7 +1641,7 @@ export default function App() {
         theme,
       ),
     );
-    const pLocalSpace = showLocalSpace
+    const pLocalSpace = lsActive
       ? withDarkMoon(
           filterLocalSpace(
             generateLocalSpace(
@@ -1578,6 +1651,7 @@ export default function App() {
               overlayLayer.originLng,
             ),
             visiblePlanets,
+            hideLsInbound,
           ),
           theme,
         )
@@ -1599,7 +1673,7 @@ export default function App() {
           )
         : EMPTY_FC,
       localSpace: pLocalSpace,
-      localSpaceCross: showLocalSpace
+      localSpaceCross: lsActive
         ? generateLocalSpaceCrossings(pLocalSpace, pLines)
         : EMPTY_FC,
       // Zeniths + ecliptic follow the Zenith toggle here too, so it still has an effect
@@ -1629,7 +1703,8 @@ export default function App() {
     visiblePlanets,
     visibleLineTypes,
     showParans,
-    showLocalSpace,
+    lsActive,
+    hideLsInbound,
     showOverlayZenith,
     coordSystem,
     lineSystem,
@@ -1994,17 +2069,25 @@ export default function App() {
     if (detailZoom) triggerMission('zoom-threshold', true);
   }, [detailZoom, triggerMission]);
 
-  // An only3d mission (e.g. "change perspective") is not applicable in 2D — it's never
-  // recorded there, just shown as already satisfied. So persist a set once every mission
-  // is either done OR not-applicable; the recordEvent path alone can't finish such a set.
   const is3d = projection === '3d';
-  useEffect(() => {
-    if (!missionSet) return;
-    const allDone = missionSet.missions.every(
-      (m) => missionProgress.has(m.id) || (m.only3d && !is3d),
-    );
-    if (allDone) completeMission(missionSet.id);
-  }, [missionSet, missionProgress, is3d, completeMission]);
+  // Close the live mission guide, persisting its set as complete when every mission is
+  // done OR not-applicable in the current mode (an only3d mission — e.g. "change
+  // perspective" — counts as satisfied in 2D, where it can't be performed). The
+  // recordEvent path alone can't finish such a set, so this covers it.
+  //
+  // Deferred to CLOSE, not run eagerly the instant the 2D-applicable missions finish:
+  // an early completion would lock the set, so if the user then switched to 3D — where
+  // the perspective mission becomes applicable and the guide re-exposes it — recordEvent
+  // would skip the already-completed set and the pitch-rotate could never tick it off.
+  const closeMission = useCallback(() => {
+    if (missionSet) {
+      const allDone = missionSet.missions.every(
+        (m) => missionProgress.has(m.id) || (m.only3d && !is3d),
+      );
+      if (allDone) completeMission(missionSet.id);
+    }
+    closeMissionGuide();
+  }, [missionSet, missionProgress, is3d, completeMission, closeMissionGuide]);
 
   // Switch the active chart. If you switch TO the chart currently being compared in
   // synastry, drop it as the partner — you can't compare someone to themselves, and
@@ -2206,10 +2289,11 @@ export default function App() {
               : localSpaceCross
         }
         localSpaceOrigin={
-          showLocalSpace && !hideNatalLinework
+          lsActive && !hideNatalLinework
             ? (promoted ? promoted.origin : localSpaceOrigin)
             : null
         }
+        hideCompass={hideLsCompass}
         zenith={hideNatalLinework ? EMPTY_FC : promoted ? promoted.zenith : zenith}
         ecliptic={
           hideNatalLinework ? null : promoted ? promoted.eclipticLine : eclipticLine
@@ -2234,7 +2318,12 @@ export default function App() {
         onMeasure={setMeasure}
         onMeasureCancel={stopMeasure}
         onMissionEvent={recordMission}
-        keepZoomOutVisible={missionSet?.id === 'zoom-basics'}
+        // Force the Zoom-out button to stay put while the zoom guide is up so the user
+        // can still complete its click mission even after scrolling out manually — but
+        // ONLY until that mission is done. Once clicked, drop back to the normal
+        // zoom>=CLOSE_ZOOM rule so the button actually disappears (the click zooms out
+        // below the threshold).
+        keepZoomOutVisible={missionSet?.id === 'zoom-basics' && !missionProgress.has('zoom-out')}
         onHover={onHover}
         onLeave={onLeave}
         onPlacePin={onPlacePin}
@@ -2267,8 +2356,6 @@ export default function App() {
           setAllLineTypes={setAllLineTypes}
           showParans={showParans}
           setShowParans={setShowParans}
-          showLocalSpace={showLocalSpace}
-          setShowLocalSpace={setShowLocalSpace}
           showAspectLines={showAspectLines}
           setShowAspectLines={setShowAspectLines}
           showMidpointLines={showMidpointLines}
@@ -2290,8 +2377,6 @@ export default function App() {
           setShowNightShade={setShowNightShade}
           progressionType={progressionType}
           setProgressionType={setProgressionType}
-          lsOrigin={lsOrigin}
-          setLsOrigin={setLsOrigin}
           lineSystem={lineSystem}
           setLineSystem={setLineSystem}
           coordSystem={coordSystem}
@@ -2390,8 +2475,8 @@ export default function App() {
         setShowSettings={setShowSettings}
         showInfo={showInfo}
         setShowInfo={setShowInfo}
-        showTeleport={showTeleport}
-        setShowTeleport={setShowTeleport}
+        showLocation={showLocation}
+        setShowLocation={setShowLocation}
         showGuides={showGuides}
         setShowGuides={toggleGuides}
         openExtensions={openExtensions}
@@ -2448,18 +2533,34 @@ export default function App() {
           }}
         />
       )}
-      {showTeleport && (
-        <TeleportHud
+      {showLocation && (
+        <LocationHud
           onFlyTo={(lat, lng, zoom) => {
-            mapRef.current?.teleportTo(lat, lng, zoom);
-            setTeleportReturn('back');
+            const target = mapRef.current?.teleportTo(lat, lng, zoom);
+            if (target) {
+              setLocationReturn('back');
+              setTeleportTarget(target);
+            }
           }}
           onGoBack={() => {
-            mapRef.current?.teleportBack();
-            setTeleportReturn((d) => (d === 'forward' ? 'back' : 'forward'));
+            const target = mapRef.current?.teleportBack();
+            if (target) {
+              setLocationReturn((d) => (d === 'forward' ? 'back' : 'forward'));
+              setTeleportTarget(target);
+            }
           }}
-          backState={teleportReturn}
-          onClose={() => setShowTeleport(false)}
+          backState={locationReturn}
+          teleportTarget={teleportTarget}
+          onClose={() => setShowLocation(false)}
+          showLocalSpace={showLocalSpace}
+          setShowLocalSpace={setShowLocalSpace}
+          lsOrigin={lsOrigin}
+          setLsOrigin={setLsOrigin}
+          hideLsInbound={hideLsInbound}
+          setHideLsInbound={setHideLsInbound}
+          hideLsCompass={hideLsCompass}
+          setHideLsCompass={setHideLsCompass}
+          localSpaceOrigin={localSpaceOrigin}
         />
       )}
       {/* Registered HUD extensions (registerMapExtension) — add-ons attach here
@@ -2563,7 +2664,7 @@ export default function App() {
             set={missionSet}
             completed={missionProgress}
             is3d={is3d}
-            onClose={closeMissionGuide}
+            onClose={closeMission}
           />
         )
       )}

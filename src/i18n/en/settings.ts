@@ -46,13 +46,13 @@ export const settings = {
     roadsRivers: 'Roads/Rivers',
     roadsRiversHint:
       'Shows the basemap’s road and river linework. Hide it for a cleaner backdrop behind the astrocartography lines.',
-    placeNames: 'Place Names',
+    placeNames: 'Names/Labels',
     placeNamesHint:
       'Shows the basemap’s city and country text. This is separate from the ACG line-label badges, which stay either way.',
   },
   shiftTag: 'Shift',
   // Overlay ▸ Display toggles — each a show/hide switch with a hover hint, like the
-  // Parans / Local Space toggles in Map filters.
+  // Parans toggle in Map filters.
   timelineBar: {
     title: 'Timeline Bar',
     hint: 'The date scrubber at the bottom of the map.',
@@ -72,16 +72,7 @@ export const settings = {
     title: 'Parans',
     hint: 'Latitudes where two bodies are angular at the same moment, one rising as another culminates, and so on. Drawn as horizontal lines across the map.',
   },
-  localSpace: {
-    title: 'Local Space',
-    hint: 'Directional lines radiating from the origin point, each pointing to a planet’s compass bearing in the local sky.',
-  },
-  lsOrigin: {
-    pin: 'From the pin',
-    pinHint: 'Relocated local space: the lines radiate from the active pin (the birthplace when nothing is pinned).',
-    birthplace: 'From the birthplace',
-    birthplaceHint: 'The lines stay anchored to the birthplace even while a pin is down.',
-  },
+  // Local Space + its origin selector moved to the Location view (i18n locationHud).
   aspectLines: {
     title: 'Aspect Lines',
     hint: 'Lines where a planet is sextile (⚹), square (□) or trine (△) to the MC or Ascendant — each aspect twice, once per side. A trine to the Asc doubles as a sextile to the Dsc; hover a line to see both readings. Conjunctions and oppositions are the planet’s own angle lines, already on the map.',
@@ -148,7 +139,7 @@ export const settings = {
     allHint: 'The whole bundled working set (40 stars). Expect a busy map.',
   },
   nightShade: {
-    title: 'Night Shades',
+    title: 'Night Shade',
     hint: 'Shades the half of Earth in night at the displayed moment: the chart’s own moment, the target date under Transits or CCG, and the eclipse maximum in Eclipses mode (a lunar eclipse is visible from exactly that night side).',
   },
   orbZones: {

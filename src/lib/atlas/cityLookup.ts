@@ -133,7 +133,7 @@ export function searchCity(query: string, limit = 8): GeocodeResult[] {
   return [...prefix, ...substr].slice(0, limit).map(toResult);
 }
 
-// ── Place search (Teleport) ─────────────────────────────────────────────────
+// ── Place search (Location window) ──────────────────────────────────────────
 // Like searchCity, but also matches country + admin-1 (state/province) names so
 // you can jump to a whole region, and tags each hit with its precision so the
 // caller can zoom proportionally — country wide, city tight.

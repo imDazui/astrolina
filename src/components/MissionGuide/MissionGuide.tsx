@@ -8,18 +8,24 @@ import { useRef } from 'react';
 import type { MissionGesture, MissionSet } from '../../lib/missions';
 import type { MsgKey } from '../../i18n/types';
 import { useMovableHud } from '../../lib/useMovableHud';
-import { TipButton } from '../ui/HoverTip';
+import { HoverTip, TipButton } from '../ui/HoverTip';
+import { useHoverTip } from '../ui/useHoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
 import { useT } from '../../i18n';
 import './MissionGuide.css';
 
 const MAX_W = 360;
 
-// Default home: top-right, clear of the nav. The panel is movable, so this is just
-// where it first appears (and where a double-click on the grip resets it to).
+// Default home: inset a quarter of the viewport from the top and right edges (not
+// hugging the corner). The panel is movable, so this is just where it first appears
+// (and where a double-click on the grip resets it to). x is floored at 16 so a narrow
+// viewport — where the panel is nearly full-width — can't push it off the left edge.
 function topRightHome(): { x: number; y: number } {
   const w = Math.min(MAX_W, window.innerWidth - 32);
-  return { x: Math.max(16, window.innerWidth - w - 24), y: 80 };
+  return {
+    x: Math.max(16, window.innerWidth - w - window.innerWidth * 0.25),
+    y: window.innerHeight * 0.25,
+  };
 }
 
 // The map-pin icon (same teardrop as the sidebar's relocated-chart readout) — used in
@@ -172,6 +178,14 @@ export function MissionGuide({
     initial: topRightHome,
     persist: false,
   });
+  // Move/recentre hint on the drag handle — same shared .ui-tip as the overlay HUDs
+  // (the "Double 🖱" pill), but double-click recentres rather than docks (no dock home).
+  const {
+    ref: dragTipRef,
+    pos: dragTipPos,
+    show: showDragTip,
+    hide: hideDragTip,
+  } = useHoverTip<HTMLDivElement>('top');
 
   // A 3D-only mission is "satisfied" in 2D without being completed (see na below).
   const allDone = set.missions.every(
@@ -194,10 +208,30 @@ export function MissionGuide({
       style={pos ? { left: pos.x, top: pos.y } : undefined}
     >
       <div className="mg-header">
-        <div className="mg-drag" {...handleProps}>
+        <div
+          className="mg-drag"
+          {...handleProps}
+          ref={dragTipRef}
+          onMouseEnter={showDragTip}
+          onMouseLeave={hideDragTip}
+        >
           <span className="hud-grip" aria-hidden="true" />
           <span className="mg-title">{t(set.titleKey)}</span>
         </div>
+        <HoverTip
+          pos={dragging ? null : dragTipPos}
+          placement="top"
+          title={t('common.hud.dragToMove')}
+          hint={
+            <span className="hud-dock-line">
+              <span className="ui-tip-hotkey hud-dock-key">
+                {t('common.hud.dockKey')}
+                <ClickIcon className="hud-dock-icon" />
+              </span>
+              {t('common.hud.recentreHint')}
+            </span>
+          }
+        />
         <TipButton
           type="button"
           className="mg-close"

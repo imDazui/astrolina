@@ -33,7 +33,7 @@ import type { MapProjectionMode } from '../../lib/projection';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ASPECT_GLYPHS, PLANET_GLYPHS, SIGN_GLYPHS } from '../../lib/astro/glyphChars';
 import { ASPECT_NAMES, type AspectName, type AspectOrbs } from '../../lib/aspectPrefs';
-import type { LsOriginPref, StarSetPref } from '../../lib/overlayPrefs';
+import type { StarSetPref } from '../../lib/overlayPrefs';
 import type { ProgressionType } from '../../lib/astro/timeline';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import { TipButton } from '../ui/HoverTip';
@@ -56,8 +56,6 @@ interface SidebarProps {
   setAllLineTypes: (visible: boolean) => void;
   showParans: boolean;
   setShowParans: (v: boolean) => void;
-  showLocalSpace: boolean;
-  setShowLocalSpace: (v: boolean) => void;
   showAspectLines: boolean;
   setShowAspectLines: (v: boolean) => void;
   showMidpointLines: boolean;
@@ -78,8 +76,6 @@ interface SidebarProps {
   setShowNightShade: (v: boolean) => void;
   progressionType: ProgressionType;
   setProgressionType: (p: ProgressionType) => void;
-  lsOrigin: LsOriginPref;
-  setLsOrigin: (o: LsOriginPref) => void;
   lineSystem: LineSystem;
   setLineSystem: (s: LineSystem) => void;
   coordSystem: CoordSystem;
@@ -312,11 +308,14 @@ function HintOption({
   onSelect,
   label,
   hint,
+  hotkey,
 }: {
   selected: boolean;
   onSelect: () => void;
   label: string;
   hint: string;
+  /** Optional keyboard shortcut, shown as the yellow pill in the hover tip. */
+  hotkey?: string;
 }) {
   return (
     <TipToggle
@@ -324,6 +323,7 @@ function HintOption({
       onClick={onSelect}
       title={label}
       hint={hint}
+      hotkey={hotkey}
     >
       <span className="radio">{selected ? '●' : '○'}</span>
       <span className="label">{label}</span>
@@ -776,8 +776,6 @@ export function Sidebar({
   setAllLineTypes,
   showParans,
   setShowParans,
-  showLocalSpace,
-  setShowLocalSpace,
   showAspectLines,
   setShowAspectLines,
   showMidpointLines,
@@ -798,8 +796,6 @@ export function Sidebar({
   setShowNightShade,
   progressionType,
   setProgressionType,
-  lsOrigin,
-  setLsOrigin,
   lineSystem,
   setLineSystem,
   coordSystem,
@@ -983,24 +979,26 @@ export function Sidebar({
               }}
               ariaPressed={roadsRiversOn}
               title={t('settings.details.roadsRivers')}
+              hotkey="Shift R"
               hint={t('settings.details.roadsRiversHint')}
             >
               <EyeIcon open={roadsRiversOn} />
               <span className="name">{t('settings.details.roadsRivers')}</span>
             </TipToggle>
-            {/* "Place Names" hides basemap text (city / country names); named so
+            {/* "Names/Labels" hides basemap text (city / country names); named so
                 it isn't mistaken for the ACG line-label badges. */}
             <TipToggle
               className={`tech-toggle ${showLabels ? 'on' : 'off'}`}
               onClick={() => setShowLabels(!showLabels)}
               ariaPressed={showLabels}
               title={t('settings.details.placeNames')}
+              hotkey="Shift L"
               hint={t('settings.details.placeNamesHint')}
             >
               <EyeIcon open={showLabels} />
               <span className="name">{t('settings.details.placeNames')}</span>
             </TipToggle>
-            {/* Night Shades lives here with the other basemap-appearance toggles
+            {/* Night Shade lives here with the other basemap-appearance toggles
                 (it shades the night half of Earth) rather than with the chart
                 line filters. */}
             <TipToggle
@@ -1008,6 +1006,7 @@ export function Sidebar({
               onClick={() => setShowNightShade(!showNightShade)}
               ariaPressed={showNightShade}
               title={t('settings.nightShade.title')}
+              hotkey="Shift N"
               hint={t('settings.nightShade.hint')}
             >
               <EyeIcon open={showNightShade} />
@@ -1021,6 +1020,7 @@ export function Sidebar({
               onClick={() => setShowOrbZones(!showOrbZones)}
               ariaPressed={showOrbZones}
               title={t('settings.orbZones.title')}
+              hotkey="Shift O"
               hint={t('settings.orbZones.hint')}
             >
               <EyeIcon open={showOrbZones} />
@@ -1061,6 +1061,7 @@ export function Sidebar({
                 onSelect={() => setProjection(value)}
                 label={labels.projection(value)}
                 hint={labels.projectionHint(value)}
+                hotkey={value === '2d' ? 'Shift F' : 'Shift G'}
               />
             ))}
           </ul>
@@ -1144,7 +1145,7 @@ export function Sidebar({
             })}
           </ul>
 
-          {/* Parans / Local Space sit under Lines without their own heading. */}
+          {/* Parans / Aspect / Midpoint toggles sit under Lines without their own heading. */}
           <ul className="technique-list">
             <TipToggle
               className={`tech-toggle ${showParans ? 'on' : 'off'}`}
@@ -1157,37 +1158,7 @@ export function Sidebar({
               <EyeIcon open={showParans} />
               <span className="name">{t('settings.parans.title')}</span>
             </TipToggle>
-            <TipToggle
-              className={`tech-toggle ${showLocalSpace ? 'on' : 'off'}`}
-              onClick={() => setShowLocalSpace(!showLocalSpace)}
-              ariaPressed={showLocalSpace}
-              title={t('settings.localSpace.title')}
-              hotkey="Shift L"
-              hint={t('settings.localSpace.hint')}
-            >
-              <EyeIcon open={showLocalSpace} />
-              <span className="name">{t('settings.localSpace.title')}</span>
-            </TipToggle>
-            {showLocalSpace && (
-              <li className="orb-zone-row">
-                <HintMenu
-                  value={lsOrigin}
-                  onChange={setLsOrigin}
-                  options={[
-                    {
-                      value: 'pin',
-                      label: t('settings.lsOrigin.pin'),
-                      hint: t('settings.lsOrigin.pinHint'),
-                    },
-                    {
-                      value: 'birthplace',
-                      label: t('settings.lsOrigin.birthplace'),
-                      hint: t('settings.lsOrigin.birthplaceHint'),
-                    },
-                  ]}
-                />
-              </li>
-            )}
+            {/* Local Space + its origin selector moved to the Location view. */}
             <TipToggle
               className={`tech-toggle ${showAspectLines ? 'on' : 'off'}`}
               onClick={() => setShowAspectLines(!showAspectLines)}
@@ -1215,6 +1186,7 @@ export function Sidebar({
               onClick={() => setShowStarLines(!showStarLines)}
               ariaPressed={showStarLines}
               title={t('settings.starLines.title')}
+              hotkey="Shift S"
               hint={t('settings.starLines.hint')}
             >
               <EyeIcon open={showStarLines} />

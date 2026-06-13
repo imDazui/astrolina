@@ -73,8 +73,8 @@ interface TopNavProps {
   setShowSettings: (v: boolean) => void;
   showInfo: boolean;
   setShowInfo: (v: boolean) => void;
-  showTeleport: boolean;
-  setShowTeleport: (v: boolean) => void;
+  showLocation: boolean;
+  setShowLocation: (v: boolean) => void;
   /** The guides reference (View ▸ Guides) — revisit the onboarding guides as a glossary.
    *  No hotkey: it's an occasional reference, not a frequently toggled HUD. */
   showGuides: boolean;
@@ -308,8 +308,8 @@ export function TopNav({
   setShowSettings,
   showInfo,
   setShowInfo,
-  showTeleport,
-  setShowTeleport,
+  showLocation,
+  setShowLocation,
   showGuides,
   setShowGuides,
   openExtensions,
@@ -317,6 +317,37 @@ export function TopNav({
 }: TopNavProps) {
   const { t } = useT();
   const overlayActive = overlayMode !== 'off';
+
+  // View-menu items: the built-ins, then any registry (add-on) extensions. We then
+  // float every item that HAS a hotkey above the ones that don't, so any hotkey-less
+  // option (e.g. an add-on shipped without a shortcut) collects at the bottom. The
+  // partition is stable, so each group keeps its declared order (e.g. Guides stays
+  // above Info).
+  const viewItems: {
+    id: string;
+    label: string;
+    checked: boolean;
+    onToggle: () => void;
+    hotkey?: string;
+  }[] = [
+    { id: 'coordinates', label: t('topNav.view.coordinates'), hotkey: 'C', checked: showCoords, onToggle: () => setShowCoords(!showCoords) },
+    { id: 'minimap', label: t('topNav.view.minimap'), hotkey: 'M', checked: showChart, onToggle: () => setShowChart(!showChart) },
+    { id: 'settings', label: t('topNav.view.settings'), hotkey: 'S', checked: showSettings, onToggle: () => setShowSettings(!showSettings) },
+    { id: 'location', label: t('topNav.view.location'), hotkey: 'L', checked: showLocation, onToggle: () => setShowLocation(!showLocation) },
+    { id: 'guides', label: t('topNav.view.guides'), hotkey: 'G', checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
+    { id: 'info', label: t('topNav.view.info'), hotkey: 'I', checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
+    ...getMapExtensions().map((ext) => ({
+      id: ext.id,
+      label: ext.label,
+      hotkey: ext.hotkey,
+      checked: openExtensions.has(ext.id),
+      onToggle: () => onToggleExtension(ext.id),
+    })),
+  ];
+  const orderedViewItems = [
+    ...viewItems.filter((i) => i.hotkey),
+    ...viewItems.filter((i) => !i.hotkey),
+  ];
 
   const measuring = tool === 'measure';
   const locationText = locationLabel ?? undefined;
@@ -524,52 +555,15 @@ export function TopNav({
             </NavMenu>
 
             <NavMenu label={t('topNav.view.menuLabel')} className="navmenu-steady">
-              <CheckItem
-                label={t('topNav.view.coordinates')}
-                hotkey="C"
-                checked={showCoords}
-                onToggle={() => setShowCoords(!showCoords)}
-              />
-              <CheckItem
-                label={t('topNav.view.minimap')}
-                hotkey="M"
-                checked={showChart}
-                onToggle={() => setShowChart(!showChart)}
-              />
-              <CheckItem
-                label={t('topNav.view.settings')}
-                hotkey="S"
-                checked={showSettings}
-                onToggle={() => setShowSettings(!showSettings)}
-              />
-              <CheckItem
-                label={t('topNav.view.teleport')}
-                hotkey="G"
-                checked={showTeleport}
-                onToggle={() => setShowTeleport(!showTeleport)}
-              />
-              <CheckItem
-                label={t('topNav.view.info')}
-                hotkey="I"
-                checked={showInfo}
-                onToggle={() => setShowInfo(!showInfo)}
-              />
-              {/* Guides reference — at the bottom and deliberately without a hotkey, since
-                  it's an occasional glossary, not a frequently toggled HUD. */}
-              <CheckItem
-                label={t('topNav.view.guides')}
-                checked={showGuides}
-                onToggle={() => setShowGuides(!showGuides)}
-              />
-              {/* Registry-driven HUD extensions — appended after the built-in
-                  View items, with no edits needed here. */}
-              {getMapExtensions().map((ext) => (
+              {/* Built-ins + add-on extensions, hotkey items first then hotkey-less
+                  ones (see orderedViewItems). */}
+              {orderedViewItems.map((it) => (
                 <CheckItem
-                  key={ext.id}
-                  label={ext.label}
-                  hotkey={ext.hotkey}
-                  checked={openExtensions.has(ext.id)}
-                  onToggle={() => onToggleExtension(ext.id)}
+                  key={it.id}
+                  label={it.label}
+                  hotkey={it.hotkey}
+                  checked={it.checked}
+                  onToggle={it.onToggle}
                 />
               ))}
             </NavMenu>
