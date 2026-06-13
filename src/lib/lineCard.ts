@@ -20,16 +20,22 @@ type NoteTag = (typeof OVERLAY_NOTE_TAGS)[number];
 const isNoteTag = (tag: unknown): tag is NoteTag =>
   typeof tag === 'string' && (OVERLAY_NOTE_TAGS as readonly string[]).includes(tag);
 
-// The ten planets with bespoke per-angle texts in the catalog; everything else
-// (nodes, Lilith, Chiron, asteroids) gets the generic theme + essence card.
-// Listed here (≡ ephemeris.TRADITIONAL_PLANETS) rather than imported: a value
+// Every computed body now carries bespoke per-angle texts in the catalog; the
+// generic theme + essence card stays as the fallback for anything outside this
+// list. Listed here (≡ ephemeris.PLANET_NAMES) rather than imported: a value
 // import of ephemeris.ts would couple this pure text module to the WASM engine.
 const BESPOKE_PLANETS = [
   'Sun', 'Moon', 'Mercury', 'Venus', 'Mars',
   'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto',
+  'NorthNode', 'SouthNode', 'Chiron', 'Ceres', 'Pallas', 'Juno', 'Vesta', 'Lilith',
 ] as const;
 type BespokePlanet = (typeof BESPOKE_PLANETS)[number];
 const BESPOKE: ReadonlySet<PlanetName> = new Set<PlanetName>(BESPOKE_PLANETS);
+
+// The catalog star names, as a TYPE only (no runtime coupling to the English
+// catalog): feature props carry the star name as a plain string, and the
+// bundled star set and this key set are maintained together.
+type StarName = keyof typeof import('../i18n/en/lineMeanings').lineMeanings.starThemes;
 
 const glyph = (planet: PlanetName, color: unknown) =>
   `<span class="astro-glyph line-card-glyph" style="color:${typeof color === 'string' ? color : 'inherit'}">${PLANET_GLYPHS[planet]}</span>`;
@@ -69,14 +75,19 @@ export function buildLineCard(
     const name = t(`planets.${planet}.name`);
     return card(
       glyph(planet, props.color) + t('lineMeanings.localSpaceTitle', { planet: name }),
-      t('lineMeanings.localSpace', { planet: name }),
+      t('lineMeanings.localSpace', {
+        planet: name,
+        theme: t(`planets.${planet}.theme`),
+      }),
       [...notes, footer],
     );
   }
 
   if (layerId.startsWith('parans')) {
-    const a = t(`planets.${props.planetA as PlanetName}.name`);
-    const b = t(`planets.${props.planetB as PlanetName}.name`);
+    const planetA = props.planetA as PlanetName;
+    const planetB = props.planetB as PlanetName;
+    const a = t(`planets.${planetA}.name`);
+    const b = t(`planets.${planetB}.name`);
     return card(
       t('lineMeanings.paranTitle', { a, b }),
       t('lineMeanings.paran', {
@@ -84,6 +95,8 @@ export function buildLineCard(
         b,
         angleA: String(props.angleA),
         angleB: String(props.angleB),
+        themeA: t(`planets.${planetA}.theme`),
+        themeB: t(`planets.${planetB}.theme`),
       }),
       [...notes, footer],
     );
@@ -132,6 +145,9 @@ export function buildLineCard(
         t('lineMeanings.starTitle', { star, angle }),
       t('lineMeanings.star', {
         star,
+        // Every catalog star has a one-line signature; the template weaves it
+        // between the frame and the angle essence.
+        theme: t(`lineMeanings.starThemes.${star as StarName}`),
         essence: t(`lineMeanings.angleEssence.${angle}`),
       }),
       [footer],
@@ -144,12 +160,15 @@ export function buildLineCard(
     if (!planet || !angle) return null;
     const name = t(`planets.${planet}.name`);
     const title = glyph(planet, props.color) + t(`lineMeanings.title.${angle}`, { planet: name });
-    const body = BESPOKE.has(planet)
-      ? t(`lineMeanings.meanings.${planet as BespokePlanet}.${angle}`)
-      : t('lineMeanings.generic', {
-          theme: t(`planets.${planet}.theme`),
-          essence: t(`lineMeanings.angleEssence.${angle}`),
-        });
+    // Bespoke texts cover the four primary angles; the Vertex-axis lines read
+    // through the generic theme + essence frame (high-level by design).
+    const body =
+      BESPOKE.has(planet) && angle !== 'VX' && angle !== 'AVX'
+        ? t(`lineMeanings.meanings.${planet as BespokePlanet}.${angle as 'MC' | 'IC' | 'ASC' | 'DSC'}`)
+        : t('lineMeanings.generic', {
+            theme: t(`planets.${planet}.theme`),
+            essence: t(`lineMeanings.angleEssence.${angle}`),
+          });
     if (props.pair) notes.unshift(t('lineMeanings.nodePair'));
     return card(title, body, [...notes, footer]);
   }

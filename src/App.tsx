@@ -415,6 +415,7 @@ export default function App() {
     const v = localStorage.getItem('astro:house-system:v1');
     const valid: HouseSystem[] = [
       'placidus', 'whole', 'equal', 'koch', 'regiomontanus', 'campanus', 'porphyry', 'alcabitus',
+      'meridian', 'morinus',
     ];
     return valid.includes(v as HouseSystem) ? (v as HouseSystem) : 'placidus';
   });

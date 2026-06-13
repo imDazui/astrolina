@@ -97,6 +97,8 @@ export const settings = {
     hint: 'Max distance from exact (degrees) per aspect in the wheel and aspect lists. Luminaries widens every orb when the Sun or Moon is involved; Parallels is the declination orb.',
     orbAria: 'Orb for {aspect} aspects, in degrees',
     lumLabel: 'Luminaries +',
+    // Hover hint on the Luminaries+ pick in the orb dropdown.
+    lumHint: 'Extra degrees of orb whenever the Sun or Moon is involved.',
     lumAria: 'Extra orb when a luminary is involved, in degrees',
     declinationLabel: 'Parallels',
     declinationAria: 'Orb for parallel and contraparallel aspects, in degrees of declination',
@@ -197,6 +199,8 @@ export const settings = {
     campanus: { label: 'Campanus', hint: 'Equal divisions of the prime vertical' },
     porphyry: { label: 'Porphyry', hint: 'Each quadrant trisected in ecliptic longitude' },
     alcabitus: { label: 'Alcabitus', hint: 'Ancient semi-arc on the diurnal / nocturnal arcs' },
+    meridian: { label: 'Meridian', hint: 'Equal 30° arcs of the equator from the MC, projected by hour circles; the 1st cusp is an East Point, not the Ascendant. Well-defined at every latitude.' },
+    morinus: { label: 'Morinus', hint: 'Equal equator arcs projected by ecliptic-pole circles; uses no Ascendant or MC at all, so it survives even polar latitudes untroubled.' },
     whole: { label: 'Whole Sign', hint: 'Each house is a whole sign from the rising sign' },
     equal: { label: 'Equal', hint: '30° houses measured from the Ascendant' },
   },
@@ -331,5 +335,7 @@ export const settings = {
     IC: { hint: 'Imum Coeli (home, roots)' },
     ASC: { hint: 'Ascendant (self, identity)' },
     DSC: { hint: 'Descendant (relationships)' },
+    VX: { hint: 'Vertex (fated encounters); also adds Vx to the chart wheel' },
+    AVX: { hint: 'Anti-Vertex (the axis’ eastern end); also adds Avx to the wheel' },
   },
 } as const;

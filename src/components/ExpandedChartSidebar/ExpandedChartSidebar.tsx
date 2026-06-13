@@ -170,8 +170,8 @@ interface ExpandedChartSidebarProps {
   visibleLineTypes: Set<LineType>;
   /** Per-body RA + azimuth/altitude for the Advanced table, keyed by planet. */
   advancedCoords: Map<PlanetName, HorizontalCoords>;
-  /** RA + declination + azimuth/altitude for the four angles (ecliptic points). */
-  angleCoords: Record<'asc' | 'mc' | 'dsc' | 'ic', AngleCoords> | null;
+  /** RA + declination + azimuth/altitude for the angles (ecliptic points). */
+  angleCoords: Record<'asc' | 'mc' | 'dsc' | 'ic' | 'vertex' | 'antivertex', AngleCoords> | null;
   /** Per-aspect orb limits (Advanced ▸ Aspect orbs) for the grid + wheel lines. */
   aspectOrbs: AspectOrbs;
   /** The Advanced reading mode (degree rim, aspect grid, coordinate tables).
@@ -492,18 +492,24 @@ export function ExpandedChartSidebar({
 
   // The four chart angles, gated by the Map Filter's line-type toggles. Drives
   // which angle marks (As/Ds/Mc/Ic) the wheel draws.
-  const visibleAngles = new Set<'As' | 'Ds' | 'Mc' | 'Ic'>();
+  const visibleAngles = new Set<'As' | 'Ds' | 'Mc' | 'Ic' | 'Vx' | 'Avx'>();
   if (visibleLineTypes.has('ASC')) visibleAngles.add('As');
   if (visibleLineTypes.has('DSC')) visibleAngles.add('Ds');
   if (visibleLineTypes.has('MC')) visibleAngles.add('Mc');
   if (visibleLineTypes.has('IC')) visibleAngles.add('Ic');
+  // The Vertex axis follows its own line-type toggles (the Vx/Avx buttons in
+  // the Lines filter), so map lines and wheel/readout marks move together.
+  if (visibleLineTypes.has('VX')) visibleAngles.add('Vx');
+  if (visibleLineTypes.has('AVX')) visibleAngles.add('Avx');
 
   // The same visible angles as list rows, in the conventional Mc, Ic, As, Ds
-  // order. They tack onto the end of the planet list below (no separate heading),
-  // so the readout still lists them even though they now also live in the wheel.
+  // order (the Vertex axis after them). They tack onto the end of the planet
+  // list below (no separate heading), so the readout still lists them even
+  // though they now also live in the wheel — every row gated by the same
+  // line-type toggles as its map line.
   const shownAngleRows: {
-    code: 'Mc' | 'Ic' | 'As' | 'Ds';
-    key: 'asc' | 'mc' | 'dsc' | 'ic';
+    code: 'Mc' | 'Ic' | 'As' | 'Ds' | 'Vx' | 'Avx';
+    key: 'asc' | 'mc' | 'dsc' | 'ic' | 'vertex' | 'antivertex';
     name: string;
     lon: number;
     color: string;
@@ -513,6 +519,8 @@ export function ExpandedChartSidebar({
         { code: 'Ic' as const, key: 'ic' as const, name: t('expandedSidebar.angle.imumCoeli'), lon: angles.ic, color: 'var(--cool)' },
         { code: 'As' as const, key: 'asc' as const, name: t('expandedSidebar.angle.ascendant'), lon: angles.asc, color: 'var(--accent)' },
         { code: 'Ds' as const, key: 'dsc' as const, name: t('expandedSidebar.angle.descendant'), lon: angles.dsc, color: 'var(--accent)' },
+        { code: 'Vx' as const, key: 'vertex' as const, name: t('expandedSidebar.angle.vertex'), lon: angles.vertex, color: 'var(--text-muted)' },
+        { code: 'Avx' as const, key: 'antivertex' as const, name: t('expandedSidebar.angle.antivertex'), lon: angles.antivertex, color: 'var(--text-muted)' },
       ].filter((a) => visibleAngles.has(a.code))
     : [];
 
@@ -818,6 +826,7 @@ export function ExpandedChartSidebar({
                     <>
                       <WheelSvg
                         size={wheelSize}
+
                         angles={angles}
                         planets={shownPlanets}
                         detailed={true}
@@ -850,6 +859,7 @@ export function ExpandedChartSidebar({
                     <WheelSvg
                       size={wheelSize}
                       angles={angles}
+
                       planets={shownPlanets}
                       detailed={true}
                       advanced={advanced}

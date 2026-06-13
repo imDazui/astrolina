@@ -31,7 +31,7 @@ import type { EclipseIsoStep } from '../../lib/overlayPrefs';
 import type { MapProjectionMode } from '../../lib/projection';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ASPECT_GLYPHS, PLANET_GLYPHS, SIGN_GLYPHS } from '../../lib/astro/glyphChars';
-import { ASPECT_NAMES, type AspectOrbs } from '../../lib/aspectPrefs';
+import { ASPECT_NAMES, type AspectName, type AspectOrbs } from '../../lib/aspectPrefs';
 import type { LsOriginPref, StarSetPref } from '../../lib/overlayPrefs';
 import type { ProgressionType } from '../../lib/astro/timeline';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
@@ -140,13 +140,16 @@ interface SidebarProps {
   setOpenSection: (s: SidebarSection | null) => void;
 }
 
-// Angle codes (As/Ds/MC/IC) are language-neutral button labels; the spelled-out
-// tooltip resolves from the catalog (settings.lineType.*.hint via labels.lineTypeHint).
+// Angle codes (As/Ds/MC/IC/Vx/Avx) are language-neutral button labels; the
+// spelled-out tooltip resolves from the catalog (settings.lineType.*.hint via
+// labels.lineTypeHint). The Vertex axis rows sit below As/Ds and default OFF.
 const LINE_TYPES: { type: LineType; label: string }[] = [
   { type: 'MC', label: 'MC' },
   { type: 'IC', label: 'IC' },
   { type: 'ASC', label: 'As' },
   { type: 'DSC', label: 'Ds' },
+  { type: 'VX', label: 'Vx' },
+  { type: 'AVX', label: 'Avx' },
 ];
 
 // The Shift+click affordance shown as the hotkey tag on each planet / line filter
@@ -181,7 +184,7 @@ const LINE_SYSTEM_VALUES: LineSystem[] = ['celestial', 'geodetic'];
 const PROJECTION_VALUES: MapProjectionMode[] = ['2d', '3d'];
 
 const HOUSE_SYSTEM_VALUES: HouseSystem[] = [
-  'placidus', 'koch', 'regiomontanus', 'campanus', 'porphyry', 'alcabitus', 'whole', 'equal',
+  'placidus', 'koch', 'regiomontanus', 'campanus', 'porphyry', 'alcabitus', 'meridian', 'morinus', 'whole', 'equal',
 ];
 
 const NODE_TYPE_VALUES: NodeType[] = ['true', 'mean'];
@@ -788,6 +791,11 @@ export function Sidebar({
   setOpenSection,
 }: SidebarProps) {
   const { t, labels, locale, setLocale } = useT();
+  // Which orb the Advanced ▸ Aspect orbs editor currently shows: one dropdown
+  // pick + one stepper, instead of seven stacked rows.
+  const [orbPick, setOrbPick] = useState<AspectName | 'luminaries' | 'declination'>(
+    'conjunction',
+  );
   // The House-system / Primary-rate dropdowns need {value,label,hint} rows; build
   // them from the value lists + the shared catalog accessors.
   const houseSystemOptions = HOUSE_SYSTEM_VALUES.map((value) => ({
@@ -1307,46 +1315,70 @@ export function Sidebar({
               </svg>
             </TipSpan>
           </h2>
-          {ASPECT_NAMES.map((n) => (
+          {/* One orb at a time: the dropdown picks WHICH orb, the stepper below
+              edits the picked one (instead of seven stacked rows). */}
+          <HintMenu
+            value={orbPick}
+            onChange={(v) => setOrbPick(v as typeof orbPick)}
+            options={[
+              ...ASPECT_NAMES.map((n) => ({
+                value: n as string,
+                label: t(`expandedSidebar.aspect.${n}.name`),
+                hint: t(`expandedSidebar.aspect.${n}.desc`),
+              })),
+              {
+                value: 'luminaries',
+                label: t('settings.aspectOrbs.lumLabel'),
+                hint: t('settings.aspectOrbs.lumHint'),
+              },
+              {
+                value: 'declination',
+                label: t('settings.aspectOrbs.declinationLabel'),
+                hint: t('expandedSidebar.aspect.parallel.desc'),
+              },
+            ]}
+          />
+          {orbPick === 'luminaries' ? (
             <StepperField
-              key={n}
-              id={`aspect-orb-${n}`}
-              glyph={ASPECT_GLYPHS[n]}
-              label={t(`expandedSidebar.aspect.${n}.name`)}
-              value={aspectOrbs.orbs[n]}
+              id="aspect-orb-active"
+              glyph={`${PLANET_GLYPHS.Sun}/${PLANET_GLYPHS.Moon}`}
+              label={t('settings.aspectOrbs.lumLabel')}
+              value={aspectOrbs.luminaryBonus}
+              max={5}
+              step={0.5}
+              onChange={(v) => setAspectOrbs({ ...aspectOrbs, luminaryBonus: v })}
+              ariaLabel={t('settings.aspectOrbs.lumAria')}
+            />
+          ) : orbPick === 'declination' ? (
+            <StepperField
+              id="aspect-orb-active"
+              glyph="∥"
+              label={t('settings.aspectOrbs.declinationLabel')}
+              value={aspectOrbs.declinationOrb}
+              max={3}
+              step={0.25}
+              onChange={(v) => setAspectOrbs({ ...aspectOrbs, declinationOrb: v })}
+              ariaLabel={t('settings.aspectOrbs.declinationAria')}
+            />
+          ) : (
+            <StepperField
+              id="aspect-orb-active"
+              glyph={ASPECT_GLYPHS[orbPick]}
+              label={t(`expandedSidebar.aspect.${orbPick}.name`)}
+              value={aspectOrbs.orbs[orbPick]}
               max={15}
               step={0.5}
               onChange={(v) =>
                 setAspectOrbs({
                   ...aspectOrbs,
-                  orbs: { ...aspectOrbs.orbs, [n]: v },
+                  orbs: { ...aspectOrbs.orbs, [orbPick]: v },
                 })
               }
               ariaLabel={t('settings.aspectOrbs.orbAria', {
-                aspect: t(`expandedSidebar.aspect.${n}.name`),
+                aspect: t(`expandedSidebar.aspect.${orbPick}.name`),
               })}
             />
-          ))}
-          <StepperField
-            id="aspect-orb-luminaries"
-            glyph={`${PLANET_GLYPHS.Sun}/${PLANET_GLYPHS.Moon}`}
-            label={t('settings.aspectOrbs.lumLabel')}
-            value={aspectOrbs.luminaryBonus}
-            max={5}
-            step={0.5}
-            onChange={(v) => setAspectOrbs({ ...aspectOrbs, luminaryBonus: v })}
-            ariaLabel={t('settings.aspectOrbs.lumAria')}
-          />
-          <StepperField
-            id="aspect-orb-declination"
-            glyph="∥"
-            label={t('settings.aspectOrbs.declinationLabel')}
-            value={aspectOrbs.declinationOrb}
-            max={3}
-            step={0.25}
-            onChange={(v) => setAspectOrbs({ ...aspectOrbs, declinationOrb: v })}
-            ariaLabel={t('settings.aspectOrbs.declinationAria')}
-          />
+          )}
         </div>
       )}
 

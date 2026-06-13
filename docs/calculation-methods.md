@@ -51,7 +51,7 @@ The app computes all **planet-to-planet** parans:
 
 **The intersection point.** Each paran's badge offers a fly-to target — the spot where planet A's meridian (or its own horizon curve) crosses the paran latitude. That point follows the same meridian mapping as the drawn lines, so it lands on the visible crossing in both the Celestial and the Geodetic ("Mundane") line systems; the paran *latitudes* themselves are identical in both systems, since the two bodies' mutual geometry doesn't depend on how meridians map to longitudes.
 
-**Fixed-star parans** (planet-to-star and star-to-star) are not computed yet. The prerequisite star catalog now exists — the bundled 40-star set (extracted from the Swiss Ephemeris star file, with proper motion) that drives the fixed-star angle lines — so the remaining work is applying the same meridian/horizon machinery to star positions.
+**Fixed-star parans** (star × planet) are computed with the same closed forms, using each star's proper-motion-corrected, precessed position of date — a star culminating while a planet rises, and every other mundane combination. They are computed but not drawn as map lines: a bright-set catalog times the planet set yields hundreds of latitude rows (which would bury the map), and the conventional reading — Bernadette Brady's school, the classic ACG latitude-crossing listings — is a per-location list anyway. Star-to-star parans are not computed.
 
 ## Local space
 
@@ -147,9 +147,20 @@ overlays — is ordinary natal math.
 
 ## House systems
 
-The expanded chart wheel draws all twelve house cusps in any of **eight** systems, switchable from the **Advanced** section of the sidebar (houses shape the wheel only — no map line moves with this setting): **Placidus** (the default), **Koch**, **Regiomontanus**, **Campanus**, **Porphyry**, **Alcabitus**, **Whole Sign**, and **Equal**. All are computed natively by the Swiss Ephemeris, including polar-circle behaviour for the quadrant systems.
+The expanded chart wheel draws all twelve house cusps in any of **ten** systems, switchable from the **Advanced** section of the sidebar (houses shape the wheel only — no map line moves with this setting): **Placidus** (the default), **Koch**, **Regiomontanus**, **Campanus**, **Porphyry**, **Alcabitus**, **Meridian**, **Morinus**, **Whole Sign**, and **Equal**. All are computed natively by the Swiss Ephemeris, including polar-circle behaviour for the quadrant systems.
+
+The two **axial** systems divide the celestial equator into equal 30° arcs from the MC's right ascension: **Meridian** projects them onto the ecliptic along hour circles, **Morinus** along circles through the ecliptic poles. In both, the **1st cusp is an East Point, not the Ascendant** — the rising degree floats free of the cusps, exactly as the angles already do in Equal and Whole Sign. Their reward is robustness: both stay fully defined at every latitude (Morinus references neither Ascendant, MC, nor Vertex at all), which makes them the systems of choice for polar-latitude charts, where the quadrant systems degrade.
 
 The four angle axes (ASC/MC/DSC/IC) are drawn as bold diameters regardless of system; intermediate cusps that don't fall on an angle are drawn as spokes, so a system like Equal (whose 4th and 10th float off the meridian) renders correctly. The mini wheel shows the angles only, to stay legible at small size.
+
+### The Vertex axis (Vx / Avx)
+
+The **Vx** and **Avx** toggles sit with the line filters (below As/Ds) and behave exactly like the four classical angles, on the map and in the chart alike — both default off. The Vertex is the **prime vertical** (the great circle through due east, the zenith, and due west) taken on the **western** side; the **Anti-Vertex** is its eastern counterpart.
+
+- **On the map**, a body's **Vx line** joins every place where that body stands exactly on the local prime vertical's western crossing (the Avx line its eastern) — curves traced by `tan(lat) = tan(dec)/cos(H)`, the prime-vertical counterpart of the rising/setting equation, drawn a touch thinner than the ASC/DSC lines and badged Vx/Avx at the viewport edge. Each curve runs from the body's zenith point to its antipode, spiking poleward a quarter-turn from the zenith. Every vertex is verified to sit exactly on the prime vertical, west or east as labelled.
+- **In the chart**, the same toggles add the relocated chart's **Vertex point** (the ecliptic ∩ prime-vertical intersection, the Swiss Ephemeris value — its axis verified against Robert Hand's closed form, its western branch from the point's azimuth) to the wheel marks, the readout list, and the Advanced table. As with rising lines vs the rising degree, the body's Vx **line** is an in-mundo event, while the chart's Vertex **point** is its ecliptic reading; In Zodiaco projection aligns the two conventions.
+
+One geometric caution: near the **equator** the prime vertical approaches the celestial equator, so the chart Vertex collapses toward an equinox point (0° Aries / 0° Libra) and moves erratically as sidereal time advances — the same family of degeneracy the Ascendant suffers near the poles, mirrored into the tropics (the horizon at 80°N is the prime vertical at 10°S). Tropical-latitude Vertex readings deserve the same skeptical eye as polar-latitude house cusps. On the bi-wheel, the Vertex marks only the **natal** ring: a directed overlay's Vertex is not directed by the arc, so marking it would misplace it.
 
 ### Houses at extreme latitudes
 
@@ -158,6 +169,7 @@ Above the polar circles (beyond about ±66.5°) house division gets genuinely am
 - **Placidus and Koch are undefined** at such latitudes (some cusps never rise or set). When that happens the cusps are computed with **Porphyry** instead — the documented Swiss Ephemeris fallback — so a chart relocated to Svalbard still renders, and the wheel shows a caution under its title so the substitution is never silent. The angles themselves (ASC/MC/DSC/IC) are house-system-independent and unaffected.
 - The returned **Ascendant is the eastern intersection**, which inside the polar circles can be the *descending* node of the ecliptic (and can sit west of the MC); Regiomontanus and Campanus flip the MC to its above-horizon branch, while Porphyry, Alcabitus, Equal, and Whole Sign keep the southern one. Cusp sequences from the quadrant systems can run backward through the zodiac there. None of this is an error — it is what these systems *are* at polar latitudes — but intermediate cusps polewards of the circles deserve a skeptical eye.
 - **Equal houses** degenerate for an instant exactly *on* the polar circles, where once a day the horizon momentarily coincides with the ecliptic; this affects only that infinitesimal band and moment, not practice.
+- **Meridian and Morinus stay clean polewards** — both are defined at every latitude with cusps in regular zodiacal order (verified against Robert Hand's published 80°N cusp tables to well under an arcminute), so they are the natural choice for polar charts.
 - The **map lines** never use houses and are exact at every latitude.
 
 ## Geodetic ("Mundane") lines

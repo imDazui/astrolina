@@ -30,8 +30,9 @@ import {
   type PlanetName,
   type PlanetPosition,
 } from '../src/lib/ephemeris';
-import { generateParans, type ParanProps } from '../src/lib/astro/parans';
+import { generateParans, generateStarParans, type ParanProps } from '../src/lib/astro/parans';
 import { generateLines, normLng, type MeridianLng } from '../src/lib/astro/lines';
+import { starsOfDate } from '../src/lib/astro/starLines';
 import type { BirthData } from '../src/lib/birthData';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -317,6 +318,122 @@ console.log(`generated parans: ${props.length}`);
     check(`${frame}: paran fly-to sits on the drawn MC/IC meridian`, worstMc < 1e-9, `max Δlng ${worstMc.toExponential(2)}°`);
     check(`${frame}: drawn horizon curve passes through the fly-to point`, worstHorizon < 1.2, `max miss ${worstHorizon.toFixed(3)}° (vertex spacing)`);
   }
+}
+
+// ── 6. Fixed-star × planet parans ─────────────────────────────────────────────
+// Same closed forms with a star's equinox-of-date position on one side; same
+// oracles: every listed paran is a genuine simultaneity (the star and the
+// planet really stand on their named angles at the same instant at that
+// latitude), labels match actual rising/setting, and an independent latitude
+// scan finds exactly the listed set.
+{
+  const stars = starsOfDate(jd, 'bright');
+  const starByName = new Map(stars.map((s) => [s.name, s]));
+  const planetSub = positions.filter((p) => ['Sun', 'Venus', 'Saturn'].includes(p.name));
+  const sp = generateStarParans(stars, planetSub, celestialLng, '#cdbf8f');
+  const spProps = sp.features.map((f) => f.properties as ParanProps);
+  console.log(`generated star parans: ${spProps.length} (${stars.length} stars × ${planetSub.length} planets)`);
+
+  let worstAlt = 0;
+  let worstMeridian = 0;
+  let labelErrors = 0;
+  for (const p of spProps) {
+    const star = starByName.get(p.star!)!;
+    const planet = byName.get(p.planetA)!;
+    // Parse who is on which angle from the label convention: the star side is
+    // prefixed "★". The meridian body has angle MC/IC; horizon bodies ASC/DSC.
+    const starFirst = p.label.startsWith('★');
+    const aBody = starFirst ? star : planet;
+    const bBody = starFirst ? planet : star;
+    const lat = p.latitude;
+    const lng = p.intersectionLng;
+    const theta = gastRad(jd) + lng * DEG2RAD;
+
+    const checkSide = (body: { ra: number; dec: number }, angle: string) => {
+      if (angle === 'MC' || angle === 'IC') {
+        const H = normDelta(theta - body.ra);
+        const err = angle === 'MC' ? Math.abs(H) : Math.abs(Math.abs(H) - Math.PI);
+        if (err > worstMeridian) worstMeridian = err;
+      } else {
+        const alt = Math.abs(altitudeOf(jd, body.ra, body.dec, lat, lng));
+        if (alt > worstAlt) worstAlt = alt;
+        const rising = altSlope(jd, body.ra, body.dec, lat, lng) > 0;
+        if ((angle === 'ASC') !== rising) labelErrors += 1;
+      }
+    };
+    checkSide(aBody, p.angleA);
+    checkSide(bBody, p.angleB);
+  }
+  check('star parans: horizon bodies on the horizon', worstAlt < 1e-9, `max ${worstAlt.toExponential(2)} rad`);
+  check('star parans: meridian bodies on the MC/IC', worstMeridian < 1e-9, `max ${worstMeridian.toExponential(2)} rad`);
+  check('star parans: ASC/DSC labels match actual rising/setting', labelErrors === 0, `${labelErrors} mislabeled`);
+
+  // Completeness for one star × one planet: a brute-force latitude scan of all
+  // angle-event coincidences must reproduce exactly the generated set.
+  const star = stars.find((s) => s.name === 'Regulus') ?? stars[0];
+  const planet = byName.get('Saturn')!;
+  const one = generateStarParans([star], [planet], celestialLng, '#cdbf8f')
+    .features.map((f) => f.properties as ParanProps);
+  const eventTheta = (b: { ra: number; dec: number }, which: string, latDeg: number): number | null => {
+    if (which === 'MC') return b.ra;
+    if (which === 'IC') return b.ra + Math.PI;
+    const x = -Math.tan(latDeg * DEG2RAD) * Math.tan(b.dec);
+    if (x < -1 || x > 1) return null;
+    return b.ra + (which === 'ASC' ? -Math.acos(x) : Math.acos(x));
+  };
+  // Every angle pairing except both-on-meridian (two meridian events share a
+  // sidereal time only when the bodies share a meridian — vertical lines, no
+  // latitude — matching the generators' exclusion).
+  const combos: Array<[string, string]> = [];
+  for (const aw of ['MC', 'IC', 'ASC', 'DSC']) {
+    for (const bw of ['MC', 'IC', 'ASC', 'DSC']) {
+      const aMer = aw === 'MC' || aw === 'IC';
+      const bMer = bw === 'MC' || bw === 'IC';
+      if (aMer && bMer) continue;
+      combos.push([aw, bw]);
+    }
+  }
+  let scanned = 0;
+  let missing = 0;
+  for (const [starAngle, planetAngle] of combos) {
+    const g = (latDeg: number): number | null => {
+      const ts = eventTheta(star, starAngle, latDeg);
+      const tp = eventTheta(planet, planetAngle, latDeg);
+      if (ts === null || tp === null) return null;
+      return normDelta(ts - tp);
+    };
+    for (let lat = -72; lat < 72; lat += 0.1) {
+      const y0 = g(lat);
+      const y1 = g(lat + 0.1);
+      if (y0 === null || y1 === null) continue;
+      if ((y0 <= 0) === (y1 <= 0)) continue;
+      if (Math.abs(y0) > 1 || Math.abs(y1) > 1) continue; // ±π wrap, not a root
+      let lo = lat;
+      let hi = lat + 0.1;
+      for (let i = 0; i < 50; i++) {
+        const m = (lo + hi) / 2;
+        if (((g(lo) ?? NaN) <= 0) === ((g(m) ?? NaN) <= 0)) lo = m;
+        else hi = m;
+      }
+      const root = (lo + hi) / 2;
+      scanned += 1;
+      // The scan also finds planet-MC × star-horizon as star-ASC × planet-...;
+      // match on the angle pair regardless of label order.
+      const found = one.some((p) => {
+        if (Math.abs(p.latitude - root) > 0.02) return false;
+        const starFirst = p.label.startsWith('★');
+        const sAngle = starFirst ? p.angleA : p.angleB;
+        const pAngle = starFirst ? p.angleB : p.angleA;
+        return sAngle === starAngle && pAngle === planetAngle;
+      });
+      if (!found) missing += 1;
+    }
+  }
+  check(
+    `star parans completeness (Regulus × Saturn): scan ↔ generated (${scanned} scanned, ${one.length} generated)`,
+    missing === 0 && scanned === one.length,
+    `${missing} missing`,
+  );
 }
 
 console.log(failures === 0 ? '\nverify-parans: ALL PASS' : `\nverify-parans: ${failures} FAILURE(S)`);

@@ -270,6 +270,40 @@ for (const b of CHARTS) {
     );
   }
 
+  // Vertex-axis lines (VX/AVX): at every vertex the body must stand exactly ON
+  // the local prime vertical (azimuth due west for VX, due east for AVX) —
+  // checked through an independent azimuth computation, the same oracle family
+  // as the rising/setting checks above.
+  let worstPV = 0; // |cos az| at the vertices (0 = exactly on the prime vertical)
+  let sideErrors = 0;
+  for (const f of lines.features) {
+    const { planet, lineType } = f.properties;
+    if (lineType !== 'VX' && lineType !== 'AVX') continue;
+    const p = byBody.get(planet)!;
+    for (const [lng, lat] of f.geometry.coordinates as [number, number][]) {
+      if (Math.abs(lat) > 84.5) continue; // clip edge
+      // Azimuth degenerates at the curve's two endpoints — the body's zenith
+      // point (altitude +90°) and its antipode (−90°) — so skip the caps where
+      // the oracle itself is undefined; everything between must sit exactly on
+      // the prime vertical.
+      if (Math.abs(altitudeOf(jd, p.ra, p.dec, lat, lng)) > 88 * DEG2RAD) continue;
+      const theta = gastRad(jd) + lng * DEG2RAD;
+      const phi = lat * DEG2RAD;
+      const H = theta - p.ra;
+      const az = Math.atan2(
+        -Math.sin(H),
+        Math.tan(p.dec) * Math.cos(phi) - Math.cos(H) * Math.sin(phi),
+      );
+      const offPV = Math.abs(Math.cos(az));
+      if (offPV > worstPV) worstPV = offPV;
+      // West (sin az < 0) on the Vertex side, east on the Anti-Vertex side.
+      const west = Math.sin(az) < 0;
+      if ((lineType === 'VX') !== west && Math.abs(Math.sin(az)) > 1e-9) sideErrors += 1;
+    }
+  }
+  check(`${b.name}: VX/AVX vertices on the prime vertical`, worstPV < 1e-9, `max |cos az| ${fmt(worstPV)}`);
+  check(`${b.name}: Vertex west / Anti-Vertex east`, sideErrors === 0, `${sideErrors} on the wrong side`);
+
   // Zenith stamps: the body stands exactly overhead. Measured as the angle
   // between the zenith and body unit vectors via atan2(|cross|, dot) — asin of
   // the dot product is ill-conditioned this close to 90° altitude.
@@ -422,6 +456,50 @@ for (const b of CHARTS) {
   }
   check('relocate MC matches Hand closed form', worstMc < 1e-6, `max Δ ${fmt(worstMc)} rad`);
   check('relocate ASC matches Hand closed form', worstAsc < 1e-6, `max Δ ${fmt(worstAsc)} rad`);
+
+  // The Vertex against Hand's closed form (Essays on Astrology §I.4):
+  //   Vx = arctan(cos RAMC / (cot φ·sin ε − sin RAMC·cos ε))
+  // Hand's formula fixes the AXIS; the BRANCH (Vertex vs Anti-Vertex) is a
+  // convention — Swiss picks the prime vertical's WESTERN intersection, which
+  // we verify directly from the point's azimuth. The Anti-Vertex must be the
+  // exact antipode.
+  let worstAxis = 0;
+  let branchErrors = 0;
+  let antipodeErr = 0;
+  for (const lat of [-60, -45, -23.5, 23.5, 45, 60]) {
+    for (const lng of [-150, -75, 0, 75, 150]) {
+      const ramc = gmst + lng * DEG2RAD;
+      const h = relocate(jd, lat, lng, 'placidus');
+      const handVx = Math.atan2(
+        Math.cos(ramc),
+        Math.sin(eps) / Math.tan(lat * DEG2RAD) - Math.sin(ramc) * Math.cos(eps),
+      );
+      const dAxis = Math.abs(Math.atan2(Math.sin(2 * (h.vertex - handVx)), Math.cos(2 * (h.vertex - handVx)))) / 2;
+      if (dAxis > worstAxis) worstAxis = dAxis;
+      // Branch: the Vertex (an ecliptic point, latitude 0) must stand in the
+      // WESTERN half of the local sky (sin az < 0 measuring az from north,
+      // clockwise) — computed through the real getAngleCoords path.
+      const { ra, dec } = eclipticToRaDec(h.vertex, 0, eps);
+      const H = ramc - ra;
+      const az = Math.atan2(-Math.sin(H), Math.tan(dec) * Math.cos(lat * DEG2RAD) - Math.cos(H) * Math.sin(lat * DEG2RAD));
+      if (Math.sin(az) > 1e-9) branchErrors += 1;
+      const dAnti = Math.abs(Math.atan2(Math.sin(h.antivertex - h.vertex - Math.PI), Math.cos(h.antivertex - h.vertex - Math.PI)));
+      if (dAnti > antipodeErr) antipodeErr = dAnti;
+    }
+  }
+  check('Vertex axis matches Hand closed form', worstAxis < 1e-6, `max axis Δ ${fmt(worstAxis)} rad`);
+  check('Vertex branch is the western prime-vertical intersection', branchErrors === 0, `${branchErrors}/30 east`);
+  check('Anti-Vertex is the exact antipode', antipodeErr < 1e-12, `max Δ ${fmt(antipodeErr)} rad`);
+
+  // Near the equator the prime vertical approaches the celestial equator, so
+  // the Vertex collapses toward an equinox point (0° Aries / 0° Libra) — the
+  // documented tropics caveat, pinned here as a behavior, not a bug.
+  const eq = relocate(jd, 0.001, 0, 'placidus');
+  const toEquinox = Math.min(
+    Math.abs(Math.atan2(Math.sin(eq.vertex), Math.cos(eq.vertex))),
+    Math.abs(Math.atan2(Math.sin(eq.vertex - Math.PI), Math.cos(eq.vertex - Math.PI))),
+  );
+  check('equatorial Vertex collapses to an equinox point', toEquinox < 0.02, `Δ ${(toEquinox * RAD2DEG).toFixed(3)}°`);
 }
 
 // ── 9. Polar-latitude behavior of every supported house system ────────────────
@@ -434,22 +512,51 @@ for (const b of CHARTS) {
   // A longitude that puts the local RAMC at Hand's 280° test value.
   const lng80 = normLng((280 * DEG2RAD - gmst) * RAD2DEG);
   const systems: HouseSystem[] = [
-    'placidus', 'koch', 'regiomontanus', 'campanus', 'porphyry', 'alcabitus', 'equal', 'whole',
+    'placidus', 'koch', 'regiomontanus', 'campanus', 'porphyry', 'alcabitus',
+    'meridian', 'morinus', 'equal', 'whole',
   ];
   for (const sys of systems) {
     let outcome: string;
     let finite = true;
+    let flagged = false;
     try {
       const h = relocate(jd, 80, lng80, sys);
       finite = [h.asc, h.mc, ...h.cusps].every(Number.isFinite);
+      flagged = !!h.fallback;
       const ascDeg = (h.asc * RAD2DEG).toFixed(2);
       const mcDeg = (h.mc * RAD2DEG).toFixed(2);
-      outcome = `asc ${ascDeg}° mc ${mcDeg}°`;
+      outcome = `asc ${ascDeg}° mc ${mcDeg}°${flagged ? ' (porphyry fallback)' : ''}`;
     } catch (e) {
       outcome = `THROWS: ${(e as Error).message}`;
     }
     console.log(`  polar 80°N RAMC 280° [${sys}] ${outcome}`);
     check(`polar: relocate(80°N, ${sys}) survives with finite angles`, !outcome.startsWith('THROWS') && finite, outcome);
+    // The axial systems are genuinely defined polewards — they must come back
+    // as themselves, never as a flagged Porphyry substitution.
+    if (sys === 'meridian' || sys === 'morinus') {
+      check(`polar: ${sys} needs no fallback at 80°N`, !outcome.startsWith('THROWS') && !flagged, outcome);
+    }
+  }
+
+  // Robert Hand's published cusp table (Essays on Astrology ch. 12; 80°N,
+  // RAMC exactly 280°) as an independent golden for the two axial systems —
+  // minute-precision values from a 1982-era obliquity, so the tolerance is a
+  // few arcminutes. Houses 10/11/12/1/2/3, in degrees:
+  const HAND_TABLE: Array<[HouseSystem, number[]]> = [
+    // Meridian: 9°Cap11′, 7°Aqu35′, 8°Pis21′, 10°Ari53′, 12°Tau27′, 11°Gem32′
+    ['meridian', [279 + 11 / 60, 307 + 35 / 60, 338 + 21 / 60, 10 + 53 / 60, 42 + 27 / 60, 71 + 32 / 60]],
+    // Morinus: 10°Cap53′, 12°Aqu27′, 11°Pis32′, 9°Ari11′, 7°Tau35′, 8°Gem22′
+    ['morinus', [280 + 53 / 60, 312 + 27 / 60, 341 + 32 / 60, 9 + 11 / 60, 37 + 35 / 60, 68 + 22 / 60]],
+  ];
+  for (const [sys, want] of HAND_TABLE) {
+    const h = relocate(jd, 80, lng80, sys);
+    const got = [9, 10, 11, 0, 1, 2].map((i) => h.cusps[i] * RAD2DEG);
+    let worst = 0;
+    for (let i = 0; i < 6; i++) {
+      const d = Math.abs(normLng(got[i] - want[i]));
+      if (d > worst) worst = d;
+    }
+    check(`Hand table golden: ${sys} cusps 10–3 at 80°N RAMC 280°`, worst < 0.2, `max Δ ${worst.toFixed(4)}°`);
   }
   // Sweep the whole sidereal day at 80°N under Placidus — the system Swiss
   // documents as undefined there. Whatever the wrapper does must hold app-wide,

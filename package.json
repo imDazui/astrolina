@@ -26,6 +26,7 @@
     "verify:crossings": "node scripts/harness/run.mjs scripts/verify-crossings.ts",
     "verify:timechain": "node scripts/harness/run.mjs scripts/verify-timechain.ts",
     "verify:directions": "node scripts/harness/run.mjs scripts/verify-directions.ts",
+    "verify:content": "node scripts/harness/run.mjs scripts/verify-content.ts",
     "build:lmt": "node scripts/build-lmt-table.mjs",
     "verify:eclipses": "tsx scripts/verify-eclipses.ts",
     "build:eclipses": "node scripts/build-eclipses.mjs",

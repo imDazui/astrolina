@@ -79,12 +79,15 @@ const EMPTY_FC = <T,>(): FeatureCollection<LineString, T> => ({
 const LINE_SOURCE_OPTS = { buffer: 128, tolerance: 0.375 } as const;
 
 // Angle code shown in each line / paran badge (As/Ds match the wheel's shorthand).
-// Covers all four angles — a paran's body A may sit on the MC/IC or the horizon.
+// Covers every line type — a paran's body A may sit on the MC/IC or the horizon,
+// and the Vertex-axis lines badge as Vx/Avx.
 const ANGLE_CODE: Record<LineType, string> = {
   MC: 'MC',
   IC: 'IC',
   ASC: 'As',
   DSC: 'Ds',
+  VX: 'Vx',
+  AVX: 'Avx',
 };
 
 // How far inside the viewport edge the badges anchor (px). Small, since badges
@@ -1342,19 +1345,26 @@ function setupCustomLayers(
   });
   // Base horizon lines are SOLID (no dashes) — dashes are reserved entirely for
   // overlays now. ASC vs DSC is shown instead by periodic arrows: ASC points up,
-  // DSC points down (added just below).
+  // DSC points down (added just below). The Vertex-axis curves (VX/AVX) ride
+  // this layer too, a touch thinner and arrow-free, so they read as the quieter
+  // cousins of the rising/setting lines; their edge badges name them Vx/Avx.
   map.addLayer({
     id: 'acg-lines-horizon',
     source: 'acg-lines',
     type: 'line',
     filter: [
       'all',
-      ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
+      ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC', 'VX', 'AVX']]],
       ['!=', ['get', 'pair'], true],
     ],
     paint: {
       'line-color': ['get', 'color'],
-      'line-width': 1.5,
+      'line-width': [
+        'case',
+        ['in', ['get', 'lineType'], ['literal', ['VX', 'AVX']]],
+        1.0,
+        1.5,
+      ],
       'line-opacity': 1,
     },
   });
@@ -1390,12 +1400,17 @@ function setupCustomLayers(
     type: 'line',
     filter: [
       'all',
-      ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
+      ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC', 'VX', 'AVX']]],
       ['==', ['get', 'pair'], true],
     ],
     paint: {
       'line-gradient': nodePairGradient,
-      'line-width': 1.5,
+      'line-width': [
+        'case',
+        ['in', ['get', 'lineType'], ['literal', ['VX', 'AVX']]],
+        1.0,
+        1.5,
+      ],
       'line-opacity': 1,
     },
   });
@@ -1472,19 +1487,25 @@ function setupCustomLayers(
     },
   });
   // Overlay horizon lines are dashed (the "dotted equivalent" of the solid base
-  // lines); ASC vs DSC is shown by the same up/down arrows, added below.
+  // lines); ASC vs DSC is shown by the same up/down arrows, added below. The
+  // Vertex-axis curves ride along, slightly thinner, like on the base layer.
   map.addLayer({
     id: 'acg-lines-ov-horizon',
     source: 'acg-lines-ov',
     type: 'line',
     filter: [
       'all',
-      ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC']]],
+      ['in', ['get', 'lineType'], ['literal', ['ASC', 'DSC', 'VX', 'AVX']]],
       ['!=', ['get', 'pair'], true],
     ],
     paint: {
       'line-color': ['get', 'color'],
-      'line-width': 1.1,
+      'line-width': [
+        'case',
+        ['in', ['get', 'lineType'], ['literal', ['VX', 'AVX']]],
+        0.8,
+        1.1,
+      ],
       'line-opacity': 1,
       'line-dasharray': [2, 3],
     },

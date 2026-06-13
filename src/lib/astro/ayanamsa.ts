@@ -104,6 +104,9 @@ export function shiftAngles(
     mc: shift(a.mc),
     dsc: shift(a.dsc),
     ic: shift(a.ic),
+    vertex: shift(a.vertex),
+    antivertex: shift(a.antivertex),
     cusps,
+    ...(a.fallback ? { fallback: a.fallback } : {}),
   };
 }

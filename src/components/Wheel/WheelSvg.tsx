@@ -55,14 +55,19 @@ const houseMeaning = (t: TFn, idx: number) =>
 const planetMeaning = (t: TFn, p: PlanetName) =>
   t(`wheel.planetMeanings.${p}` as MsgKey);
 
-// The four chart angles, keyed by the two-letter label drawn on the wheel. The
-// title + sub hint text is resolved via wheel.angles.<key> at render time.
-const ANGLE_HINTS: { key: 'As' | 'Ds' | 'Mc' | 'Ic' }[] = [
+// The chart angles, keyed by the label drawn on the wheel. The title + sub
+// hint text is resolved via wheel.angles.<key> at render time. Vx/Avx (the
+// Vertex axis) are opt-in via the Advanced ▸ Vertex axis setting.
+type AngleKey = 'As' | 'Ds' | 'Mc' | 'Ic' | 'Vx' | 'Avx';
+const ANGLE_HINTS: { key: AngleKey }[] = [
   { key: 'As' },
   { key: 'Ds' },
   { key: 'Mc' },
   { key: 'Ic' },
+  { key: 'Vx' },
+  { key: 'Avx' },
 ];
+const VERTEX_KEYS = new Set<AngleKey>(['Vx', 'Avx']);
 
 // A hovered hint: the SVG anchor (px = user units, since the viewBox is 1:1), the
 // element's radius (for the tag's standoff), and the tag's text + accent color.
@@ -439,10 +444,11 @@ interface WheelSvgProps {
    *  defaults, the original behaviour. */
   aspectOrbs?: AspectOrbs;
   /**
-   * Which of the four angle labels (As/Ds/Mc/Ic) to draw, mirroring the Map
-   * Filter's line-type toggles. Omitted → all four (the minimap shows the lot).
+   * Which angle labels (As/Ds/Mc/Ic and the Vx/Avx Vertex axis) to draw,
+   * mirroring the Map Filter's line-type toggles. Omitted → all (the minimap
+   * draws no angle marks, so it never reaches this).
    */
-  visibleAngles?: Set<'As' | 'Ds' | 'Mc' | 'Ic'>;
+  visibleAngles?: Set<'As' | 'Ds' | 'Mc' | 'Ic' | 'Vx' | 'Avx'>;
   /**
    * Enable novice hover hints: a responsive scale on the planet discs + rim
    * signs, the four angle labels (As/Ds/Mc/Ic), and a floating tag naming each
@@ -579,14 +585,22 @@ export function WheelSvg({
   // axis colour — As/Ds gold, Mc/Ic cool — and joins the planet spread below so
   // an angle is never stacked on top of a planet it's conjunct.
   const showAngleMarks = interactive && detailed;
-  const angleLonByKey: Record<'As' | 'Ds' | 'Mc' | 'Ic', number> = {
+  const angleLonByKey: Record<AngleKey, number> = {
     As: angles.asc,
     Ds: angles.dsc,
     Mc: angles.mc,
     Ic: angles.ic,
+    Vx: angles.vertex,
+    Avx: angles.antivertex,
   };
-  const angleColor = (key: 'As' | 'Ds' | 'Mc' | 'Ic') =>
-    key === 'As' || key === 'Ds' ? 'var(--accent)' : 'var(--cool)';
+  const angleColor = (key: AngleKey) =>
+    key === 'As' || key === 'Ds'
+      ? 'var(--accent)'
+      : key === 'Vx' || key === 'Avx'
+        ? 'var(--text-muted)'
+        : 'var(--cool)';
+  // Every mark — the four primary angles AND the Vertex axis — follows the
+  // map's line-type filter toggles, so wheel and map always show the same set.
   const angleMarks = showAngleMarks
     ? ANGLE_HINTS.filter(
         (h) =>
@@ -600,24 +614,28 @@ export function WheelSvg({
         color: angleColor(h.key),
       }))
     : [];
-  // The overlay chart's angles, marked in the outer (overlay) ring — same toggles.
+  // The overlay chart's angles, marked in the outer (overlay) ring — same
+  // toggles. The Vertex axis stays off this ring: a directed overlay's Vertex
+  // is not directed, so marking it would misplace it.
   const overlayAngleLonByKey: Record<'As' | 'Ds' | 'Mc' | 'Ic', number> | null =
     overlayAngles
       ? { As: overlayAngles.asc, Ds: overlayAngles.dsc, Mc: overlayAngles.mc, Ic: overlayAngles.ic }
       : null;
   const overlayAngleMarks =
     showAngleMarks && overlayAngleLonByKey
-      ? ANGLE_HINTS.filter(
-          (h) =>
-            Number.isFinite(overlayAngleLonByKey[h.key]) &&
-            (!visibleAngles || visibleAngles.has(h.key)),
-        ).map((h) => ({
-          ...h,
-          title: t(`wheel.angles.${h.key}.title`),
-          sub: t(`wheel.angles.${h.key}.sub`),
-          lon: overlayAngleLonByKey[h.key],
-          color: angleColor(h.key),
-        }))
+      ? (ANGLE_HINTS.filter((h) => !VERTEX_KEYS.has(h.key)) as { key: 'As' | 'Ds' | 'Mc' | 'Ic' }[])
+          .filter(
+            (h) =>
+              Number.isFinite(overlayAngleLonByKey[h.key]) &&
+              (!visibleAngles || visibleAngles.has(h.key)),
+          )
+          .map((h) => ({
+            ...h,
+            title: t(`wheel.angles.${h.key}.title`),
+            sub: t(`wheel.angles.${h.key}.sub`),
+            lon: overlayAngleLonByKey[h.key],
+            color: angleColor(h.key),
+          }))
       : [];
 
   // Spread overlapping planets along the ring so their glyphs and readouts

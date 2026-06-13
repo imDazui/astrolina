@@ -183,9 +183,14 @@
 
 /* ── Zenith hover tooltip ────────────────────────────────────────────
    A small themed popup over a planet's zenith stamp, explaining what it is.
-   pointer-events:none so it never steals the hover/click from the stamp. */
+   pointer-events:none so it never steals the hover/click from the stamp.
+   Every map popup carries this base class (line cards and eclipse cards add
+   their own on top), and all of them must paint ABOVE the line/paran/LS badge
+   overlay (.acg-edge-badges, z 8) — a card you just opened is the foreground —
+   while staying under the HUD bars (z 12). */
 .zenith-popup {
   pointer-events: none;
+  z-index: 9;
 }
 .zenith-popup .maplibregl-popup-content {
   padding: 6px 10px;

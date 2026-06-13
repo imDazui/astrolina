@@ -39,12 +39,15 @@ export const expandedSidebar = {
   tzUncertain: 'Timezone uncertain',
   tzUncertainHint: 'Pre-1970 timezone outside US/EU: verify DST against an atlas',
 
-  // The four chart angles, listed in the planet/angle readout and Advanced table.
+  // The chart angles, listed in the planet/angle readout and Advanced table.
+  // Vertex/Anti-Vertex appear only with Advanced ▸ Vertex axis switched on.
   angle: {
     midheaven: 'Midheaven',
     imumCoeli: 'Imum Coeli',
     ascendant: 'Ascendant',
     descendant: 'Descendant',
+    vertex: 'Vertex',
+    antivertex: 'Anti-Vertex',
   },
 
   // Advanced table column headers and their explanatory hover tips.

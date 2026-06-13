@@ -7,10 +7,10 @@ This page explains what the app computes, what it deliberately doesn't do yet, a
 ## What it computes
 
 - **Bodies:** the ten classical planets (Sun through Pluto), the lunar nodes (mean or true, your choice), Black Moon Lilith (mean apogee), Chiron, and the four main asteroids (Ceres, Pallas, Juno, Vesta).
-- **Lines:** for every body, a line for each of the four chart angles (MC, IC, ASC, DSC), color-coded per planet and dashed per angle, plus each body's zenith point (the spot on Earth where it passes directly overhead, also called the sub-planetary point).
+- **Lines:** for every body, a line for each of the four chart angles (MC, IC, ASC, DSC) — plus optional **Vertex-axis lines** (Vx/Avx, where a body stands on the local prime vertical) — color-coded per planet, with each body's zenith point (the spot on Earth where it passes directly overhead, also called the sub-planetary point).
 - **Parans:** all planet-to-planet parans: any latitude where two bodies are simultaneously on angles (MC, IC, ASC, or DSC), whether one is on the meridian while the other rises or sets, or both share the horizon.
 - **Local space:** directional lines radiating from the origin (the placed pin by default, or the birthplace), each launched along a body's compass bearing (azimuth) and extended as a great circle — so each line passes exactly through the spot on Earth where that body is overhead.
-- **House systems:** eight, switchable, Placidus (default), Koch, Regiomontanus, Campanus, Porphyry, Alcabitus, Whole Sign, and Equal.
+- **House systems:** ten, switchable, Placidus (default), Koch, Regiomontanus, Campanus, Porphyry, Alcabitus, Meridian, Morinus, Whole Sign, and Equal — the last four well-defined at every latitude. The **Vertex axis** (Vx/Avx) joins the map, wheel, and tables via its own line filters.
 - **Line conventions:** switch the entire map between Celestial (standard astrocartography, placed by sidereal time) and Mundane (the geodetic technique, mapping the zodiac onto Earth's longitudes). You can also switch between In Mundo and In Zodiaco calculations for planetary positions before mapping.
 - **Time overlays:** lay transits, secondary or tertiary progressions, solar-arc directions, primary directions, cyclo·carto·graphy (progressed inners with transiting outers), or eclipse charts over the natal map, with a timeline you can scrub or animate to sweep the lines across the map over time.
 - **Relationship maps:** overlay a second chart's lines, with a bi-wheel and natal-to-overlay cross-aspects in the expanded view.
@@ -33,8 +33,8 @@ These are the things that set a browser-based tool apart from established deskto
 
 Set against full-featured desktop software, these are the deliberate gaps:
 
-- **Fixed-star parans.** Fixed-star angle lines shipped (a 40-star catalog with proper motion, Regulus to Acrux, toggleable in Filters), but planet-to-star and star-to-star parans are not computed yet.
-- **A full classical primary-directions engine.** The map's directions (solar arc, secondary progressions, primary directions) are an angle-only treatment: the directed angles and their lines, not individual promissor-to-significator directions with latitude, semi-arc proportions, converse motion, or a dated event list.
+- **Star parans.** Fixed-star angle lines ship (a 40-star catalog with proper motion), but the per-location star × planet paran list and star-to-star parans are not surfaced.
+- **A full classical primary-directions engine.** The map's directions (solar arc, secondary progressions, primary directions) are an angle-only treatment: the directed angles and their lines, not individual promissor-to-significator directions with latitude, semi-arc proportions, or converse motion. (A dated directions list does not ship.)
 - **Sidereal mode is a reading layer.** A sidereal zodiac mode ships (Lahiri
   and Fagan/Bradley ayanamsas) over the wheel and readouts — the map lines mark
   zodiac-independent events and don't move — and the Geodetic technique stays

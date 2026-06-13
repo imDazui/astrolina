@@ -167,6 +167,17 @@ export interface RelocatedAngles {
    */
   cusps: number[];
   /**
+   * The Vertex: the ecliptic's intersection with the prime vertical in the
+   * WEST (the Swiss Ephemeris branch convention), an auxiliary angle some
+   * astrologers read for fated encounters. The Anti-Vertex is its exact
+   * antipode (the eastern intersection). Like the Ascendant near the poles,
+   * the Vertex degenerates near the EQUATOR — the prime vertical there
+   * approaches the celestial equator, pinning the Vertex toward 0° Aries/Libra
+   * and making it oscillate — so tropical-latitude values deserve care.
+   */
+  vertex: number;
+  antivertex: number;
+  /**
    * True when the chosen system (Placidus/Koch) was undefined at this latitude
    * — above the polar circles — and the cusps are the Porphyry fallback instead.
    * The UI surfaces this so the wheel never silently shows a different system
@@ -770,7 +781,7 @@ export function getAngleCoords(
   eps: number,
   obsLatDeg: number,
   obsLngDeg: number,
-): Record<'asc' | 'mc' | 'dsc' | 'ic', AngleCoords> {
+): Record<'asc' | 'mc' | 'dsc' | 'ic' | 'vertex' | 'antivertex', AngleCoords> {
   const lst = norm2pi(gmst + obsLngDeg * DEG2RAD);
   const phi = obsLatDeg * DEG2RAD;
   const sinPhi = Math.sin(phi);
@@ -791,6 +802,10 @@ export function getAngleCoords(
     mc: at(angles.mc),
     dsc: at(angles.dsc),
     ic: at(angles.ic),
+    // By construction the Vertex/Anti-Vertex sit on the prime vertical
+    // (azimuth due west / due east) — a consistency the verify suite pins.
+    vertex: at(angles.vertex),
+    antivertex: at(angles.antivertex),
   };
 }
 
@@ -895,7 +910,13 @@ export type HouseSystem =
   | 'regiomontanus'
   | 'campanus'
   | 'porphyry'
-  | 'alcabitus';
+  | 'alcabitus'
+  // The two axial systems — well-defined at every latitude including the polar
+  // circles (Morinus references neither ASC, MC, nor Vertex). Note their 1st
+  // cusp is an East Point, NOT the Ascendant; the wheel's angle diameters
+  // already float free of the cusps (as for Whole Sign / Equal).
+  | 'meridian'
+  | 'morinus';
 
 const HOUSE_MAP: Record<HouseSystem, SweHouse> = {
   placidus: SweHouse.Placidus,
@@ -906,6 +927,8 @@ const HOUSE_MAP: Record<HouseSystem, SweHouse> = {
   campanus: SweHouse.Campanus,
   porphyry: SweHouse.Porphyrius,
   alcabitus: SweHouse.Alcabitus,
+  meridian: SweHouse.Meridian,
+  morinus: SweHouse.Morinus,
 };
 
 export function relocate(
@@ -935,6 +958,7 @@ export function relocate(
   }
   const asc = norm2pi(h.ascendant * DEG2RAD);
   const mc = norm2pi(h.mc * DEG2RAD);
+  const vertex = norm2pi(h.vertex * DEG2RAD);
   // Swiss cusps are 1-indexed (cusps[1] = house 1); re-base to 0-indexed.
   const cusps = Array.from({ length: 12 }, (_, i) => norm2pi(h.cusps[i + 1] * DEG2RAD));
   return {
@@ -942,6 +966,8 @@ export function relocate(
     mc,
     dsc: norm2pi(asc + Math.PI),
     ic: norm2pi(mc + Math.PI),
+    vertex,
+    antivertex: norm2pi(vertex + Math.PI),
     cusps,
     ...(fallback ? { fallback } : {}),
   };

@@ -456,53 +456,6 @@ export function TimelineHud({
           </TipSpan>
         </div>
 
-        {/* Returns snap (transits only): jump the target date to the chart's
-            solar/lunar return. Clicking the luminary snaps to the nearest
-            return; ‹ › walk whole returns. The snap also switches Positioning
-            to "Transit moment" (App side) — only that framing makes the snapped
-            map the return chart's astrocartography — which the tips disclose. */}
-        {overlayMode === 'transits' && (
-          <div className="thud-returns">
-            <span className="thud-mode-label">{t('timeline.returns.label')}</span>
-            {(['solar', 'lunar'] as const).map((body) => (
-              <span key={body} className="thud-return-group">
-                <TipButton
-                  type="button"
-                  className="thud-step-btn"
-                  onClick={() => onSnapReturn(body, -1)}
-                  aria-label={t(`timeline.returns.${body}.prevAria`)}
-                  placement="top"
-                  tip={t(`timeline.returns.${body}.prev`)}
-                >
-                  ‹
-                </TipButton>
-                <TipButton
-                  type="button"
-                  className="thud-return-btn"
-                  onClick={() => onSnapReturn(body, 0)}
-                  aria-label={t(`timeline.returns.${body}.snapAria`)}
-                  placement="top"
-                  tip={t(`timeline.returns.${body}.snap`)}
-                >
-                  <span className="astro-glyph" aria-hidden="true">
-                    {PLANET_GLYPHS[body === 'solar' ? 'Sun' : 'Moon']}
-                  </span>
-                </TipButton>
-                <TipButton
-                  type="button"
-                  className="thud-step-btn"
-                  onClick={() => onSnapReturn(body, 1)}
-                  aria-label={t(`timeline.returns.${body}.nextAria`)}
-                  placement="top"
-                  tip={t(`timeline.returns.${body}.next`)}
-                >
-                  ›
-                </TipButton>
-              </span>
-            ))}
-          </div>
-        )}
-
         <span className="thud-datewrap">
           {/* The date is a button that opens the shared moment picker (same control as
               My Charts), keeping date entry consistent across the app. The readout +
@@ -558,6 +511,56 @@ export function TimelineHud({
           />
         </div>
       </div>
+
+      {/* Returns snap on its OWN row (transits only), so the main transport row
+          keeps the same width as the other overlay bars. Clicking the luminary
+          snaps the target date to the nearest solar/lunar return; ‹ › walk whole
+          returns. The snap also switches Positioning to "Transit moment" (App
+          side) — only that framing makes the snapped map the return chart's
+          astrocartography — which the tips disclose. */}
+      {overlayMode === 'transits' && (
+        <div className="thud-row thud-returns-row">
+          <div className="thud-returns">
+            <span className="thud-mode-label">{t('timeline.returns.label')}</span>
+            {(['solar', 'lunar'] as const).map((body) => (
+              <span key={body} className="thud-return-group">
+                <TipButton
+                  type="button"
+                  className="thud-step-btn"
+                  onClick={() => onSnapReturn(body, -1)}
+                  aria-label={t(`timeline.returns.${body}.prevAria`)}
+                  placement="top"
+                  tip={t(`timeline.returns.${body}.prev`)}
+                >
+                  ‹
+                </TipButton>
+                <TipButton
+                  type="button"
+                  className="thud-return-btn"
+                  onClick={() => onSnapReturn(body, 0)}
+                  aria-label={t(`timeline.returns.${body}.snapAria`)}
+                  placement="top"
+                  tip={t(`timeline.returns.${body}.snap`)}
+                >
+                  <span className="astro-glyph" aria-hidden="true">
+                    {PLANET_GLYPHS[body === 'solar' ? 'Sun' : 'Moon']}
+                  </span>
+                </TipButton>
+                <TipButton
+                  type="button"
+                  className="thud-step-btn"
+                  onClick={() => onSnapReturn(body, 1)}
+                  aria-label={t(`timeline.returns.${body}.nextAria`)}
+                  placement="top"
+                  tip={t(`timeline.returns.${body}.next`)}
+                >
+                  ›
+                </TipButton>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {pickerOpen && (
         <TimelineDateModal

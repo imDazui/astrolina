@@ -63,12 +63,15 @@ export const wheel = {
     Juno: 'Commitment · partnership',
     Vesta: 'Focus · devotion',
   },
-  // The four chart angles, keyed by the two-letter label drawn on the wheel.
+  // The chart angles, keyed by the label drawn on the wheel. Vx/Avx (the
+  // Vertex axis) appear only with Advanced ▸ Vertex axis switched on.
   angles: {
     As: { title: 'Ascendant', sub: 'Rising sign, the self & first impressions' },
     Ds: { title: 'Descendant', sub: 'Relationships & the "other"' },
     Mc: { title: 'Midheaven (Medium Coeli)', sub: 'Career, reputation & public life' },
     Ic: { title: 'Imum Coeli', sub: 'Home, roots & private life' },
+    Vx: { title: 'Vertex', sub: 'Fated encounters & turning points; the west point of the prime vertical' },
+    Avx: { title: 'Anti-Vertex', sub: 'The Vertex axis’ eastern end, opposite the Vertex' },
   },
   // Motion-state tags appended to a readout sign's hover title.
   motion: {

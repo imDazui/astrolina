@@ -288,6 +288,12 @@
   flex-shrink: 0;
 }
 
+/* The returns live on their OWN row under the transport, so the main row stays
+   the same width as the other overlay bars. Tucked up against it. */
+.thud-returns-row {
+  padding-top: 0;
+}
+
 .thud-return-group {
   display: inline-flex;
   align-items: center;

@@ -29,6 +29,10 @@ export interface ParanProps {
   /** Overlay/promoted tag (e.g. "Tr"); absent for the natal chart. Shown as the
    *  paran badge's label prefix. */
   tag?: string;
+  /** Fixed-star paran (report-only — never drawn as a map line): the star's
+   *  name. The `label` carries the full star × planet pairing; planetA/planetB
+   *  both hold the PLANET side so the planet-visibility filter keeps working. */
+  star?: string;
 }
 
 function normalizeDelta(rad: number): number {
@@ -92,7 +96,10 @@ interface HorizonParan {
   angleB: 'ASC' | 'DSC';
 }
 
-function horizonParans(a: PlanetPosition, b: PlanetPosition): HorizonParan[] {
+function horizonParans(
+  a: { ra: number; dec: number },
+  b: { ra: number; dec: number },
+): HorizonParan[] {
   const tanDecA = Math.tan(a.dec);
   const tanDecB = Math.tan(b.dec);
   // A body on the equator only ever touches the horizon at H = ±90°, which the
@@ -198,6 +205,95 @@ export function generateParans(
     }
   }
 
+  return { type: 'FeatureCollection', features };
+}
+
+/**
+ * Fixed-star × planet parans — the Bernadette Brady school's signature
+ * technique (a star rising as a planet culminates, and every other mundane
+ * combination). Same closed forms as the planet parans, with the star's
+ * equinox-of-date position on one side. These are not drawn as map lines: the
+ * bright catalog times the planet set yields hundreds of latitude rows, which
+ * would bury the map — and the conventional reading (Starlight, the ACG
+ * latitude-crossing listings) is a per-location list anyway. Star-to-star
+ * parans are not computed.
+ *
+ * `stars` should already reflect the active star set (and, in Mundane mode,
+ * the ecliptic projection — match the star LINES' positions); `positions` the
+ * visibility-filtered planet set. `color` is the shared starlight tint.
+ */
+export function generateStarParans(
+  stars: { name: string; ra: number; dec: number }[],
+  positions: PlanetPosition[],
+  meridianLng: MeridianLng,
+  color: string,
+): FeatureCollection<LineString, ParanProps> {
+  const features: Feature<LineString, ParanProps>[] = [];
+  const push = (
+    p: PlanetName,
+    star: string,
+    angleA: ParanProps['angleA'],
+    angleB: ParanProps['angleB'],
+    label: string,
+    lat: number,
+    intersectionLng: number,
+  ) =>
+    features.push({
+      type: 'Feature',
+      properties: {
+        planetA: p,
+        angleA,
+        planetB: p,
+        angleB,
+        latitude: lat,
+        intersectionLng,
+        color,
+        label,
+        star,
+      },
+      geometry: { type: 'LineString', coordinates: parallelCoords(lat) },
+    });
+
+  for (const s of stars) {
+    for (const p of positions) {
+      // Star culminating (MC/IC) while the planet rises or sets.
+      for (const aOnIc of [false, true]) {
+        const lat = paranLat(s.ra, p.ra, p.dec, aOnIc);
+        if (lat === null) continue;
+        const aRA = s.ra + (aOnIc ? Math.PI : 0);
+        const hB = normalizeDelta(aRA - p.ra);
+        const angleA = aOnIc ? ('IC' as const) : ('MC' as const);
+        const angleB = hB < 0 ? ('ASC' as const) : ('DSC' as const);
+        push(
+          p.name, s.name, angleA, angleB,
+          `★ ${s.name} ${angleA} × ${PLANET_CODES[p.name]} ${angleB}`,
+          lat, normLng(meridianLng(aRA)),
+        );
+      }
+      // Planet culminating while the star rises or sets.
+      for (const aOnIc of [false, true]) {
+        const lat = paranLat(p.ra, s.ra, s.dec, aOnIc);
+        if (lat === null) continue;
+        const aRA = p.ra + (aOnIc ? Math.PI : 0);
+        const hB = normalizeDelta(aRA - s.ra);
+        const angleA = aOnIc ? ('IC' as const) : ('MC' as const);
+        const angleB = hB < 0 ? ('ASC' as const) : ('DSC' as const);
+        push(
+          p.name, s.name, angleA, angleB,
+          `${PLANET_CODES[p.name]} ${angleA} × ★ ${s.name} ${angleB}`,
+          lat, normLng(meridianLng(aRA)),
+        );
+      }
+      // Both on the horizon together (the star listed first).
+      for (const sol of horizonParans(s, p)) {
+        push(
+          p.name, s.name, sol.angleA, sol.angleB,
+          `★ ${s.name} ${sol.angleA} × ${PLANET_CODES[p.name]} ${sol.angleB}`,
+          sol.lat, normLng(meridianLng(sol.theta)),
+        );
+      }
+    }
+  }
   return { type: 'FeatureCollection', features };
 }
 

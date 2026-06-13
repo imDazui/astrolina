@@ -19,15 +19,33 @@ import { unwrapLongitudes } from './dateline';
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
 
-export type LineType = 'MC' | 'IC' | 'ASC' | 'DSC';
+// VX/AVX are the Vertex axis: where a body stands exactly on the local prime
+// vertical's WESTERN (Vertex) or eastern (Anti-Vertex) crossing — curves like
+// ASC/DSC but for the prime vertical instead of the horizon. Off by default in
+// the line filters.
+export type LineType = 'MC' | 'IC' | 'ASC' | 'DSC' | 'VX' | 'AVX';
 
 // The angle a body hits at the OTHER end of the same axis. Used for the lunar-node merge:
 // the North and South nodes are antipodes, so North Node MC = South Node IC, etc.
+// (and North Node VX = South Node AVX — verified by the same H → H−π substitution).
 export const OPPOSITE_ANGLE: Record<LineType, LineType> = {
   MC: 'IC',
   IC: 'MC',
   ASC: 'DSC',
   DSC: 'ASC',
+  VX: 'AVX',
+  AVX: 'VX',
+};
+
+// Display form per line type: the four classical angles read as plain caps; the
+// Vertex axis uses the wheel's Vx/Avx casing everywhere a label is built.
+export const LINE_TYPE_LABEL: Record<LineType, string> = {
+  MC: 'MC',
+  IC: 'IC',
+  ASC: 'ASC',
+  DSC: 'DSC',
+  VX: 'Vx',
+  AVX: 'Avx',
 };
 
 // Maps a meridian's right ascension (radians) to its geographic longitude (degrees,
@@ -68,7 +86,7 @@ function makeFeature(
       planet,
       lineType,
       color: PLANET_COLORS[planet],
-      label: `${PLANET_CODES[planet]} ${lineType}`,
+      label: `${PLANET_CODES[planet]} ${LINE_TYPE_LABEL[lineType]}`,
     },
     geometry: { type: 'LineString', coordinates: coords },
   };
@@ -180,6 +198,60 @@ function horizonLine(
   return [makeFeature(traceHorizonCoords(p, meridianLng, side), p.name, side)];
 }
 
+// The Vertex-axis curve: every place where the body stands exactly on the
+// local PRIME VERTICAL (the great circle through due east, the zenith, and due
+// west). On it, tan(lat) = tan(dec) / cos(H) — the prime-vertical counterpart
+// of the horizon's cos(H) = −tan(lat)·tan(dec) — so the curve is traced by
+// hour angle exactly like the horizon curves. The western half (H 0…+π) is the
+// VERTEX side, the eastern (H 0…−π) the ANTI-VERTEX. Both halves run from the
+// body's zenith point (H = 0, lat = dec, on the MC line) to its antipode
+// (H = ±π), shooting poleward near |H| = 90° where the clip takes over. A
+// near-zero declination needs no special case here: the formula divides by
+// cos H, never by tan(dec), so the curve just hugs the equator between its
+// poleward spikes.
+export function tracePrimeVerticalCoords(
+  p: { ra: number; dec: number },
+  meridianLng: MeridianLng,
+  side: 'VX' | 'AVX',
+): [number, number][][] {
+  const tanDec = Math.tan(p.dec);
+  const hDir = side === 'VX' ? 1 : -1; // west for the Vertex, east for the Anti-Vertex
+  const latAt = (H: number) => Math.atan(tanDec / Math.cos(H)) * RAD2DEG;
+  const lngAt = (H: number) => meridianLng(p.ra + H);
+
+  // Unlike a horizon half, a prime-vertical half is NOT one contiguous on-map
+  // run: it exits poleward at |H| → 90° and re-enters at the OPPOSITE pole, so
+  // a single polyline would draw a spurious pole-to-pole chord. Trace the two
+  // natural runs (either side of the |H| = 90° spike) as separate pieces.
+  const traceRange = (from: number, to: number): [number, number][] => {
+    const mags: number[] = [from];
+    for (let m = from + HORIZON_H_STEP; m < to - 1e-9; m += HORIZON_H_STEP) mags.push(m);
+    mags.push(to);
+    const coords: [number, number][] = [];
+    let prevLat = latAt(hDir * mags[0]);
+    pushHorizonPoint(coords, lngAt(hDir * mags[0]), prevLat);
+    for (let i = 1; i < mags.length; i++) {
+      const H = hDir * mags[i];
+      const lat = latAt(H);
+      const jumps = Math.max(
+        1,
+        Math.ceil(Math.abs(lat - prevLat) / HORIZON_MAX_DLAT_DEG),
+      );
+      for (let k = 1; k < jumps; k++) {
+        const mk = mags[i - 1] + (mags[i] - mags[i - 1]) * (k / jumps);
+        pushHorizonPoint(coords, lngAt(hDir * mk), latAt(hDir * mk));
+      }
+      pushHorizonPoint(coords, lngAt(H), lat);
+      prevLat = lat;
+    }
+    return unwrapLongitudes(coords);
+  };
+
+  return [traceRange(0, Math.PI / 2), traceRange(Math.PI / 2, Math.PI)].filter(
+    (run) => run.length >= 2,
+  );
+}
+
 // A meridian as a DENSE run of vertices (constant longitude, lat −85…85). The
 // globe projection draws every line segment as a straight chord through the
 // sphere, so a 2-point meridian would cut through the globe's interior instead of
@@ -217,6 +289,13 @@ export function generateLines(
     features.push(makeFeature(meridianCoords(lngIC), p.name, 'IC'));
     features.push(...horizonLine(p, meridianLng, 'ASC'));
     features.push(...horizonLine(p, meridianLng, 'DSC'));
+    // The Vertex axis (two runs per side — see tracePrimeVerticalCoords);
+    // hidden by default via the line-type filters.
+    for (const side of ['VX', 'AVX'] as const) {
+      for (const run of tracePrimeVerticalCoords(p, meridianLng, side)) {
+        features.push(makeFeature(run, p.name, side));
+      }
+    }
   }
 
   return { type: 'FeatureCollection', features };
