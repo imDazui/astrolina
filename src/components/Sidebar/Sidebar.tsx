@@ -37,6 +37,7 @@ import type { StarSetPref } from '../../lib/overlayPrefs';
 import type { ProgressionType } from '../../lib/astro/timeline';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import { TipButton } from '../ui/HoverTip';
+import { EyeIcon } from '../ui/EyeIcon';
 import { useHoverTip } from '../ui/useHoverTip';
 import { glyphify } from '../ui/glyphify';
 import { useT, LANGUAGES } from '../../i18n';
@@ -117,8 +118,6 @@ interface SidebarProps {
   setShowEclipseChartLines: (v: boolean) => void;
   eclipseIsoStep: EclipseIsoStep;
   setEclipseIsoStep: (s: EclipseIsoStep) => void;
-  showTimeline: boolean;
-  setShowTimeline: (v: boolean) => void;
   showOverlayZenith: boolean;
   setShowOverlayZenith: (v: boolean) => void;
   showNatal: boolean;
@@ -733,35 +732,6 @@ function PlanetToggle({
 }
 
 // Eye (shown) / eye-off (hidden) marker for the "Hide details" toggles.
-function EyeIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      className="eye-icon"
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {open ? (
-        <>
-          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-          <circle cx="12" cy="12" r="3" />
-        </>
-      ) : (
-        <>
-          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-          <line x1="1" y1="1" x2="23" y2="23" />
-        </>
-      )}
-    </svg>
-  );
-}
-
 export function Sidebar({
   visiblePlanets,
   togglePlanet,
@@ -822,8 +792,6 @@ export function Sidebar({
   setShowEclipseChartLines,
   eclipseIsoStep,
   setEclipseIsoStep,
-  showTimeline,
-  setShowTimeline,
   showOverlayZenith,
   setShowOverlayZenith,
   showNatal,
@@ -890,7 +858,8 @@ export function Sidebar({
   // nothing to configure simply gets no tab, with no per-mode special-casing.
 
   // The bottom timeline only exists for the time-scrub overlays (not synastry), so
-  // the Display ▸ Timeline toggle is shown only then.
+  // the Display section (Natal / Overlay Zenith) is shown only then. (The Timeline
+  // Bar show/hide toggle itself now lives on the timeline nub — see TimelineHud.)
   const isTimeMode =
     overlayMode === 'transits' ||
     overlayMode === 'progressed' ||
@@ -1010,6 +979,7 @@ export function Sidebar({
               onClick={() => setShowZenith(!showZenith)}
               ariaPressed={showZenith}
               title={t('settings.zenithNadir.title')}
+              hotkey="Shift Z"
               hint={t('settings.zenithNadir.hint')}
             >
               <EyeIcon open={showZenith} />
@@ -1461,16 +1431,9 @@ export function Sidebar({
                 <>
                   <h2>{t('settings.headings.display')}</h2>
                   <ul className="technique-list">
-                    <TipToggle
-                      className={`tech-toggle ${showTimeline ? 'on' : 'off'}`}
-                      onClick={() => setShowTimeline(!showTimeline)}
-                      ariaPressed={showTimeline}
-                      title={t('settings.timelineBar.title')}
-                      hint={t('settings.timelineBar.hint')}
-                    >
-                      <EyeIcon open={showTimeline} />
-                      <span className="name">{t('settings.timelineBar.title')}</span>
-                    </TipToggle>
+                    {/* The Timeline Bar show/hide toggle moved onto the timeline
+                        nub itself (an eye on its right edge), since the nub is always
+                        visible — see TimelineHud. */}
                     <TipToggle
                       className={`tech-toggle ${showNatal ? 'on' : 'off'}`}
                       onClick={() => setShowNatal(!showNatal)}

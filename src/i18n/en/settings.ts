@@ -52,11 +52,8 @@ export const settings = {
   },
   shiftTag: 'Shift',
   // Overlay ▸ Display toggles — each a show/hide switch with a hover hint, like the
-  // Parans toggle in Map filters.
-  timelineBar: {
-    title: 'Timeline Bar',
-    hint: 'The date scrubber at the bottom of the map.',
-  },
+  // Parans toggle in Map filters. (The Timeline Bar show/hide toggle moved onto the
+  // timeline nub itself — see timeline.barToggle.)
   overlayZenith: {
     title: 'Zenith',
     hint: 'Mark where each overlay body is directly overhead.',

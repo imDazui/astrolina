@@ -22,6 +22,13 @@ export const timeline = {
   },
   nubFallback: 'Overlay',
 
+  // The eye toggle on the nub's right edge — shows/hides the ruler + transport row.
+  barToggle: {
+    show: 'Show timeline bar',
+    hide: 'Hide timeline bar',
+    hint: 'The date scrubber + playback controls. The nub stays either way.',
+  },
+
   // Timeline scale picker (the <select>).
   units: {
     minute: 'Minute',

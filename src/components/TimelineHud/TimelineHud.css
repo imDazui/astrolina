@@ -108,6 +108,41 @@
 .thud-dragging .hud-move-hint {
   opacity: 0 !important;
 }
+
+/* The bar show/hide eye on the nub's right edge. A plain icon button (not a drag
+   target): pointer cursor, dimmer at rest, full accent on hover/focus. */
+.thud-eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 1px;
+  padding: 2px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  opacity: 0.55;
+  cursor: pointer;
+  border-radius: 5px;
+  transition: opacity 0.12s, background 0.12s;
+}
+.thud-eye .eye-icon {
+  display: block;
+}
+.thud-eye:hover,
+.thud-eye:focus-visible {
+  opacity: 1;
+  background: rgba(var(--tint), 0.1);
+}
+.thud-eye:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.5);
+}
+/* Hovering the eye suppresses the nub's "Drag to move" hint so the eye's own
+   tip is the only one showing. */
+.thud-measure:has(.thud-eye:hover) .hud-move-hint {
+  opacity: 0 !important;
+}
+
 .thud-measure::before,
 .thud-measure::after {
   content: '';

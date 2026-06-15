@@ -77,16 +77,18 @@ const EMPTY_FC = <T,>(): FeatureCollection<LineString, T> => ({
 // the seam: centre on lng 180 with every line overlay on and screenshot z1/z2/z4 in
 // 2D and tilted 3D — any gap, kink, or dash-phase jump at the join is a regression.
 const LINE_SOURCE_OPTS = { buffer: 128, tolerance: 0.375 } as const;
-// Parans are the exception: a paran is a perfect parallel of latitude, so its
-// densified geometry (parallelCoords in parans.ts) is PERFECTLY collinear in
+// Parans (and their orb-zone fills) are the exception: a paran is a perfect parallel
+// of latitude, so its densified geometry (parallelCoords in parans.ts; the constant-
+// latitude top/bottom edges of paranRing in orbBands.ts) is PERFECTLY collinear in
 // lng/lat. geojson-vt's tolerance simplification then strips every interior vertex,
-// collapsing the parallel back to one −180→180 segment — whose 360° longitude span
-// it mis-handles at the antimeridian, so the line gets clipped off near the world
-// centre when zoomed far out (2D) and can collapse through the globe (3D). The
-// densification exists precisely to avoid that, so the paran sources keep the same
-// seam buffer but disable simplification. Cheap — only a handful of paran lines, vs
-// the full ACG line set the 0.375 win was for. (Re-run the ±180° seam check from
-// LINE_SOURCE_OPTS above if you touch this.)
+// collapsing the parallel back to one −180→180 span — whose 360° longitude jump it
+// mis-handles at the antimeridian, so it gets clipped off near the world centre when
+// zoomed far out (2D) and can collapse through the globe (3D). The densification
+// exists precisely to avoid that, so these sources keep the same seam buffer but
+// disable simplification. The curved line bands in the orb source survive 0.375 fine
+// (the ACG lines do), so the only cost is keeping their vertices too — acceptable for
+// an off-by-default fill; split the paran bands into their own source if low-zoom orb
+// perf ever bites. (Re-run the ±180° seam check from LINE_SOURCE_OPTS if you touch this.)
 const PARAN_SOURCE_OPTS = { buffer: 128, tolerance: 0 } as const;
 
 // Angle code shown in each line / paran badge (As/Ds match the wheel's shorthand).
@@ -1173,8 +1175,10 @@ function setupCustomLayers(
   // Orb-of-influence zones: under everything the chart draws — ecliptic,
   // eclipse curves, lines, parans, overlays, stamps (only the night wash sits
   // deeper). One source carries both band kinds; opacity is per-feature
-  // (paran latitude bands run fainter than line bands).
-  map.addSource('orb-bands', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  // (paran latitude bands run fainter than line bands). PARAN_SOURCE_OPTS (no
+  // simplification) because that source includes the flat paran latitude bands,
+  // which simplification would collapse at the antimeridian (see PARAN_SOURCE_OPTS).
+  map.addSource('orb-bands', { type: 'geojson', data: EMPTY_FC(), ...PARAN_SOURCE_OPTS });
   map.addLayer({
     id: 'orb-bands-layer',
     source: 'orb-bands',

@@ -28,6 +28,7 @@ import {
 } from '../../lib/atlas/timezone';
 import { useMovableHud } from '../../lib/useMovableHud';
 import { TipButton, TipSpan } from '../ui/HoverTip';
+import { EyeIcon } from '../ui/EyeIcon';
 import { ClickIcon } from '../ui/ClickIcon';
 import { HintMenu } from '../Sidebar/Sidebar';
 import { TimelineDateModal } from '../TimelineDateModal/TimelineDateModal';
@@ -55,6 +56,9 @@ interface TimelineHudProps {
   overlayMeasure: string | null;
   /** When false, collapse to just the draggable nub (no ruler / transport). */
   showTimeline: boolean;
+  /** Toggle showTimeline — fired by the eye button on the nub's right edge (the
+   *  bar's show/hide control lives here now rather than in Settings). */
+  onToggleTimeline: () => void;
   /** Snap the target date to a solar/lunar return (dir 0 = nearest, ±1 = next/
    *  previous). Transits mode only — the Returns group hides otherwise. */
   onSnapReturn: (body: ReturnBody, dir: -1 | 0 | 1) => void;
@@ -262,6 +266,7 @@ export function TimelineHud({
   currentId,
   overlayMeasure,
   showTimeline,
+  onToggleTimeline,
   onSnapReturn,
   progressionType,
 }: TimelineHudProps) {
@@ -429,6 +434,23 @@ export function TimelineHud({
         <span className="hud-grip" aria-hidden="true" />
         <span className="thud-measure-label">{modeLabel}</span>
         {readout && <span className="thud-measure-value">{readout}</span>}
+        {/* Show/hide the ruler + transport (the bar's old Settings toggle, moved
+            here so it's reachable while the bar is collapsed). stopPropagation keeps
+            a tap/double-tap on the eye from starting a nub drag or re-centre. */}
+        <TipButton
+          type="button"
+          className="thud-eye"
+          placement="top"
+          tip={t(showTimeline ? 'timeline.barToggle.hide' : 'timeline.barToggle.show')}
+          hint={t('timeline.barToggle.hint')}
+          aria-label={t(showTimeline ? 'timeline.barToggle.hide' : 'timeline.barToggle.show')}
+          aria-pressed={showTimeline}
+          onClick={onToggleTimeline}
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <EyeIcon open={showTimeline} />
+        </TipButton>
         <span className="hud-move-hint ui-tip-box ui-tip" aria-hidden="true">
           <span className="ui-tip-title">{t('common.hud.dragToMove')}</span>
           <span className="ui-tip-sub hud-dock-line">

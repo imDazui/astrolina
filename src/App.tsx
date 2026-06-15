@@ -786,6 +786,7 @@ export default function App() {
           case 'l': setShowLabels((v) => !v); break;
           case 'n': setShowNightShade((v) => !v); break;
           case 'o': setShowOrbZones((v) => !v); break;
+          case 'z': setShowZenith((v) => !v); break;
           // Appearance ▸ Projection (absolute mode, not a toggle).
           case 'f': setProjection('2d'); break;
           case 'g': setProjection('3d'); break;
@@ -2586,8 +2587,6 @@ export default function App() {
           setShowEclipseChartLines={setShowEclipseChartLines}
           eclipseIsoStep={eclipseIsoStep}
           setEclipseIsoStep={setEclipseIsoStep}
-          showTimeline={showTimeline}
-          setShowTimeline={setShowTimeline}
           showOverlayZenith={showOverlayZenith}
           setShowOverlayZenith={setShowOverlayZenith}
           showNatal={showNatal}
@@ -2678,6 +2677,7 @@ export default function App() {
           currentId={current?.id ?? null}
           overlayMeasure={overlayLayer?.measure ?? null}
           showTimeline={showTimeline}
+          onToggleTimeline={() => setShowTimeline((v) => !v)}
           onSnapReturn={snapToReturn}
           progressionType={progressionType}
         />
