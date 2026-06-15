@@ -29,6 +29,75 @@
   background-color: #d6e4f4;
 }
 
+/* WebGL fallback notice. Shown in place of the (blank) map when the browser can't
+   give us a WebGL context, or loses it at runtime. Plain DOM, no WebGL, so it
+   always renders. Sits above the map but below the modal layer; it's the only
+   thing on screen in this state, so it deliberately takes the full surface and
+   pointer events (the Reload button needs them). */
+.map-gl-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg-page);
+}
+
+.map-gl-fallback-card {
+  max-width: 30rem;
+  padding: 24px 28px;
+  border: 1px solid rgba(var(--tint), 0.1);
+  border-radius: 12px;
+  background: rgb(var(--bg-menu));
+  color: var(--text);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.map-gl-fallback-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.map-gl-fallback-card p {
+  margin: 0 0 0.75rem;
+  line-height: 1.5;
+}
+
+.map-gl-fallback-heading {
+  color: var(--text-strong);
+}
+
+.map-gl-fallback-card ul {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+  line-height: 1.5;
+}
+
+.map-gl-fallback-card li {
+  margin-bottom: 0.35rem;
+}
+
+.map-gl-fallback-card button {
+  padding: 0.5rem 1rem;
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  border-radius: 8px;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.map-gl-fallback-card button:hover {
+  background: rgba(var(--accent-rgb), 0.2);
+  border-color: var(--accent);
+}
+
 /* ── ACG line edge badges ──────────────────────────────────────────
    Glyph + angle code in a line-colored pill, anchored where each line exits
    the viewport. Sits above the map + edge glow (z 4) AND the local-horizon compass
@@ -63,7 +132,11 @@
    (z 6), below the HUD bars (z 12). */
 .map-zoom-out {
   position: absolute;
-  left: 50%;
+  /* Centre on the effective viewport centre — shifted right a quarter of the
+     expanded sidebar's width (--es-width), matching the nav + timeline bars (and
+     useMovableHud's effectiveCenterX) so the button tracks the same centre when
+     the sidebar is open. 0 when it's closed. */
+  left: calc(50% + var(--es-width, 0px) / 4);
   bottom: 160px;
   transform: translateX(-50%);
   z-index: 7;
@@ -84,7 +157,8 @@
   opacity: 0.42;
   backdrop-filter: blur(4px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  transition: opacity 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+  transition: opacity 0.18s ease, background 0.18s ease, border-color 0.18s ease,
+    left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .map-zoom-out svg {
   flex-shrink: 0;

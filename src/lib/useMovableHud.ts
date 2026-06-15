@@ -24,9 +24,12 @@ const DOCK_BOTTOM = 16;
 // Reserve headroom at the top so a protruding grip/nub never clamps off-screen.
 const TOP_MARGIN = 26;
 
-// The effective screen centre the bars dock to: shifted right a quarter of the
-// expanded sidebar's width (matching the CSS `left: calc(50% + --es-width/4)`).
-function dockCenterX(): number {
+// The effective horizontal screen centre: shifted right a quarter of the expanded
+// sidebar's width (matching the CSS `left: calc(50% + --es-width/4)` the nav and
+// timeline bars use). Shared so every centred surface agrees on one centre — the
+// docked bottom bars' snap point, the floating Location window's home spot, and
+// the map's Zoom-out button (which mirrors this in CSS).
+export function effectiveCenterX(): number {
   const es =
     parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue('--es-width'),
@@ -159,7 +162,7 @@ export function useMovableHud(
     if (opts.floating) return; // free-floating windows stay put — no dock/snap
     // Snap home if released near the docked bottom-centre.
     const r = el.getBoundingClientRect();
-    const nearX = Math.abs(r.left + r.width / 2 - dockCenterX()) < SNAP_DIST;
+    const nearX = Math.abs(r.left + r.width / 2 - effectiveCenterX()) < SNAP_DIST;
     const nearBottom = Math.abs(r.bottom - (window.innerHeight - DOCK_BOTTOM)) < SNAP_DIST;
     if (nearX && nearBottom) setPos(null);
   };

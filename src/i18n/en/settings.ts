@@ -81,6 +81,10 @@ export const settings = {
     title: 'Midpoint Lines',
     hint: 'Lines where the midpoint of two visible bodies sits exactly on an angle (e.g. Su/Mo MC). In Mundo uses the bodily midpoint (mean RA and declination); In Zodiaco the classic longitude midpoint. Narrow the planet filter to keep the set readable.',
   },
+  zenithNadir: {
+    title: 'Zenith/Nadirs',
+    hint: 'Glyph stamps where each body is directly overhead (its zenith — a circle, on the MC line) and directly underfoot (its antipodal nadir — a diamond, on the IC line), plus the ecliptic reference curve through the Sun’s zenith. Hover a stamp to identify it, or click to fly there. Off by default.',
+  },
   // The overlay wheel's layout (Advanced ▸ Wheel layout) — one or the other,
   // like the Projection picker.
   wheelLayout: {

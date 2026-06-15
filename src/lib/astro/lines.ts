@@ -335,6 +335,29 @@ export function generateZenithStamps(
   return { type: 'FeatureCollection', features };
 }
 
+// The nadir / sub-anti-planetary point: the spot on Earth where a planet is exactly
+// UNDERFOOT (altitude −90°) — the antipode of its zenith. It sits on the planet's IC
+// line, at the antipodal longitude (zenith + 180°) and the negated latitude
+// (−declination). A pure transform of the zenith stamps, so it inherits their ids,
+// planet, and colour (the on-map stamp reuses the same baked glyph coin).
+export function antipodeStamps(
+  fc: FeatureCollection<Point, ZenithProps>,
+): FeatureCollection<Point, ZenithProps> {
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.map((f) => ({
+      ...f,
+      geometry: {
+        type: 'Point',
+        coordinates: [
+          normLng(f.geometry.coordinates[0] + 180),
+          -f.geometry.coordinates[1],
+        ],
+      },
+    })),
+  };
+}
+
 // The ecliptic (the Sun's apparent path / the zodiac great circle) projected onto
 // Earth: the locus of sub-points of the ecliptic at this instant. Each ecliptic
 // longitude λ (ecliptic latitude 0) maps to equatorial (RA, dec) via the obliquity

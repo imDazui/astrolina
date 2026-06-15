@@ -9,7 +9,7 @@ import type { ReactNode } from 'react';
 import type { PlaceResult } from '../../lib/atlas/cityLookup';
 import type { LsOriginPref } from '../../lib/overlayPrefs';
 import { useT } from '../../i18n';
-import { useMovableHud } from '../../lib/useMovableHud';
+import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { HoverTip } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
 import { useHoverTip } from '../ui/useHoverTip';
@@ -19,7 +19,10 @@ import { CLOSE_ZOOM } from '../Map/Map';
 import '../TimelineHud/TimelineHud.css';
 import './LocationHud.css';
 
-const POS_KEY = 'astro:location-pos:v1';
+// v2: the default centre is now sidebar-aware (effectiveCenterX, below). Bumping
+// the key drops any centre saved under the old sidebar-blind logic, so the window
+// opens correctly centred once rather than restoring a stale off-centre spot.
+const POS_KEY = 'astro:location-pos:v2';
 // "Fly to origin" lands at the map's CLOSE_ZOOM — the compass is full-size there, and
 // it's the threshold that surfaces the map's "Zoom out" button, so you arrive already
 // "zoomed in" to the local horizon.
@@ -195,8 +198,9 @@ export function LocationHud({
   const { pos, dragging, handleProps } = useMovableHud(hudRef, {
     posKey: POS_KEY,
     floating: true,
-    // Default centred horizontally, below the top bar + its readout row.
-    initial: () => ({ x: Math.round(window.innerWidth / 2 - 160), y: 112 }),
+    // Default centred horizontally on the effective centre (shifted right when the
+    // expanded sidebar is open, matching the nav/timeline bars), below the top bar.
+    initial: () => ({ x: Math.round(effectiveCenterX() - 160), y: 112 }),
   });
   // The grip's drag hint as the shared .ui-tip (portaled, so it isn't clipped by
   // the window frame); points up from the header, hidden while dragging.

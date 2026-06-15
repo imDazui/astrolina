@@ -92,7 +92,32 @@ export const map = {
   // Zenith stamp hover popup. {planet} is the planet display name.
   zenithTitle: '{planet} zenith',
   zenithSub: 'where {planet} is directly overhead',
+  // Nadir (antipodal underfoot) stamp hover popup.
+  nadirTitle: '{planet} nadir',
+  nadirSub: 'where {planet} is directly underfoot',
   // Deep-zoom escape pill (appears once zoomed past the detail threshold).
   zoomOutToWide: 'Zoom out to a wide view',
   zoomOut: 'Zoom Out',
+  // Shown in place of the map when the browser can't give us a WebGL context.
+  // The whole map renders through WebGL (there's no 2D fallback), so without one
+  // the surface is just a blank box. Usually means hardware acceleration is off,
+  // or a privacy / anti-fingerprinting shield is blocking or spoofing WebGL
+  // (some hardened or niche browsers do this by default). The guidance is
+  // deliberately gentle and non-destructive — nothing here asks the user to
+  // change anything that could put their system at risk.
+  webgl: {
+    unsupportedTitle: 'This map needs WebGL',
+    unsupportedBody:
+      "Your browser isn't giving this page a WebGL graphics context, so the map can't be drawn.",
+    // Each tip is a safe, reversible setting the user can try on their own.
+    tipsHeading: 'A few things you can try:',
+    tipAccel: 'Turn on hardware acceleration in your browser settings, then reload.',
+    tipShield:
+      'Allow WebGL / canvas for this site if you use an anti-fingerprinting or privacy shield.',
+    tipBrowser: 'Or open AstroLina in another up-to-date browser.',
+    lostTitle: 'The map lost its graphics context',
+    lostBody:
+      "This can happen when the device is low on graphics memory. It often recovers on its own — if it doesn't, reload the page.",
+    reload: 'Reload the page',
+  },
 } as const;

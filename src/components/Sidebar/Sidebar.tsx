@@ -37,6 +37,7 @@ import type { StarSetPref } from '../../lib/overlayPrefs';
 import type { ProgressionType } from '../../lib/astro/timeline';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import { TipButton } from '../ui/HoverTip';
+import { useHoverTip } from '../ui/useHoverTip';
 import { glyphify } from '../ui/glyphify';
 import { useT, LANGUAGES } from '../../i18n';
 import type { Locale } from '../../i18n';
@@ -74,6 +75,8 @@ interface SidebarProps {
   setStarSet: (s: StarSetPref) => void;
   showNightShade: boolean;
   setShowNightShade: (v: boolean) => void;
+  showZenith: boolean;
+  setShowZenith: (v: boolean) => void;
   progressionType: ProgressionType;
   setProgressionType: (p: ProgressionType) => void;
   lineSystem: LineSystem;
@@ -205,19 +208,11 @@ const PRIMARY_RATE_VALUES: PrimaryRate[] = [
 // owned by App (so the Info chip can open the Calculation tab from outside).
 export type SidebarSection = 'theme' | 'filters' | 'calc' | 'advanced' | 'overlay';
 
-// Where a hover/focus hint pops, relative to its trigger. The sidebar is docked
-// at the screen's right edge, so the card pops left onto the open map, centred on
-// the row. Coordinates are viewport-relative (the card is position: fixed).
-function useHoverTip<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-  const show = () => {
-    const r = ref.current?.getBoundingClientRect();
-    if (r) setPos({ left: r.left - 8, top: r.top + r.height / 2 });
-  };
-  const hide = () => setPos(null);
-  return { ref, pos, show, hide };
-}
+// Sidebar hints use the shared useHoverTip with its default 'left' placement: the
+// sidebar is docked at the screen's right edge, so cards pop left onto the open
+// map, centred on the row (coordinates viewport-relative — the card is position:
+// fixed). Using the shared hook (rather than a local copy) also gives every
+// sidebar tip the same touch long-press as the rest of the app.
 
 // The shared .ui-tip card (see index.css), portaled to <body> so the sidebar's
 // overflow can't clip it. aria-hidden mirrors the timeline nub's hint: a sighted
@@ -794,6 +789,8 @@ export function Sidebar({
   setStarSet,
   showNightShade,
   setShowNightShade,
+  showZenith,
+  setShowZenith,
   progressionType,
   setProgressionType,
   lineSystem,
@@ -901,10 +898,17 @@ export function Sidebar({
     overlayMode === 'primary-directions' ||
     overlayMode === 'cyclo';
   // The overlay-zenith toggle names the ACTIVE overlay's zenith — "Tr Zenith",
-  // "Sp Zenith", "Cy Zenith" … — using the same two-letter tag the map labels use.
-  const zenithLabel = `${
-    overlayMode === 'off' ? '' : OVERLAY_LABEL_PREFIX[overlayMode]
-  } ${t('settings.overlayZenith.title')}`.trim();
+  // "Sp Zenith", "CCG Zenith" … — using the same two-letter tag the map labels
+  // use, except cyclo spells out as "CCG" (the map tag 'Cy' is reserved for its
+  // mixed-source parans, so it reads ambiguously as a standalone overlay name).
+  const zenithPrefix =
+    overlayMode === 'off'
+      ? ''
+      : overlayMode === 'cyclo'
+        ? 'CCG'
+        : OVERLAY_LABEL_PREFIX[overlayMode];
+  const zenithLabel =
+    `${zenithPrefix} ${t('settings.overlayZenith.title')}`.trim();
   // Positioning (radix-relative vs the transit moment's own sidereal time) only changes
   // the TRANSITS overlay, and only in the Celestial line system: the directed overlays
   // (progressed / solar arc / primary directions) are natal-framed by construction, and
@@ -997,6 +1001,19 @@ export function Sidebar({
             >
               <EyeIcon open={showLabels} />
               <span className="name">{t('settings.details.placeNames')}</span>
+            </TipToggle>
+            {/* Zenith stamps (overhead, circle) + their antipodal nadir stamps
+                (underfoot, diamond) and the ecliptic reference curve. Hover either
+                stamp to identify it; click to fly there. Off by default. */}
+            <TipToggle
+              className={`tech-toggle ${showZenith ? 'on' : 'off'}`}
+              onClick={() => setShowZenith(!showZenith)}
+              ariaPressed={showZenith}
+              title={t('settings.zenithNadir.title')}
+              hint={t('settings.zenithNadir.hint')}
+            >
+              <EyeIcon open={showZenith} />
+              <span className="name">{t('settings.zenithNadir.title')}</span>
             </TipToggle>
             {/* Night Shade lives here with the other basemap-appearance toggles
                 (it shades the night half of Earth) rather than with the chart

@@ -11,7 +11,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { MeasureInfo } from '../Map/Map';
+import type { MeasureInfo, SlideInfo } from '../Map/Map';
 import type { MapState } from '../TimelineHud/TimelineHud';
 import type { OverlayMode } from '../../lib/astro/timeline';
 import { getMapExtensions } from '../../lib/extensions/mapExtensions';
@@ -27,7 +27,7 @@ import './TopNav.css';
 
 // The on-map mapping tool, owned here now that the Tools dropdown lives in the
 // top bar (was MappingToolsHud).
-export type MapTool = 'off' | 'measure';
+export type MapTool = 'off' | 'measure' | 'slide';
 
 interface TopNavProps {
   mapState: MapState;
@@ -55,6 +55,12 @@ interface TopNavProps {
   tool: MapTool;
   setTool: (t: MapTool) => void;
   measure: MeasureInfo | null;
+  /** Slide-tool readout (rotation angle + sidereal time); null until spun. */
+  slide: SlideInfo | null;
+  /** Toggle the Slide tool — switches the geodetic line frame to celestial first if needed. */
+  onToggleSlide: () => void;
+  /** False when Slide can't run (natal linework hidden / overlay promoted) — greys the item. */
+  slideEnabled: boolean;
   /** Reverse-geocoded name of the active map point (pin/hover); null while
    *  measuring or with no active point (then the bar shows the birth location). */
   locationLabel: string | null;
@@ -90,9 +96,9 @@ interface TopNavProps {
 const OVERLAY_MODES: Exclude<OverlayMode, 'off'>[] = [
   'transits',
   'progressed',
+  'cyclo',
   'solar-arc',
   'primary-directions',
-  'cyclo',
   'synastry',
   'eclipses',
 ];
@@ -122,15 +128,28 @@ function fmtMeasure(m: MeasureInfo): string {
   return `${deg}°${pad2(min)}′ · ${km} km · ${mi} mi`;
 }
 
+// "+48.2° E · 18:42 EDT" — the Slide spin as a signed rotation about the pole (with
+// hemisphere), then the resulting wall-clock time at the birthplace in the chart's zone.
+function fmtSlide(s: SlideInfo): string {
+  const sign = s.thetaDeg >= 0 ? '+' : '−';
+  const dir = s.thetaDeg >= 0 ? 'E' : 'W';
+  const deg = `${sign}${Math.abs(s.thetaDeg).toFixed(1)}° ${dir}`;
+  return `${deg} · ${s.clock}`;
+}
+
 // A click-away popover: a trigger button plus an absolutely-positioned panel that
 // closes on outside-click or Escape. Composed for each of Tools / Overlay / View.
 function NavMenu({
   label,
+  ariaLabel,
   active,
   className,
   children,
 }: {
-  label: string;
+  /** Trigger content — text (Overlay/View) or an icon (Tools). */
+  label: ReactNode;
+  /** Accessible name when `label` is a bare icon with no text. */
+  ariaLabel?: string;
   active?: boolean;
   /** Extra class on the trigger (e.g. 'navmenu-steady' to opt out of the
    *  map-state accent on open/active). */
@@ -165,6 +184,7 @@ function NavMenu({
         className={`navmenu-trigger ${className ?? ''} ${active ? 'active' : ''} ${open ? 'open' : ''}`}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        aria-label={ariaLabel}
       >
         <span>{label}</span>
         <span className="navmenu-caret">▾</span>
@@ -177,6 +197,47 @@ function NavMenu({
         </div>
       )}
     </div>
+  );
+}
+
+// The Tools-menu trigger icon, swapped to the ARMED tool so the bar shows at a
+// glance which tool is live: a ruler for Measure, a rotation glyph for Slide, and
+// the neutral wrench when nothing is armed. The button + icon also pulse while a
+// tool is on (see .topnav-tool.active in the CSS).
+function ToolMenuIcon({ tool }: { tool: MapTool }) {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {tool === 'measure' ? (
+        <>
+          {/* ruler */}
+          <path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" />
+          <path d="m14.5 12.5 2-2" />
+          <path d="m11.5 9.5 2-2" />
+          <path d="m8.5 6.5 2-2" />
+          <path d="m17.5 15.5 2-2" />
+        </>
+      ) : tool === 'slide' ? (
+        <>
+          {/* rotate-3d — spinning the globe under the linework */}
+          <path d="M16.466 7.5C15.643 4.237 13.952 2 12 2 9.239 2 7 6.477 7 12s2.239 10 5 10c.342 0 .677-.069 1-.2" />
+          <path d="m15.194 13.707 3.814 1.86-1.86 3.814" />
+          <path d="M19 15.57c-1.804.885-4.274 1.43-7 1.43-5.523 0-10-2.239-10-5s4.477-5 10-5c4.838 0 8.873 1.718 9.8 4" />
+        </>
+      ) : (
+        /* wrench — neutral "tools" affordance */
+        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+      )}
+    </svg>
   );
 }
 
@@ -280,6 +341,60 @@ function CheckItem({
   );
 }
 
+// A tool toggle for the Tools menu: a checkmark when active, the single-key shortcut
+// as the yellow badge, and a hover .ui-tip (always shown — it explains the tool, and
+// when disabled, why it's unavailable). Disabled rows grey out and don't fire.
+function ToolItem({
+  label,
+  hotkey,
+  checked,
+  disabled,
+  hint,
+  onToggle,
+}: {
+  label: string;
+  hotkey: string;
+  checked: boolean;
+  disabled?: boolean;
+  hint?: string;
+  onToggle: () => void;
+}) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('left');
+  // Disabled rows stay enabled at the DOM level (greyed via .disabled, click
+  // no-op'd) so they remain hoverable — a `disabled` <button> wouldn't fire the
+  // hover that surfaces the "why it's unavailable" tip.
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className={`navmenu-item navmenu-check ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`}
+        role="menuitemcheckbox"
+        aria-checked={checked}
+        aria-disabled={disabled || undefined}
+        onClick={() => {
+          if (!disabled) onToggle();
+        }}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+      >
+        <span className="navmenu-marker check">{checked ? '✓' : ''}</span>
+        <span>{label}</span>
+        <span className="navmenu-key">{hotkey}</span>
+      </button>
+      <HoverTip
+        pos={pos}
+        placement="left"
+        title={label}
+        hint={hint}
+        hotkey={hotkey}
+      />
+    </>
+  );
+}
+
 export function TopNav({
   mapState,
   pinned,
@@ -296,6 +411,9 @@ export function TopNav({
   tool,
   setTool,
   measure,
+  slide,
+  onToggleSlide,
+  slideEnabled,
   locationLabel,
   fadeLocation,
   overlayMode,
@@ -350,6 +468,7 @@ export function TopNav({
   ];
 
   const measuring = tool === 'measure';
+  const sliding = tool === 'slide';
   const locationText = locationLabel ?? undefined;
   // Fade only while a non-natal pin upgrades to a NEW, more accurate address (App
   // sets `fadeLocation` only when the resolved label differs from the text already
@@ -484,36 +603,45 @@ export function TopNav({
             )}
           </div>
 
-          {/* Right: the command controls. Tools is a single toggle for now (one
-              tool); its contents live in the secondary bar below. */}
+          {/* Right: the command controls. Tools groups the on-map tools (Measure,
+              Slide); the active tool's readout shows in the secondary bar below. */}
           <div className="topnav-right">
-            <TipButton
-              type="button"
-              className={`navmenu-trigger topnav-tool ${measuring ? 'active' : ''}`}
-              onClick={() => setTool(measuring ? 'off' : 'measure')}
-              aria-label={t('topNav.tools.measure')}
-              aria-pressed={measuring}
-              tip={t('topNav.tools.measure')}
-              hotkey="T"
+            <NavMenu
+              label={<ToolMenuIcon tool={tool} />}
+              ariaLabel={t('topNav.tools.menuLabel')}
+              active={tool !== 'off'}
+              className="topnav-tool"
             >
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z" />
-                <path d="m14.5 12.5 2-2" />
-                <path d="m11.5 9.5 2-2" />
-                <path d="m8.5 6.5 2-2" />
-                <path d="m17.5 15.5 2-2" />
-              </svg>
-            </TipButton>
+              {(close) => (
+                <>
+                  <ToolItem
+                    label={t('topNav.tools.measureItem')}
+                    hint={t('topNav.tools.measureHint')}
+                    hotkey="T"
+                    checked={measuring}
+                    onToggle={() => {
+                      setTool(measuring ? 'off' : 'measure');
+                      close();
+                    }}
+                  />
+                  <ToolItem
+                    label={t('topNav.tools.slideItem')}
+                    hint={
+                      slideEnabled
+                        ? t('topNav.tools.slideHint')
+                        : t('topNav.tools.slideUnavailable')
+                    }
+                    hotkey="Y"
+                    checked={sliding}
+                    disabled={!slideEnabled}
+                    onToggle={() => {
+                      onToggleSlide();
+                      close();
+                    }}
+                  />
+                </>
+              )}
+            </NavMenu>
 
             <NavMenu label={t('topNav.overlay.menuLabel')} active={overlayActive}>
               {(close) => (
@@ -539,7 +667,9 @@ export function TopNav({
                       tipTitle={
                         mode === 'progressed'
                           ? t('topNav.overlay.modes.progressed.tipTitle')
-                          : undefined
+                          : mode === 'cyclo'
+                            ? t('topNav.overlay.modes.cyclo.tipTitle')
+                            : undefined
                       }
                       hint={t(`topNav.overlay.modes.${mode}.desc`)}
                       hotkey={<CycleHotkey />}
@@ -576,7 +706,7 @@ export function TopNav({
           the chart's birth location. One reused island. The place name is hidden
           here while the Coordinates view is open — it moves into that window
           instead — but the measure readout always shows. */}
-      {(measuring || (locationLabel && !showCoords)) && (
+      {(measuring || sliding || (locationLabel && !showCoords)) && (
         <div className="timeline-hud topnav-toolbar" data-mapstate={mapState}>
           {measuring ? (
             measure ? (
@@ -592,6 +722,19 @@ export function TopNav({
             ) : (
               <span className="topnav-toolbar-hint">
                 {t('topNav.tools.toolbarHint')}
+              </span>
+            )
+          ) : sliding ? (
+            slide ? (
+              <div className="topnav-measure">
+                <span className="topnav-measure-endpoints">
+                  <span className="topnav-dot" />
+                  {fmtSlide(slide)}
+                </span>
+              </div>
+            ) : (
+              <span className="topnav-toolbar-hint">
+                {t('topNav.tools.slideToolbarHint')}
               </span>
             )
           ) : pinned ? (

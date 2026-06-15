@@ -34,8 +34,9 @@ export const topNav = {
         desc: 'An ancient timing method driven by the sky’s rotation.',
       },
       cyclo: {
-        label: 'Cyclo·carto·graphy',
-        desc: 'Progressed personal planets and transiting outer planets, one map.',
+        label: 'Cyclocartography',
+        tipTitle: 'Cyclocartography (CCG)',
+        desc: 'Secondary progressed personal planets and transiting planets Jupiter and beyond, one map.',
       },
       synastry: {
         label: 'Synastry',
@@ -69,8 +70,18 @@ export const topNav = {
   },
 
   tools: {
+    menuLabel: 'Tools',
     measure: 'Measure distance',
+    measureItem: 'Measure',
+    measureHint: 'Click and drag on the map to measure great-circle distance',
     toolbarHint: 'Click and drag on the map to measure · snaps to nearby lines',
+    slideItem: 'Slide',
+    slideHint:
+      'Slide the world under the fixed natal lines — advances time to show how parans build through the day. Works in flat or globe view.',
+    slideUnavailable:
+      'Slide needs the natal chart on screen — unavailable while it’s hidden (eclipses) or an overlay is promoted.',
+    slideToolbarHint:
+      'Drag east / west to slide the world under the fixed lines · right-click resets',
   },
 
   view: {

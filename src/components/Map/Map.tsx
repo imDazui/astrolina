@@ -13,7 +13,7 @@ import {
   useState,
 } from 'react';
 import maplibregl, { type ExpressionSpecification } from 'maplibre-gl';
-import type { FeatureCollection, LineString, Point, Polygon } from 'geojson';
+import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson';
 import type { LineProps, ZenithProps } from '../../lib/astro/lines';
 import type { OrbBandProps } from '../../lib/astro/orbBands';
 import type { StarLineProps } from '../../lib/astro/starLines';
@@ -36,10 +36,10 @@ import {
   projectVisible,
   screenAngleOfNorth,
 } from '../../lib/mapProjection';
-import { ensureGlyphImages, STAR_MARK_IMAGE, ZENITH_GLYPH_PREFIX } from './glyphImages';
+import { ensureGlyphImages, STAR_MARK_IMAGE, ZENITH_GLYPH_PREFIX, NADIR_GLYPH_PREFIX } from './glyphImages';
 import { applyDetailToggles } from './basemapStyle';
 import { HoverTip, TipButton } from '../ui/HoverTip';
-import { tipPosFor, type TipPos } from '../ui/useHoverTip';
+import { bindTouchTip, tipPosFor, type TipPos } from '../ui/useHoverTip';
 import {
   computeLineBadges,
   dodgeBadges,
@@ -77,6 +77,17 @@ const EMPTY_FC = <T,>(): FeatureCollection<LineString, T> => ({
 // the seam: centre on lng 180 with every line overlay on and screenshot z1/z2/z4 in
 // 2D and tilted 3D — any gap, kink, or dash-phase jump at the join is a regression.
 const LINE_SOURCE_OPTS = { buffer: 128, tolerance: 0.375 } as const;
+// Parans are the exception: a paran is a perfect parallel of latitude, so its
+// densified geometry (parallelCoords in parans.ts) is PERFECTLY collinear in
+// lng/lat. geojson-vt's tolerance simplification then strips every interior vertex,
+// collapsing the parallel back to one −180→180 segment — whose 360° longitude span
+// it mis-handles at the antimeridian, so the line gets clipped off near the world
+// centre when zoomed far out (2D) and can collapse through the globe (3D). The
+// densification exists precisely to avoid that, so the paran sources keep the same
+// seam buffer but disable simplification. Cheap — only a handful of paran lines, vs
+// the full ACG line set the 0.375 win was for. (Re-run the ±180° seam check from
+// LINE_SOURCE_OPTS above if you touch this.)
+const PARAN_SOURCE_OPTS = { buffer: 128, tolerance: 0 } as const;
 
 // Angle code shown in each line / paran badge (As/Ds match the wheel's shorthand).
 // Covers every line type — a paran's body A may sit on the MC/IC or the horizon,
@@ -346,6 +357,58 @@ export interface MeasureInfo {
   miles: number;
 }
 
+// Slide tool readout: how far the Earth has been spun about its polar axis, as a
+// rotation angle (deg of longitude) and the equivalent elapsed sidereal time.
+export interface SlideInfo {
+  /** Total rotation about the pole, signed (east-positive), in degrees. */
+  thetaDeg: number;
+  /** Equivalent elapsed Earth-rotation time, signed, in hours (theta / 15.041). */
+  dtHours: number;
+  /** Resulting wall-clock time at the birthplace, in the chart's zone — e.g. "18:42 EDT". */
+  clock: string;
+}
+
+// Earth turns 360° relative to the fixed stars in one sidereal day (23.9344696 h),
+// i.e. 15.0410686°/h. The Slide tool maps a spin angle to a sidereal-time offset
+// and back through this rate (the celestial frame the natal lines live in).
+export const SIDEREAL_DEG_PER_HOUR = 360 / 23.9344696;
+
+// Rigidly rotate a geometry collection about the polar axis by shifting every
+// vertex's longitude. The generators emit antimeridian-continuous coordinates (see
+// unwrapLongitudes), so a constant offset keeps each feature unbroken and the globe
+// wraps any out-of-range longitudes onto the sphere natively — no re-normalization.
+// Handles every geometry the line/band/zenith layers use (lines, polygons, points).
+function translateLng(
+  fc: FeatureCollection,
+  dLng: number,
+): FeatureCollection {
+  if (dLng === 0) return fc;
+  const ring = (pts: number[][]) => pts.map((c) => [c[0] + dLng, c[1]]);
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.map((f): Feature => {
+      const g = f.geometry;
+      switch (g.type) {
+        case 'LineString':
+          return { ...f, geometry: { type: 'LineString', coordinates: ring(g.coordinates) } };
+        case 'MultiLineString':
+          return { ...f, geometry: { type: 'MultiLineString', coordinates: g.coordinates.map(ring) } };
+        case 'Polygon':
+          return { ...f, geometry: { type: 'Polygon', coordinates: g.coordinates.map(ring) } };
+        case 'MultiPolygon':
+          return {
+            ...f,
+            geometry: { type: 'MultiPolygon', coordinates: g.coordinates.map((poly) => poly.map(ring)) },
+          };
+        case 'Point':
+          return { ...f, geometry: { type: 'Point', coordinates: [g.coordinates[0] + dLng, g.coordinates[1]] } };
+        default:
+          return f;
+      }
+    }),
+  };
+}
+
 const EARTH_RADIUS_KM = 6371.0088;
 const KM_PER_MILE = 1.609344;
 
@@ -386,6 +449,11 @@ const SNAP_LINE_LAYERS = [
   'acg-lines-ov-pair-nn',
   'acg-lines-ov-pair-sn',
   'angle-lines-layer',
+  // The dotted fixed-star lines (Filters ▸ Fixed Stars); the line layer carries
+  // the geometry — the symbol sparks aren't snapped to. Empty source when the
+  // filter is off, so snapping honours visibility like the rest. Kept in sync
+  // with LINE_HIT_LAYERS (hover tips), which already lists it.
+  'star-lines-layer',
   'parans-layer',
   'parans-ov-layer',
   'local-space-layer-out',
@@ -528,7 +596,11 @@ function constrainToHoveredLine(
 // (the same place a planet's ACG line labels fly to). Both the natal stamps and the
 // overlay stamps are hit-tested — the natal disc is drawn on top, so it wins where
 // the two coincide (queryRenderedFeatures returns topmost first).
-const ZENITH_HIT_LAYERS = ['acg-zenith-disc', 'acg-zenith-ov-disc'] as const;
+// Hit-test the STAMP symbol layers (the baked disc+glyph coins) rather than the
+// circle layers — those are now a hover-only bloom that's transparent at rest, so
+// they're no longer a reliable query target. The stamps are always rendered, and
+// their feature ids/props/geometry match the discs (same source).
+const ZENITH_HIT_LAYERS = ['acg-zenith-layer', 'acg-zenith-ov-layer', 'acg-nadir-layer'] as const;
 const ZENITH_HIT_TOLERANCE_PX = 4;
 
 interface ZenithHit {
@@ -540,6 +612,9 @@ interface ZenithHit {
   /** True for an overlay stamp, so the click-to-fly toggle keys it by the overlay's
    *  tag (matching the overlay label) rather than the natal '' prefix. */
   overlay: boolean;
+  /** True for a nadir (underfoot) stamp vs a zenith (overhead): the hover tooltip
+   *  names it accordingly and its fly-to toggle keys distinctly from the zenith. */
+  nadir: boolean;
   /** The body's overlay/promoted tag (e.g. "Tr"), carried on the stamp's feature;
    *  shown as the hover-tooltip prefix. Absent for the natal chart's own zeniths. A
    *  promoted stamp HAS a tag (display) yet is overlay=false (natal-path routing). */
@@ -564,12 +639,14 @@ function zenithAtPoint(map: maplibregl.Map, pt: ScreenPt): ZenithHit | null {
   if (!f || f.id == null || !f.properties || f.geometry.type !== 'Point') {
     return null;
   }
-  const overlay = f.layer.id === 'acg-zenith-ov-disc';
+  const overlay = f.layer.id === 'acg-zenith-ov-layer';
+  const nadir = f.layer.id === 'acg-nadir-layer';
   const [lng, lat] = f.geometry.coordinates as [number, number];
   return {
     id: String(f.id),
-    source: overlay ? 'acg-zenith-ov' : 'acg-zenith',
+    source: nadir ? 'acg-nadir' : overlay ? 'acg-zenith-ov' : 'acg-zenith',
     overlay,
+    nadir,
     tag: typeof f.properties.tag === 'string' ? f.properties.tag : undefined,
     planet: f.properties.planet as PlanetName,
     lng,
@@ -874,6 +951,9 @@ interface MapProps {
   hideCompass?: boolean;
   /** Planet-glyph stamps at each body's zenith (sub-planetary) point, on its MC line. */
   zenith: FeatureCollection<Point, ZenithProps>;
+  /** The antipodal nadir stamps (sub-anti-planetary points, on the IC line) — the
+   *  same coins, softened; display-only. Empty unless the Zenith/Nadirs filter is on. */
+  nadir: FeatureCollection<Point, ZenithProps>;
   /** The ecliptic great circle (zodiac) projected to its sub-points — a subtle
    *  bright-yellow reference line that threads through the Sun's zenith. */
   ecliptic?: FeatureCollection<LineString> | null;
@@ -915,6 +995,15 @@ interface MapProps {
   onMeasure?: (m: MeasureInfo | null) => void;
   /** Right-click while measuring cancels (exits) the tool. */
   onMeasureCancel?: () => void;
+  /** When true, drag east/west spins the Earth about its polar axis under the
+   *  natal line-cage (3D only). The cage stays screen-pinned; the basemap rotates.
+   *  Normal pan/rotate are suspended for the duration. */
+  slideActive?: boolean;
+  /** Reports the elapsed Earth-rotation time (days, signed) as the user spins;
+   *  0 when reset. Must be STABLE (read inside the long-lived slide effect). */
+  onSlide?: (dtDays: number) => void;
+  /** Right-click while sliding resets the spin to natal and exits the tool. */
+  onSlideCancel?: () => void;
   /** Emits map-originated onboarding mission events (measure point/snap, zoom-out click,
    *  box-zoom, perspective change). Must be STABLE — read inside long-lived map effects
    *  (e.g. the measure drag) that would otherwise re-subscribe and drop their state. */
@@ -948,6 +1037,7 @@ interface MapData {
   localSpaceCross: FeatureCollection<Point, CrossingProps>;
   localSpaceOrigin?: { lat: number; lng: number } | null;
   zenith: FeatureCollection<Point, ZenithProps>;
+  nadir: FeatureCollection<Point, ZenithProps>;
   ecliptic?: FeatureCollection<LineString> | null;
   overlay?: OverlayData | null;
   eclipse?: EclipseMapData | null;
@@ -1254,7 +1344,7 @@ function setupCustomLayers(
     },
   });
 
-  map.addSource('parans', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addSource('parans', { type: 'geojson', data: EMPTY_FC(), ...PARAN_SOURCE_OPTS });
   map.addLayer({
     id: 'parans-layer',
     source: 'parans',
@@ -1349,9 +1439,11 @@ function setupCustomLayers(
     layout: {
       'icon-image': STAR_MARK_IMAGE,
       'symbol-placement': 'line',
-      // Roomy spacing: the dotted line shows through as the thread between
-      // sparks, rather than a dense bead chain.
-      'symbol-spacing': 72,
+      // Tight spacing with the small re-baked spark (see STAR_LOGICAL in
+      // glyphImages): a fine ✦✦✦ bead-thread along the dotted base line. Collision
+      // is disabled below, so every bead draws — but the tiny icon keeps the GPU
+      // fill lower than the old roomy-but-large sparks.
+      'symbol-spacing': 24,
       // Upright stars (a rotated five-point star reads as noise), decorative
       // placement that never suppresses or collides with the planet labels.
       'icon-rotation-alignment': 'viewport',
@@ -1503,7 +1595,7 @@ function setupCustomLayers(
   addArrowLayer(map, 'local-space-ov-arrows-out', 'local-space-ov', lsDir('out'), '→');
   addArrowLayer(map, 'local-space-ov-arrows-in', 'local-space-ov', lsDir('in'), '←');
 
-  map.addSource('parans-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addSource('parans-ov', { type: 'geojson', data: EMPTY_FC(), ...PARAN_SOURCE_OPTS });
   map.addLayer({
     id: 'parans-ov-layer',
     source: 'parans-ov',
@@ -1659,20 +1751,18 @@ function setupCustomLayers(
     source: 'acg-zenith-ov',
     type: 'circle',
     paint: {
-      // Same grow-on-hover as the natal disc, but kept a touch translucent.
+      // Hover-only bloom (see the natal disc below): invisible at rest, it grows a
+      // softer ring out from behind the overlay stamp on hover. Capped at 0.85 to
+      // stay the derived (dashed-line) layer's lower weight.
       'circle-radius': ['case', ['boolean', ['feature-state', 'hover'], false], 18, 13],
       'circle-radius-transition': { duration: 150, delay: 0 },
       'circle-color': zenithFill,
-      'circle-opacity': 0.85,
+      'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0],
+      'circle-opacity-transition': { duration: 150, delay: 0 },
       'circle-stroke-color': ['get', 'color'],
-      'circle-stroke-width': [
-        'case',
-        ['boolean', ['feature-state', 'hover'], false],
-        2.75,
-        1.5,
-      ],
-      'circle-stroke-width-transition': { duration: 150, delay: 0 },
-      'circle-stroke-opacity': 0.85,
+      'circle-stroke-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2.75, 0],
+      'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.85, 0],
+      'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
     },
   });
   map.addLayer({
@@ -1694,16 +1784,17 @@ function setupCustomLayers(
   // it is directly overhead) — on its MC line, at latitude = declination. Drawn
   // above the lines so the glyph reads on top of the meridian.
   map.addSource('acg-zenith', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
-  // A ring around each stamp, bordered in the planet's color, over an inner fill
-  // that matches the glyph's halo/glow (a themed disc color) so the glyph reads
-  // on any basemap. Drawn under the glyph.
+  // The disc + ring now live BAKED in the stamp sprite (acg-zenith-layer below), so
+  // each stamp draws as one overlap-stacking coin. This circle is the hover-grow
+  // ONLY: transparent at rest, on hover it blooms a larger ring out from BEHIND the
+  // stamp (drawn under the symbol layer) — mirroring the badge hover lift without
+  // re-introducing a separate always-on disc that split from its glyph. The rest
+  // radius is kept at the disc size so the bloom grows from the coin's edge.
   map.addLayer({
     id: 'acg-zenith-disc',
     source: 'acg-zenith',
     type: 'circle',
     paint: {
-      // Grows + thickens its ring while hovered (a feature-state set on mouseover),
-      // mirroring the badge hover lift. The transitions animate the change.
       'circle-radius': [
         'case',
         ['boolean', ['feature-state', 'hover'], false],
@@ -1712,14 +1803,17 @@ function setupCustomLayers(
       ],
       'circle-radius-transition': { duration: 150, delay: 0 },
       'circle-color': zenithFill,
+      'circle-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
+      'circle-opacity-transition': { duration: 150, delay: 0 },
       'circle-stroke-color': ['get', 'color'],
       'circle-stroke-width': [
         'case',
         ['boolean', ['feature-state', 'hover'], false],
         2.75,
-        1.5,
+        0,
       ],
-      'circle-stroke-width-transition': { duration: 150, delay: 0 },
+      'circle-stroke-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0],
+      'circle-stroke-opacity-transition': { duration: 150, delay: 0 },
     },
   });
   map.addLayer({
@@ -1733,6 +1827,34 @@ function setupCustomLayers(
       'icon-ignore-placement': true,
     },
   });
+
+  // ── Nadir stamps: the antipodal sub-anti-planetary points (each body directly
+  // underfoot), on the IC line. A DIAMOND coin (NADIR_GLYPH_PREFIX) — a distinct
+  // shape from the zenith's circle. Softer at rest, BRIGHTENING on hover (a
+  // feature-state cue, like the zenith disc's hover bloom); it's hit-tested too
+  // (ZENITH_HIT_LAYERS), so a nadir hovers + flies-to-on-click like a zenith. Empty
+  // unless the Zenith/Nadirs filter is on. Inserted BENEATH the natal zenith stamps
+  // (beforeId): a body's nadir is 180° from its OWN zenith, but it CAN coincide with
+  // another body's zenith (an opposition) — drawing under keeps the zenith on top.
+  map.addSource('acg-nadir', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
+  map.addLayer(
+    {
+      id: 'acg-nadir-layer',
+      source: 'acg-nadir',
+      type: 'symbol',
+      layout: {
+        'icon-image': ['concat', NADIR_GLYPH_PREFIX, ['get', 'planet']] as unknown as ExpressionSpecification,
+        'icon-size': 1,
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+      paint: {
+        'icon-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0.8],
+        'icon-opacity-transition': { duration: 150, delay: 0 },
+      },
+    },
+    'acg-zenith-disc',
+  );
 
   // The greatest-eclipse marker: a smaller echo of the zenith stamps (disc +
   // the baked Sun glyph) at the point where the eclipse is deepest. Drawn here
@@ -1851,6 +1973,7 @@ function pushData(map: maplibregl.Map, data: MapData, freshSources = false) {
   push('local-space', data.localSpace);
   push('acg-ls-cross', data.localSpaceCross);
   push('acg-zenith', data.zenith);
+  push('acg-nadir', data.nadir);
   push('ecliptic', data.ecliptic ?? EMPTY_DATA);
   push('eclipse', data.eclipse ?? EMPTY_DATA);
 
@@ -1865,6 +1988,37 @@ function pushData(map: maplibregl.Map, data: MapData, freshSources = false) {
   push('ecliptic-ov', ov ? ov.ecliptic : EMPTY_DATA);
 }
 
+// Whether this browser will give us a WebGL context at all. MapLibre renders the
+// entire map through WebGL with no 2D fallback, so without one the map surface is
+// just a blank (dark) box — we use this to show a readable notice instead.
+//
+// Deliberately the lightest possible check: one throwaway 1x1 canvas, a single
+// context request, no shaders and no `failIfMajorPerformanceCaveat`, then we hand
+// the context straight back. We do NOT force a high-performance GPU or stress the
+// driver — a flaky machine should be no worse off for having looked. Software
+// rendering (e.g. SwiftShader) still counts as "supported": we'd rather let
+// MapLibre try than pre-emptively lock out someone who could run, just slowly.
+function detectWebGL(): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl =
+      canvas.getContext('webgl2') ||
+      canvas.getContext('webgl') ||
+      canvas.getContext('experimental-webgl');
+    if (!gl) return false;
+    // Release the probe context immediately rather than leaving it for the GC, so
+    // we never hold a second live GL context alongside the real map.
+    (gl as WebGLRenderingContext)
+      .getExtension('WEBGL_lose_context')
+      ?.loseContext();
+    return true;
+  } catch {
+    // Some privacy / anti-fingerprinting shields throw from getContext rather than
+    // returning null. Treat any throw as "no WebGL".
+    return false;
+  }
+}
+
 export const Map = forwardRef<MapHandle, MapProps>(function Map({
   lines,
   angleLines,
@@ -1877,6 +2031,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   localSpaceOrigin,
   hideCompass,
   zenith,
+  nadir,
   ecliptic,
   overlay,
   eclipse,
@@ -1895,6 +2050,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   measureColor,
   onMeasure,
   onMeasureCancel,
+  slideActive,
+  onSlide,
+  onSlideCancel,
   onMissionEvent,
   keepZoomOutVisible,
   onHover,
@@ -1950,7 +2108,21 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   }), []);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const onRightClickRef = useRef(onRightClick);
-  const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay });
+  const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
+  // Slide active flag, read inside the data effect / badge anchoring while the tool
+  // is on. The move handlers instead gate on slideDraggingRef (below): they suppress
+  // edge-badge work only during an actual spin-drag (whose per-frame setCenter would
+  // thrash them), but still re-anchor after a programmatic fly — e.g. a badge click.
+  const slideActiveRef = useRef(!!slideActive);
+  const slideDraggingRef = useRef(false);
+  // True while the heavy secondary layers are dropped for a smooth spin (restored,
+  // accurate, when motion settles). Read by the slide effect AND the data effect (so a
+  // mid-spin bucket recompute re-tiles only the cage, not the hidden secondary).
+  const secondaryHiddenRef = useRef(false);
+  // Current spin angle (deg), mirrored out of the slide drag effect so a mid-spin
+  // re-push of the cage geometry can re-assert the rotation rather than snap to anchor,
+  // and so badge clicks / flies can shift their geographic target by the same θ.
+  const spinDegRef = useRef(0);
   const themeRef = useRef(theme);
   // Current projection mode, read inside the once-bound load/style.load handlers
   // (setStyle resets projection, so it must be re-applied after each style load).
@@ -1977,7 +2149,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // handlers always read the latest props.
   useEffect(() => {
     onRightClickRef.current = onRightClick;
-    dataRef.current = { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay, eclipse };
+    dataRef.current = { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse };
+    slideActiveRef.current = !!slideActive;
     measureColorRef.current = measureColor;
     detailRef.current = { showRoads, showRivers, showLabels };
     eclipseTipRef.current = eclipseTip;
@@ -2010,7 +2183,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const flyToPoint = useCallback((lng: number, lat: number) => {
     const map = mapRef.current;
     if (!map) return;
-    flyWithSidebarOffset(map, lng, lat, Math.max(map.getZoom(), 4));
+    // While sliding, the linework is RENDERED translated by −θ to stay screen-pinned,
+    // so shift the geographic target by the same −θ to land on the point as drawn
+    // (badge clicks pass natal-frame coordinates).
+    const lngAdj = slideActiveRef.current ? lng - spinDegRef.current : lng;
+    flyWithSidebarOffset(map, lngAdj, lat, Math.max(map.getZoom(), 4));
   }, []);
 
   // Clicking a paran badge flies to that paran's intersection; clicking the SAME
@@ -2085,6 +2262,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // same-value bailout; nothing reading `zoom` cares about finer granularity.
     setZoom(Math.round(z * 100) / 100);
     const data = dataRef.current;
+    // While the Slide tool spins, the pinned natal sources are RENDERED translated by
+    // −θ (to stay screen-fixed) but `data` here holds the un-translated props — so shift
+    // the pinned feature sets (and the LS origin) by the same −θ to anchor badges onto
+    // the rendered lines. Overlay/paran badges aren't shifted: overlay rides with the
+    // basemap, and paran badges sit at the (live) centre longitude.
+    const slideShift = slideActiveRef.current ? spinDegRef.current : 0;
+    const pinShift = <F extends Feature>(feats: F[]): F[] =>
+      slideShift
+        ? (translateLng({ type: 'FeatureCollection', features: feats }, -slideShift)
+            .features as F[])
+        : feats;
     const cont = map.getContainer();
     // Edge badges are skipped while the camera is in motion: they fade out
     // within ~0.12s of movestart (.is-moving — in motion they'd float detached
@@ -2096,13 +2284,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // local-space sections below still run per frame: the compass and paran
     // rows track the camera live and are far cheaper.
     if (!map.isMoving()) {
-      const natal = computeLineBadges(map, data.lines.features, BADGE_INSET, false);
+      const natal = computeLineBadges(map, pinShift(data.lines.features), BADGE_INSET, false);
       const ov = data.overlay?.lines
         ? computeLineBadges(map, data.overlay.lines.features, BADGE_INSET, true)
         : [];
       // Aspect/midpoint lines ride the natal badge path (they're natal-derived);
       // their aspect/planetB props give them distinct group keys and badge faces.
-      const ang = computeLineBadges(map, data.angleLines.features, BADGE_INSET, false, 'ang');
+      const ang = computeLineBadges(map, pinShift(data.angleLines.features), BADGE_INSET, false, 'ang');
       const hudRects =
         reuseHudRects && hudRectsRef.current
           ? hudRectsRef.current
@@ -2156,10 +2344,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // north direction so it stays correct under rotation/tilt. Hidden when the origin
     // is on the globe's far side.
     const lsbadges: LocalSpaceBadge[] = [];
-    const origin = data.localSpaceOrigin;
+    // The LS lines + origin are pinned natal linework, so shift them by −θ too while
+    // sliding (the lines converge at origin−θ on screen, matching the rendered source).
+    const lsFeats = pinShift(data.localSpace.features);
+    const origin =
+      slideShift && data.localSpaceOrigin
+        ? { ...data.localSpaceOrigin, lng: data.localSpaceOrigin.lng - slideShift }
+        : data.localSpaceOrigin;
     if (
       origin &&
-      data.localSpace.features.length &&
+      lsFeats.length &&
       !isOccluded(map, origin.lng, origin.lat)
     ) {
       const oc = map.project([origin.lng, origin.lat]);
@@ -2186,7 +2380,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         return null;
       };
       const seen = new Set<string>();
-      for (const f of data.localSpace.features) {
+      for (const f of lsFeats) {
         const lp = f.properties;
         const k = `${lp.planet}-${lp.direction}`;
         if (seen.has(k)) continue;
@@ -2286,25 +2480,55 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // The "AstroLina" entry in the map attribution bar opens this credits / license
   // dialog (the secondary disclosures that needn't sit on the map at all times).
   const [creditsOpen, setCreditsOpen] = useState(false);
+  // WebGL health. The map is WebGL-only, so probe support once during the initial
+  // render (a lazy initializer — runs a single time, never on re-render): start in
+  // 'unsupported' when the browser won't grant a context, so the fallback notice
+  // paints on the first frame rather than after a flash of blank map. 'lost' is set
+  // later if a live context drops at runtime (MapLibre tries to recover on its own).
+  // Anything other than 'ok' swaps the blank canvas for a readable notice below.
+  const [glStatus, setGlStatus] = useState<'ok' | 'unsupported' | 'lost'>(() =>
+    detectWebGL() ? 'ok' : 'unsupported',
+  );
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: BASEMAP_STYLE_URLS[themeRef.current],
-      // Open framed on a continental box centred on the active chart's birthplace
-      // rather than the whole globe (see firstLoadBounds / DEFAULT_BOUNDS). Read
-      // once at mount; fitBoundsOptions keeps the continent off the very edges and
-      // clear of the +/− controls in the top-right corner.
-      bounds: firstLoadBounds(initialCenter),
-      fitBoundsOptions: { padding: 24 },
-      // MapLibre's hard ceiling. OpenFreeMap vector tiles only carry data to
-      // z14, so past that the map overzooms (scales z14 tiles — blurrier) but
-      // still lets you zoom right in for fine placement.
-      maxZoom: 22,
-      attributionControl: false,
-    });
+    // WebGL was probed at mount (see glStatus's initial state). If the browser
+    // wouldn't grant a context — hardware acceleration off, or a privacy shield
+    // blocking/spoofing WebGL — never construct MapLibre: the fallback notice is
+    // already on screen, and there's nothing for the map to render into.
+    if (glStatus !== 'ok') return;
+
+    // The probe passing doesn't fully guarantee construction succeeds (a context
+    // can be granted then immediately lost), so guard the constructor too and fall
+    // back the same way rather than letting an uncaught throw blank the app.
+    let map: maplibregl.Map;
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: BASEMAP_STYLE_URLS[themeRef.current],
+        // Open framed on a continental box centred on the active chart's birthplace
+        // rather than the whole globe (see firstLoadBounds / DEFAULT_BOUNDS). Read
+        // once at mount; fitBoundsOptions keeps the continent off the very edges and
+        // clear of the +/− controls in the top-right corner.
+        bounds: firstLoadBounds(initialCenter),
+        fitBoundsOptions: { padding: 24 },
+        // MapLibre's hard ceiling. OpenFreeMap vector tiles only carry data to
+        // z14, so past that the map overzooms (scales z14 tiles — blurrier) but
+        // still lets you zoom right in for fine placement.
+        maxZoom: 22,
+        attributionControl: false,
+      });
+    } catch (err) {
+      console.error('[map] MapLibre could not initialise WebGL', err);
+      // Terminal one-shot error path: the map can't be built, so flip to the
+      // fallback and bail. The set-state-in-effect guard is about cascading
+      // re-renders from render-driven syncs; this runs at most once on a hard
+      // construction failure and never loops, so the concern doesn't apply.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setGlStatus('unsupported');
+      return;
+    }
 
     map.addControl(
       // The compass (resets bearing + tilt) stacks under +/−. It's hidden via CSS
@@ -2312,10 +2536,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }),
       'top-right',
     );
-    // The +/− zoom and compass buttons are MapLibre-rendered DOM. Give them the
-    // shared HoverTip (with +/− hotkey callouts) instead of a native title: drop
-    // `title`, keep `aria-label` as the accessible name, and drive the tip from
-    // hover/focus listeners (torn down with the map in this effect's cleanup).
+    // The +/− zoom and compass buttons are MapLibre-rendered DOM (not React), so
+    // they can't take the shared HoverTip's ref. Instead we drive the same tip
+    // state imperatively and bind the shared long-press kernel (bindTouchTip with
+    // pointer:true) so they get identical hover + hold-to-reveal behavior, with the
+    // +/− hotkey callouts. Drop the native `title`, keep `aria-label` as the
+    // accessible name; every listener is torn down with the map in this cleanup.
     const ctrlRoot = map.getContainer();
     const ctrlTipDefs: { sel: string; label: string; hotkey?: string }[] = [
       { sel: '.maplibregl-ctrl-zoom-in', label: t('map.ctrl.zoomIn'), hotkey: '+' },
@@ -2325,26 +2551,19 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const ctrlTipCleanups: (() => void)[] = [];
     for (const def of ctrlTipDefs) {
       const el = ctrlRoot.querySelector(def.sel);
-      if (!el) continue;
+      if (!(el instanceof HTMLElement)) continue;
       el.removeAttribute('title');
       el.setAttribute('aria-label', def.label);
-      const enter = () =>
+      const show = () =>
         setCtrlTip({
           pos: tipPosFor(el.getBoundingClientRect(), 'left'),
           title: def.label,
           hotkey: def.hotkey,
         });
-      const leave = () => setCtrlTip(null);
-      el.addEventListener('mouseenter', enter);
-      el.addEventListener('mouseleave', leave);
-      el.addEventListener('focus', enter);
-      el.addEventListener('blur', leave);
-      ctrlTipCleanups.push(() => {
-        el.removeEventListener('mouseenter', enter);
-        el.removeEventListener('mouseleave', leave);
-        el.removeEventListener('focus', enter);
-        el.removeEventListener('blur', leave);
+      const { cleanup } = bindTouchTip(el, show, () => setCtrlTip(null), {
+        pointer: true,
       });
+      ctrlTipCleanups.push(cleanup);
     }
     map.addControl(
       new maplibregl.AttributionControl({
@@ -2415,10 +2634,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // Edge labels fade out while the camera animates and fade back in once it settles
     // (see mapMoving). Positions are still recomputed every frame so the compass wheel
     // (placed off the same projection) keeps tracking; the labels are just hidden.
-    map.on('movestart', () => setMapMoving(true));
+    // During a spin-DRAG the camera moves every frame; the slide effect hides + settles
+    // the badges itself, so skip the per-frame move work here. A programmatic fly (badge
+    // click) isn't a drag, so it falls through and re-anchors normally.
+    map.on('movestart', () => {
+      if (slideDraggingRef.current) return;
+      setMapMoving(true);
+    });
     // Re-anchor the edge badges on every pan/zoom (throttled to one rAF/frame).
-    map.on('move', () => scheduleBadgesRef.current());
+    map.on('move', () => {
+      if (slideDraggingRef.current) return;
+      scheduleBadgesRef.current();
+    });
     map.on('moveend', () => {
+      if (slideDraggingRef.current) return;
       computeBadgesRef.current();
       setMapMoving(false);
     });
@@ -2438,6 +2667,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       hudRectsRef.current = null;
       scheduleBadgesRef.current();
     });
+
+    // A live GL context can drop after a clean start — the GPU is reset, the tab is
+    // backgrounded under memory pressure, a driver hiccups. MapLibre attempts its
+    // own recovery; we listen on its map-level events (not the raw canvas, so we
+    // don't fight that recovery) only to swap in a notice while the context is gone
+    // and clear it again the moment it comes back.
+    map.on('webglcontextlost', () => setGlStatus('lost'));
+    map.on('webglcontextrestored', () => setGlStatus('ok'));
 
     mapRef.current = map;
 
@@ -2624,34 +2861,42 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const tag = zen.tag ?? '';
       const base = labels.planet(zen.planet) ?? zen.planet;
       const name = tag ? `${tag} ${base}` : base;
+      // Nadir stamps name themselves "underfoot"; zeniths "overhead".
+      const titleKey = zen.nadir ? 'map.nadirTitle' : 'map.zenithTitle';
+      const subKey = zen.nadir ? 'map.nadirSub' : 'map.zenithSub';
       zenithPopup
         .setLngLat([zen.lng, zen.lat])
         .setHTML(
-          `<div class="ui-tip"><span class="ui-tip-title">${t('map.zenithTitle', { planet: name })}</span>` +
-            `<span class="ui-tip-sub">${t('map.zenithSub', { planet: name })}</span></div>`,
+          `<div class="ui-tip"><span class="ui-tip-title">${t(titleKey, { planet: name })}</span>` +
+            `<span class="ui-tip-sub">${t(subKey, { planet: name })}</span></div>`,
         );
       // Add once, then just reposition/retitle on subsequent moves (no DOM churn).
       if (!zenithPopup.isOpen()) zenithPopup.addTo(map);
     };
 
-    // While the measurement tool is active, the map's pointer drives the ruler,
-    // so suppress hover-relocation / pin interactions.
+    // While the measurement tool is active, the pointer drives the ruler. While the
+    // Slide tool is DRAGGING (spinning), it drives the spin. Otherwise hover still names
+    // lines / parans / zeniths as usual — but during a slide the cursor is left to the
+    // slide tool ('grab'/'grabbing'), since its hover targets aren't click-able then.
     const handleMove = (e: maplibregl.MapMouseEvent) => {
-      if (measureActive) return;
+      if (measureActive || slideDraggingRef.current) return;
+      const setCursor = (c: string) => {
+        if (!slideActiveRef.current) map.getCanvas().style.cursor = c;
+      };
       // A zenith stamp under the cursor wins: animate it + show the tooltip;
       // otherwise fall back to the map's CSS grab cursor.
       const zen = zenithAtPoint(map, e.point);
       if (zen) {
         clearCross();
         clearLine();
-        map.getCanvas().style.cursor = 'pointer';
+        setCursor('pointer');
         showZenith(zen);
       } else {
         const cross = crossAtPoint(map, e.point);
         if (cross) {
           clearZenith();
           clearLine();
-          map.getCanvas().style.cursor = 'pointer';
+          setCursor('pointer');
           showCross(cross);
         } else {
           // A bare line under the cursor just names itself (hover tip); it isn't a
@@ -2680,7 +2925,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             clearCross();
             clearLine();
           }
-          map.getCanvas().style.cursor = '';
+          setCursor('');
         }
       }
       onHover?.(e.lngLat.lat, e.lngLat.lng);
@@ -2711,7 +2956,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       onLeave?.();
     };
     const handleClick = (e: maplibregl.MapMouseEvent) => {
-      if (measureActive) return;
+      if (measureActive || slideActive) return;
       // Any map click can surface onboarding missions (the handler itself decides
       // whether anything is due).
       onMapClick?.();
@@ -2726,7 +2971,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // the stamp shares one toggle with its label — a promoted stamp shares its tag
         // but keys '' like its natal-source label.
         const prefix = zen.overlay ? (zen.tag ?? '') : '';
-        flyToZenith(zenithKey(prefix, zen.planet), zen.lng, zen.lat);
+        // A nadir keys distinctly from its planet's zenith so the two don't share
+        // (and cancel) one fly-back toggle.
+        const key = zenithKey(prefix, zen.planet) + (zen.nadir ? '|nadir' : '');
+        flyToZenith(key, zen.lng, zen.lat);
         return;
       }
       // Eclipses mode (the App only supplies the card builder then): any other
@@ -2754,7 +3002,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }
     };
     const handleDoubleClick = (e: maplibregl.MapMouseEvent) => {
-      if (measureActive) return;
+      if (measureActive || slideActive) return;
       // Double-tap drops / moves the pin — but not on a zenith stamp, whose single
       // clicks already fly there, so the stamp stays a fly-to target.
       if (zenithAtPoint(map, e.point)) return;
@@ -2762,7 +3010,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     };
     const handleContext = (e: maplibregl.MapMouseEvent) => {
       e.preventDefault();
-      if (measureActive) return;
+      if (measureActive || slideActive) return;
       // Remove the pin, or — with none placed — drop the natal pin.
       onRightClick?.();
     };
@@ -2786,7 +3034,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       lineCardPopup.remove();
       lineCardPopupRef.current = null;
     };
-  }, [onHover, onLeave, onPlacePin, onRightClick, onMapClick, measureActive, flyToZenith, t, labels]);
+  }, [onHover, onLeave, onPlacePin, onRightClick, onMapClick, measureActive, slideActive, flyToZenith, t, labels]);
 
   // The pinned card describes ONE selection at one place — close it whenever
   // the selected eclipse changes or eclipses mode exits (the builder closure's
@@ -2911,12 +3159,30 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const onUp = () => {
       origin = null;
     };
+    // Touch: single-finger tap-drag measures (no button/shift modifiers on touch).
+    const onTouchStart = (e: maplibregl.MapTouchEvent) => {
+      if (e.points.length !== 1) return;
+      lastPoint = e.point;
+      lastLngLat = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      origin = pointFor(e.point, lastLngLat);
+      setSegment(origin, origin);
+      onMeasure?.(measureBetween(origin, origin));
+      onMissionEvent?.('measure-point');
+    };
+    const onTouchMove = (e: maplibregl.MapTouchEvent) => {
+      if (e.points.length !== 1) return;
+      lastPoint = e.point;
+      lastLngLat = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      update(e.point, lastLngLat, false);
+    };
     // Right-click anywhere on the map exits the measure tool (no context menu).
     const onContextMenu = (e: maplibregl.MapMouseEvent) => {
       e.preventDefault();
       origin = null;
       onMeasureCancel?.();
     };
+    // Catch a release outside the canvas so it freezes the segment like an on-map up.
+    const onWindowUp = () => onUp();
 
     map.dragPan.disable();
     map.getCanvas().style.cursor = 'crosshair';
@@ -2924,6 +3190,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     map.on('mousemove', onMove);
     map.on('mouseup', onUp);
     map.on('contextmenu', onContextMenu);
+    map.on('touchstart', onTouchStart);
+    map.on('touchmove', onTouchMove);
+    map.on('touchend', onUp);
+    map.on('touchcancel', onUp);
+    window.addEventListener('mouseup', onWindowUp);
+    window.addEventListener('touchend', onWindowUp);
     // Shift is a keyboard event (not a map mouse event), so listen on the window to
     // catch it even when the cursor is idle over the map.
     window.addEventListener('keydown', onShiftKey);
@@ -2934,8 +3206,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       map.off('mousemove', onMove);
       map.off('mouseup', onUp);
       map.off('contextmenu', onContextMenu);
+      map.off('touchstart', onTouchStart);
+      map.off('touchmove', onTouchMove);
+      map.off('touchend', onUp);
+      map.off('touchcancel', onUp);
       window.removeEventListener('keydown', onShiftKey);
       window.removeEventListener('keyup', onShiftKey);
+      window.removeEventListener('mouseup', onWindowUp);
+      window.removeEventListener('touchend', onWindowUp);
       map.dragPan.enable();
       map.getCanvas().style.cursor = '';
       const src = map.getSource('measure') as
@@ -2945,6 +3223,261 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       onMeasure?.(null);
     };
   }, [measureActive, onMeasure, onMeasureCancel, onMissionEvent]);
+
+  // Slide tool: rotate EVERY line/band/point layer about the pole by −deg so they all
+  // stay screen-pinned together while the camera (−deg) spins the basemap beneath them.
+  // App keeps the whole line pipeline resampled at natal+Δt (via linePositions), so the
+  // layers here are already mutually aligned — we just rotate them as one. Empty layers
+  // translate to empty — cheap. Reads refs only, so it's stable.
+  // `mode` for the heavy SECONDARY layers (everything but the cage): 'translate' keeps
+  // them pinned (full, accurate); 'empty' hides them; 'skip' leaves them as-is. While a
+  // spin-drag is in motion we drop them to 'empty'/'skip' so only the light cage re-tiles
+  // per frame — each setData round-trips through the geojson worker, and the orb-band /
+  // night-shade POLYGONS are the slowest to tile, so they'd otherwise lag the camera.
+  // They (and the badges) snap back accurately ~140 ms after motion settles.
+  const spinPaint = useCallback(
+    (deg: number, mode: 'translate' | 'empty' | 'skip' = 'translate') => {
+      const map = mapRef.current;
+      if (!map) return;
+      const d = dataRef.current;
+      const empty = EMPTY_FC();
+      const set = (id: string, fc: FeatureCollection | null | undefined) => {
+        const src = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
+        src?.setData(translateLng((fc ?? empty) as FeatureCollection, -deg));
+      };
+      set('acg-lines', d.lines); // the cage always tracks the spin
+      if (mode === 'skip') return;
+      // 'empty' → undefined, which `set` resolves to the empty collection (hides it).
+      const sec = (id: string, fc: FeatureCollection | null | undefined) =>
+        set(id, mode === 'empty' ? undefined : fc);
+      sec('angle-lines', d.angleLines);
+      sec('parans', d.parans);
+      sec('orb-bands', d.orbBands);
+      sec('star-lines', d.starLines);
+      sec('night-shade', d.nightShade);
+      sec('local-space', d.localSpace);
+      sec('acg-ls-cross', d.localSpaceCross);
+      sec('acg-zenith', d.zenith);
+      sec('acg-nadir', d.nadir);
+      sec('ecliptic', d.ecliptic);
+      sec('eclipse', d.eclipse);
+      // The overlay (transit/progression) layers are NOT pinned to the natal cage —
+      // they belong to a different moment, so they're left untranslated and ride with
+      // the basemap as it spins (this feature only fixes the natal linework).
+    },
+    [],
+  );
+
+  // Slide tool (3D globe): drag east/west to spin the Earth about its polar axis under
+  // the fixed natal line-cage. The cage is the celestial sphere projected onto Earth, so
+  // holding it still while the ground turns is what a place experiences over a day — the
+  // basis of parans. Every line layer is rotated rigidly by the spin angle θ (spinPaint)
+  // AND the camera centre is counter-rotated by the same θ: the two cancel, so the lines
+  // stay screen-pinned while the basemap rotates beneath them. App resamples the cage at
+  // natal+Δt as θ grows, so it shows the bodies' real motion.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !slideActive) return;
+
+    // Capture the un-spun view; bearing must be 0 so screen-west == geographic west
+    // (otherwise the rigid longitude shift and the camera shift wouldn't cancel along
+    // the screen axis). Restore it all on exit.
+    const baseCenter = map.getCenter();
+    // Re-based on each drag-start from the live camera (see onDown), so a fly between
+    // drags — e.g. a badge click that navigates to a line/intersection — is absorbed
+    // and the next spin continues from there instead of snapping back.
+    let baseLng = baseCenter.lng;
+    let baseLat = baseCenter.lat;
+    const baseBearing = map.getBearing();
+    const basePitch = map.getPitch();
+    if (baseBearing !== 0) map.setBearing(0);
+    if (basePitch !== 0) map.setPitch(0);
+    map.dragPan.disable();
+    map.dragRotate.disable();
+    // Touch: keep pinch-ZOOM, but kill 2-finger rotate/pitch — a tilted/rotated frame
+    // breaks the longitude cancellation that pins the cage.
+    map.touchPitch.disable();
+    map.touchZoomRotate.disableRotation();
+    map.getCanvas().style.cursor = 'grab';
+
+    let spinDeg = 0; // total rotation about the pole (unwrapped: may exceed ±360)
+    let dragStartX: number | null = null;
+    let spinAtDragStart = 0;
+    // Grab-and-spin feel: dragging the full canvas width turns the globe a half-turn.
+    let degPerPx = 180 / Math.max(map.getCanvas().clientWidth, 1);
+    let raf = 0;
+    let lastReport = 0;
+    let settleTimer = 0;
+
+    // θ → elapsed Earth-rotation time in DAYS (what App keys the ephemeris resample and
+    // the drift readout off). App derives the angle/hours back out from this.
+    const dtDaysOf = (deg: number) => deg / SIDEREAL_DEG_PER_HOUR / 24;
+
+    // In motion: hide the badges (.is-moving) AND drop the heavy secondary layers to
+    // empty, so only the light cage re-tiles per frame and the spin stays smooth. ~140 ms
+    // after motion settles, restore the secondary at the true θ and re-anchor the badges
+    // (computeBadges shifts the pinned sets by θ so the labels land back on the lines).
+    // Settle is driven here because the per-frame setCenter emits no natural moveend.
+    const markSpinning = () => {
+      if (!secondaryHiddenRef.current) {
+        secondaryHiddenRef.current = true;
+        setMapMoving(true);
+        spinPaint(spinDeg, 'empty');
+      }
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(() => {
+        settleTimer = 0;
+        secondaryHiddenRef.current = false;
+        spinPaint(spinDegRef.current, 'translate');
+        computeBadgesRef.current();
+        setMapMoving(false);
+      }, 140);
+    };
+
+    // Rotate every layer + the camera to the current spin. These run at the rAF rate
+    // (smooth); the readout/resample callback is throttled (it triggers App renders and
+    // the ephemeris recompute, neither of which needs per-frame fidelity since the cage
+    // barely drifts within a frame).
+    const apply = () => {
+      raf = 0;
+      spinDegRef.current = spinDeg;
+      // Layers and camera both shift by −θ: their relative offset is unchanged, so the
+      // cage holds its screen position while the basemap (camera-only) rotates by θ.
+      map.setCenter([baseLng - spinDeg, baseLat]);
+      // While the secondary layers are hidden (active spin), re-tile only the cage.
+      spinPaint(spinDeg, secondaryHiddenRef.current ? 'skip' : 'translate');
+      const now = performance.now();
+      if (now - lastReport > 66) {
+        lastReport = now;
+        onSlide?.(dtDaysOf(spinDeg));
+      }
+    };
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(apply);
+    };
+
+    // Shared mouse/touch drag — `x` is the pointer's screen-x.
+    const beginDrag = (x: number) => {
+      if (dragStartX !== null) return; // already dragging (ignore touch↔synthetic-mouse dup)
+      dragStartX = x;
+      slideDraggingRef.current = true;
+      spinAtDragStart = spinDeg;
+      // Re-base from the live camera (centre = base − θ), so any camera move since the
+      // last drag — a badge-click fly, a scroll-zoom recentre — is absorbed and this
+      // drag continues smoothly instead of jumping back to the old base.
+      const c = map.getCenter();
+      baseLng = c.lng + spinDeg;
+      baseLat = c.lat;
+      degPerPx = 180 / Math.max(map.getCanvas().clientWidth, 1);
+      map.getCanvas().style.cursor = 'grabbing';
+    };
+    const moveDrag = (x: number) => {
+      if (dragStartX === null) return;
+      // Drag right ⇒ spin east ⇒ time forward (continents flow rightward).
+      spinDeg = spinAtDragStart + (x - dragStartX) * degPerPx;
+      schedule();
+      markSpinning();
+    };
+    const onDown = (e: maplibregl.MapMouseEvent) => {
+      if (e.originalEvent.button !== 0) return; // left only (right-click cancels)
+      beginDrag(e.point.x);
+    };
+    const onMove = (e: maplibregl.MapMouseEvent) => moveDrag(e.point.x);
+    const onUp = () => {
+      if (dragStartX === null) return;
+      dragStartX = null;
+      slideDraggingRef.current = false;
+      map.getCanvas().style.cursor = 'grab';
+      // Settle on the exact resting offset (the throttle may have skipped it).
+      onSlide?.(dtDaysOf(spinDeg));
+    };
+    // Single-finger touch spins; a 2nd finger (pinch-zoom) aborts the spin drag.
+    const onTouchStart = (e: maplibregl.MapTouchEvent) => {
+      if (e.points.length === 1) beginDrag(e.point.x);
+    };
+    const onTouchMove = (e: maplibregl.MapTouchEvent) => {
+      if (e.points.length !== 1) {
+        onUp();
+        return;
+      }
+      moveDrag(e.point.x);
+    };
+    // Right-click resets to the natal frame and exits (mirrors the measure tool).
+    const onContextMenu = (e: maplibregl.MapMouseEvent) => {
+      e.preventDefault();
+      dragStartX = null;
+      slideDraggingRef.current = false;
+      secondaryHiddenRef.current = false;
+      spinDeg = 0;
+      spinDegRef.current = 0;
+      map.setCenter([baseLng, baseLat]);
+      spinPaint(0, 'translate');
+      onSlideCancel?.();
+    };
+
+    // A release OUTSIDE the canvas — the map's own up events only fire over it — would
+    // otherwise leave the drag stuck (dragging=true kills hover tips). Catch it on window.
+    const onWindowUp = () => onUp();
+    map.on('mousedown', onDown);
+    map.on('mousemove', onMove);
+    map.on('mouseup', onUp);
+    map.on('contextmenu', onContextMenu);
+    map.on('touchstart', onTouchStart);
+    map.on('touchmove', onTouchMove);
+    map.on('touchend', onUp);
+    map.on('touchcancel', onUp);
+    window.addEventListener('mouseup', onWindowUp);
+    window.addEventListener('touchend', onWindowUp);
+    // Establish every layer at θ=0 immediately.
+    schedule();
+
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      if (settleTimer) clearTimeout(settleTimer);
+      slideDraggingRef.current = false;
+      secondaryHiddenRef.current = false;
+      map.off('mousedown', onDown);
+      map.off('mousemove', onMove);
+      map.off('mouseup', onUp);
+      map.off('contextmenu', onContextMenu);
+      map.off('touchstart', onTouchStart);
+      map.off('touchmove', onTouchMove);
+      map.off('touchend', onUp);
+      map.off('touchcancel', onUp);
+      window.removeEventListener('mouseup', onWindowUp);
+      window.removeEventListener('touchend', onWindowUp);
+      map.dragPan.enable();
+      if (projectionRef.current === '3d') {
+        map.dragRotate.enable();
+        map.touchPitch.enable();
+        map.touchZoomRotate.enableRotation();
+      }
+      map.getCanvas().style.cursor = '';
+      // Un-spin: restore the natal centre/bearing/pitch and re-push every layer
+      // untranslated (freshSources forces it past the identity cache), then re-anchor
+      // the badges at natal immediately (don't wait on the data effect's timing).
+      map.setCenter([baseLng, baseLat]);
+      if (baseBearing !== 0) map.setBearing(baseBearing);
+      if (basePitch !== 0) map.setPitch(basePitch);
+      pushData(map, dataRef.current, true);
+      spinDegRef.current = 0;
+      setMapMoving(false);
+      computeBadgesRef.current();
+      onSlide?.(0);
+    };
+  }, [slideActive, onSlide, onSlideCancel, spinPaint]);
+
+  // A 2D↔3D toggle MID-slide re-runs applyProjection, which re-enables dragRotate / touch
+  // rotate+pitch in 3D — re-disable them while the slide owns the interaction. The slide
+  // effect itself doesn't depend on `projection`, so it won't re-run to do this (and we
+  // don't want it to: re-running would reset the in-progress spin).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !slideActive) return;
+    map.dragRotate.disable();
+    map.touchPitch.disable();
+    map.touchZoomRotate.disableRotation();
+  }, [slideActive, projection]);
 
   // Onboarding signals for the zoom/perspective guide: a Shift+drag box-zoom, and a
   // USER drag-rotate (Ctrl/⌘+drag or right-drag, 3D only — dragRotate is disabled in
@@ -2971,15 +3504,22 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const map = mapRef.current;
     if (!map) return;
     if (map.isStyleLoaded() && map.getSource('acg-lines')) {
-      pushData(map, { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, zenith, ecliptic, overlay, eclipse });
-      computeBadges();
+      if (slideActiveRef.current) {
+        // Slide owns the sources (rotated to the current spin) — re-apply at θ rather
+        // than push natal positions, which would detach the layers from the spun cage.
+        // While spinning, only the cage is live (secondary hidden), so re-tile just it.
+        spinPaint(spinDegRef.current, secondaryHiddenRef.current ? 'skip' : 'translate');
+      } else {
+        pushData(map, { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, zenith, nadir, ecliptic, overlay, eclipse });
+        computeBadges();
+      }
     } else {
       map.once('load', () => {
         pushData(map, dataRef.current);
         computeBadges();
       });
     }
-  }, [lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, ecliptic, overlay, eclipse, computeBadges]);
+  }, [lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, slideActive, computeBadges, spinPaint]);
 
   // Toggle basemap road / river / foliage visibility live (theme reloads reapply
   // via the style.load handler above).
@@ -3088,6 +3628,35 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   return (
     <>
       <div ref={containerRef} className="map-container" />
+      {glStatus !== 'ok' && (
+        // The map is WebGL-only, so a missing/lost context leaves the container a
+        // blank dark box. Cover it with a plain-DOM notice (no WebGL, so it always
+        // renders) that explains what happened and offers safe, reversible fixes.
+        <div className="map-gl-fallback" role="alert">
+          <div className="map-gl-fallback-card">
+            {glStatus === 'unsupported' ? (
+              <>
+                <h2>{t('map.webgl.unsupportedTitle')}</h2>
+                <p>{t('map.webgl.unsupportedBody')}</p>
+                <p className="map-gl-fallback-heading">{t('map.webgl.tipsHeading')}</p>
+                <ul>
+                  <li>{t('map.webgl.tipAccel')}</li>
+                  <li>{t('map.webgl.tipShield')}</li>
+                  <li>{t('map.webgl.tipBrowser')}</li>
+                </ul>
+              </>
+            ) : (
+              <>
+                <h2>{t('map.webgl.lostTitle')}</h2>
+                <p>{t('map.webgl.lostBody')}</p>
+              </>
+            )}
+            <button type="button" onClick={() => window.location.reload()}>
+              {t('map.webgl.reload')}
+            </button>
+          </div>
+        </div>
+      )}
       {creditsOpen && <CreditsModal onClose={() => setCreditsOpen(false)} />}
       <HoverTip
         pos={ctrlTip?.pos ?? null}

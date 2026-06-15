@@ -21,7 +21,9 @@ import {
   Map,
   type MapHandle,
   type MeasureInfo,
+  type SlideInfo,
   type OverlayData,
+  SIDEREAL_DEG_PER_HOUR,
 } from './components/Map/Map';
 import { Sidebar, type SidebarSection } from './components/Sidebar/Sidebar';
 import { TimelineHud } from './components/TimelineHud/TimelineHud';
@@ -41,6 +43,11 @@ import { useMissions } from './lib/useMissions';
 // loads lazily (the value import lives in the dynamic-import effect below).
 import type { EclipseCatalogRow, EclipseContact } from './lib/astro/eclipses';
 import { SEED_BIRTHS } from './lib/birthData';
+import {
+  offsetHoursAt,
+  zoneLabelAt,
+  formatUtcOffset,
+} from './lib/atlas/timezone';
 import { useReverseGeocode } from './lib/atlas/useReverseGeocode';
 import { useNearestCityLabel } from './lib/atlas/useNearestCityLabel';
 import { useCountryOf } from './lib/atlas/useCountryOf';
@@ -73,6 +80,7 @@ import {
 // eclipsePath) is dynamic-imported when eclipse mode first opens — see the
 // eclipsesMod state below — so none of it weighs on the main bundle.
 import {
+  antipodeStamps,
   generateEcliptic,
   generateLines,
   generateZenithStamps,
@@ -202,6 +210,12 @@ interface Point {
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 
+// Slide tool: quantize the time-shifted line recompute to ~1-hour Δt steps. Even the
+// fastest body (Moon, ~0.5°/h) drifts only ~0.5° per step — invisible against a spin —
+// while a fast drag triggers only a handful of (quadratic paran/aspect) resamples
+// instead of one every half-degree of spin.
+const SLIDE_BUCKET_DAYS = 1 / 24;
+
 // The Earth/Glass basemaps are light, so the Moon's pale gray barely shows. On those
 // themes only, swap it for a darker slate (MOON_LINE_DARK, shared from lib/theme so the
 // baked zenith glyph matches). The color is the single source the edge badges, hover
@@ -330,9 +344,11 @@ function filterZenith(
   fc: FeatureCollection<GeoPoint, ZenithProps>,
   planets: Set<PlanetName>,
   lineTypes: Set<LineType>,
+  // The defining angle line: a zenith stamp sits on the MC line, its antipodal nadir
+  // on the IC line — so each follows its own line's toggle.
+  angle: LineType = 'MC',
 ): FeatureCollection<GeoPoint, ZenithProps> {
-  // The zenith stamp is the MC line's defining point, so it follows the MC toggle.
-  if (!lineTypes.has('MC')) return { type: 'FeatureCollection', features: [] };
+  if (!lineTypes.has(angle)) return { type: 'FeatureCollection', features: [] };
   return {
     type: 'FeatureCollection',
     features: fc.features.filter((f) => planets.has(f.properties.planet)),
@@ -533,6 +549,13 @@ export default function App() {
   const [showOverlayZenith, setShowOverlayZenith] = useState(
     () => localStorage.getItem('astro:show-overlay-zenith:v1') === '1',
   );
+  // Appearance ▸ Details ▸ Zenith/Nadirs: draw the NATAL bodies' zenith (overhead)
+  // stamps, their antipodal nadir (underfoot) stamps, and the ecliptic reference
+  // curve through the Sun's zenith. Off by default (the natal counterpart of
+  // showOverlayZenith; gated the same way at the Map props).
+  const [showZenith, setShowZenith] = useState(
+    () => localStorage.getItem('astro:show-zenith:v1') === '1',
+  );
   // Overlay ▸ Display ▸ Natal: on by default. When off (and a time overlay is
   // active), the natal chart is hidden and the overlay is promoted to BE the chart
   // temporarily — drawn solid through the natal path, with the wheel/readouts
@@ -612,6 +635,29 @@ export default function App() {
   // Mapping tools (top bar). Transient — not persisted across reloads.
   const [mapTool, setMapTool] = useState<MapTool>('off');
   const [measure, setMeasure] = useState<MeasureInfo | null>(null);
+  // Whether the Slide tool can run right now (kept in a ref so the early-declared
+  // toggleSlide can read it; the value is derived far below, once promoted/eclipse
+  // state exists, and synced into this ref).
+  const slideAvailableRef = useRef(true);
+  // Slide tool: elapsed Earth-rotation time (days, signed) the user has spun the
+  // globe to. Drives the time-shifted line recompute + the readout; 0 = natal.
+  const [slideDt, setSlideDt] = useState(0);
+  // Toggle the Slide tool. It works in either projection (flat or globe); only the
+  // geodetic line frame can't be spun (its lines carry no sidereal time), so turning
+  // it ON switches that to celestial first.
+  const toggleSlide = useCallback(() => {
+    if (mapTool === 'slide') {
+      setMapTool('off');
+      return;
+    }
+    // No natal cage to spin when natal linework is hidden / an overlay is promoted
+    // (slideAvailableRef, synced below). The hotkey routes here, so gate it too.
+    if (!slideAvailableRef.current) return;
+    if (lineSystem === 'geodetic') setLineSystem('celestial');
+    // A playing timeline and a spinning globe fight over the camera/data — pause it.
+    if (playing) setPlaying(false);
+    setMapTool('slide');
+  }, [mapTool, lineSystem, playing]);
   // The current map-pin-state accent resolved to a concrete color, for the WebGL
   // measure layers (which can't read CSS vars). Kept in sync below.
   const [measureColor, setMeasureColor] = useState('#8b909c');
@@ -648,7 +694,7 @@ export default function App() {
     // 'o' cycles through the overlays only (never lands on None); 'n' clears to None.
     // From None, indexOf is -1 so the first 'o' lands on the first overlay (transits).
     const overlayCycle: OverlayMode[] = [
-      'transits', 'progressed', 'solar-arc', 'primary-directions', 'cyclo',
+      'transits', 'progressed', 'cyclo', 'solar-arc', 'primary-directions',
       'synastry', 'eclipses',
     ];
     const isTypingField = (el: HTMLElement | null) =>
@@ -764,6 +810,9 @@ export default function App() {
           break;
         case 'n': setOverlayMode('off'); break;
         case 't': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
+        // Slide spins the globe under the fixed lines; toggleSlide switches into the
+        // 3D globe / celestial frame first if the user isn't already there.
+        case 'y': toggleSlide(); break;
         case 'a': setCreating(true); break;
         case 'b': if (current) setWheelExpanded((v) => !v); break;
         default: return;
@@ -772,7 +821,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [current, pinned]);
+  }, [current, pinned, toggleSlide]);
 
   useEffect(() => {
     localStorage.setItem('astro:coord-system:v1', coordSystem);
@@ -828,6 +877,9 @@ export default function App() {
       showOverlayZenith ? '1' : '0',
     );
   }, [showOverlayZenith]);
+  useEffect(() => {
+    localStorage.setItem('astro:show-zenith:v1', showZenith ? '1' : '0');
+  }, [showZenith]);
   useEffect(() => {
     localStorage.setItem('astro:show-natal:v1', showNatal ? '1' : '0');
   }, [showNatal]);
@@ -948,17 +1000,35 @@ export default function App() {
   const gmst = useMemo(() => gmstRadians(jd), [jd]);
   const eps = useMemo(() => obliquity(jd), [jd]);
 
+  // Slide tool: while the user spins the globe, resample the LINE positions at natal+Δt
+  // (bucketed, ~1-hour steps) so the WHOLE line pipeline — cage, parans, orb bands,
+  // angle overlays, zenith, local space — recomputes together and stays mutually
+  // aligned as the sky drifts. The frame (`meridianLng`) stays at the NATAL GMST, so
+  // the lines sit at the un-spun anchor (only the bodies' own motion shows); the Map
+  // then spins them by θ. 0 = natal. (Composite charts have time-independent midpoint
+  // positions, so the cage doesn't morph though the readout time advances — expected.)
+  const sliding = mapTool === 'slide';
+  const slideBucket = sliding ? Math.round(slideDt / SLIDE_BUCKET_DAYS) : 0;
+
   // Positions feeding the map LINES. Geodetic mode and In-Zodiaco both project each
   // body onto the ecliptic first (geodetic needs the true zodiacal longitude even
   // for off-ecliptic bodies); In-Mundo keeps true sky positions. The wheel keeps
   // using `positions`/`ecliptic` (longitude is identical either way).
-  const linePositions = useMemo(
-    () =>
-      lineSystem === 'geodetic' || coordSystem === 'zodiaco'
-        ? projectOntoEcliptic(positions, jd)
-        : positions,
-    [lineSystem, coordSystem, positions, jd],
-  );
+  const linePositions = useMemo(() => {
+    let pos = positions;
+    let jdEff = jd;
+    if (sliding && current) {
+      jdEff = jd + slideBucket * SLIDE_BUCKET_DAYS;
+      pos = current.composite
+        ? compositeEquatorial(current.composite, nodeType, obliquity(jdEff))
+        : getPlanetPositions(jdEff, nodeType);
+    }
+    return lineSystem === 'geodetic' || coordSystem === 'zodiaco'
+      ? projectOntoEcliptic(pos, jdEff)
+      : pos;
+    // ephemerisEpoch marks deferred asteroid data arriving (resample with new data).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineSystem, coordSystem, positions, jd, sliding, slideBucket, current, nodeType, ephemerisEpoch]);
 
   // Maps a meridian's RA to a geographic longitude (deg). Celestial: RA − GMST
   // (sidereal time). Geodetic: the body's zodiacal longitude (Greenwich = 0° Aries),
@@ -1053,6 +1123,36 @@ export default function App() {
     [allLines, visiblePlanets, visibleLineTypes, theme],
   );
 
+  // Slide readout (reuses the measure slot): the spin as a rotation angle about the
+  // pole, plus the resulting WALL-CLOCK time at the birthplace in the chart's zone.
+  // Spinning the globe by θ° advances Greenwich sidereal time by θ, i.e. θ/15.041
+  // SOLAR hours of real (clock) time — so the clock = birth moment + dtHours, shown
+  // DST-aware in the chart's IANA zone (legacy zone-less charts fall back to tzOffset).
+  // Null until the user spins.
+  const slide = useMemo<SlideInfo | null>(() => {
+    if (mapTool !== 'slide' || slideDt === 0 || !current) return null;
+    const dtHours = slideDt * 24;
+    const birthUtcMs =
+      Date.UTC(current.year, current.month - 1, current.day, current.hour, current.minute) -
+      current.tzOffset * 3_600_000;
+    const slidMs = birthUtcMs + dtHours * 3_600_000;
+    const offH = current.tzIana
+      ? offsetHoursAt(current.tzIana, slidMs)
+      : current.tzOffset;
+    const label = current.tzIana
+      ? zoneLabelAt(current.tzIana, slidMs)
+      : formatUtcOffset(current.tzOffset);
+    // Wall-clock = instant + offset, read in UTC (the timeline bar uses the same trick).
+    const wall = new Date(slidMs + offH * 3_600_000);
+    const hh = String(wall.getUTCHours()).padStart(2, '0');
+    const mm = String(wall.getUTCMinutes()).padStart(2, '0');
+    return {
+      thetaDeg: dtHours * SIDEREAL_DEG_PER_HOUR,
+      dtHours,
+      clock: `${hh}:${mm} ${label}`,
+    };
+  }, [mapTool, slideDt, current]);
+
   // The "Aspects to angles" overlay lines (aspect and/or midpoint sets — both
   // share one map source). Unlike the base lines this generates FROM the visible
   // set: the midpoint pair count is quadratic in it, and the node dedup below
@@ -1136,6 +1236,17 @@ export default function App() {
   const zenith = useMemo(
     () =>
       withDarkMoon(filterZenith(allZenith, visiblePlanets, visibleLineTypes), theme),
+    [allZenith, visiblePlanets, visibleLineTypes, theme],
+  );
+  // The nadir (sub-anti-planetary) stamps: the antipodes of the zeniths, on the IC
+  // line — so they follow the IC toggle (the zeniths follow MC). Shown together with
+  // the zeniths under the one Zenith/Nadirs filter (showZenith), gated at the Map prop.
+  const nadir = useMemo(
+    () =>
+      withDarkMoon(
+        filterZenith(antipodeStamps(allZenith), visiblePlanets, visibleLineTypes, 'IC'),
+        theme,
+      ),
     [allZenith, visiblePlanets, visibleLineTypes, theme],
   );
 
@@ -1711,6 +1822,13 @@ export default function App() {
     theme,
   ]);
 
+  // The nadir stamps fed to the map: the natal nadirs, or — when an overlay is
+  // promoted to BE the chart — the antipodes of that promoted chart's zeniths.
+  const mapNadir = useMemo(
+    () => (promoted ? antipodeStamps(promoted.zenith) : nadir),
+    [promoted, nadir],
+  );
+
   const orbBands = useMemo(() => {
     if (!showOrbZones) return null;
     const bandLines = hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines;
@@ -2045,6 +2163,33 @@ export default function App() {
     setMapTool('off');
     recordMission('measure-cancel');
   }, [recordMission]);
+  // Slide tool: right-click resets the spin to natal and exits. Stable so the Map's
+  // slide effect (which depends on it) isn't torn down on every drag re-render.
+  const stopSlide = useCallback(() => {
+    setMapTool('off');
+    setSlideDt(0);
+  }, []);
+  // Slide needs a natal cage to spin: not available when the natal linework is hidden
+  // (eclipses-only) or an overlay is promoted (the cage is the overlay then, not the
+  // resampled natal chart). Geodetic is handled by an auto-switch in toggleSlide.
+  const slideAvailable = !hideNatalLinework && !promoted;
+  useEffect(() => {
+    slideAvailableRef.current = slideAvailable;
+  }, [slideAvailable]);
+  // Exit Slide if its preconditions break mid-spin (geodetic frame, or the cage stops
+  // being shown). Un-spins via the Map cleanup → onSlide(0), which resets slideDt.
+  useEffect(() => {
+    if (mapTool === 'slide' && (lineSystem === 'geodetic' || !slideAvailable)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMapTool('off');
+    }
+  }, [mapTool, lineSystem, slideAvailable]);
+  // Switching the active chart drops any in-progress spin — a carried-over time offset
+  // on a different chart reads as wrong. (Functional update: only touches the slide tool.)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMapTool((t) => (t === 'slide' ? 'off' : t));
+  }, [current]);
   // Surface the measure-tool guide on the off→measure edge, but only when lines are
   // actually rendered (the snap mission has nothing to snap to otherwise, which would
   // nag forever). `replace` lets it show even if the map-basics guide is still open —
@@ -2294,9 +2439,20 @@ export default function App() {
             : null
         }
         hideCompass={hideLsCompass}
-        zenith={hideNatalLinework ? EMPTY_FC : promoted ? promoted.zenith : zenith}
+        zenith={
+          hideNatalLinework || !showZenith
+            ? EMPTY_FC
+            : promoted
+              ? promoted.zenith
+              : zenith
+        }
+        nadir={hideNatalLinework || !showZenith ? EMPTY_FC : mapNadir}
         ecliptic={
-          hideNatalLinework ? null : promoted ? promoted.eclipticLine : eclipticLine
+          hideNatalLinework || !showZenith
+            ? null
+            : promoted
+              ? promoted.eclipticLine
+              : eclipticLine
         }
         overlay={promoted ? null : overlay}
         eclipse={eclipseMapData}
@@ -2317,6 +2473,13 @@ export default function App() {
         measureColor={measureColor}
         onMeasure={setMeasure}
         onMeasureCancel={stopMeasure}
+        // Slide tool: spins the globe under the natal cage. While active the Map owns
+        // every line/band/point source, rotating them all rigidly by the spin angle so
+        // they stay pinned together while the basemap turns. App keeps the whole line
+        // pipeline resampled at natal+Δt (via linePositions), so they morph as one.
+        slideActive={sliding}
+        onSlide={setSlideDt}
+        onSlideCancel={stopSlide}
         onMissionEvent={recordMission}
         // Force the Zoom-out button to stay put while the zoom guide is up so the user
         // can still complete its click mission even after scrolling out manually — but
@@ -2375,6 +2538,8 @@ export default function App() {
           setStarSet={setStarSet}
           showNightShade={showNightShade}
           setShowNightShade={setShowNightShade}
+          showZenith={showZenith}
+          setShowZenith={setShowZenith}
           progressionType={progressionType}
           setProgressionType={setProgressionType}
           lineSystem={lineSystem}
@@ -2463,6 +2628,9 @@ export default function App() {
         tool={mapTool}
         setTool={setMapTool}
         measure={measure}
+        slide={slide}
+        onToggleSlide={toggleSlide}
+        slideEnabled={slideAvailable}
         locationLabel={locationLabel}
         fadeLocation={fadeLocation}
         overlayMode={overlayMode}

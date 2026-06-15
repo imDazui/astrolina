@@ -21,6 +21,9 @@ export const STAR_MARK_IMAGE = 'star-mark';
 // Variant used for the zenith stamps (which sit ON a point inside a circle, not
 // inline next to an angle code); nudged down 15% to optically center it.
 export const ZENITH_GLYPH_PREFIX = 'zenith-glyph-';
+/** Nadir (sub-anti-planetary) stamp: a DIAMOND coin, distinct from the zenith's
+ *  circle, so the underfoot point reads as its own marker. */
+export const NADIR_GLYPH_PREFIX = 'nadir-glyph-';
 
 // Logical size of the inline glyph BOX (px); RATIO renders it at 2× for
 // crispness. The box is roomy so the glyph can be nudged well down without
@@ -39,9 +42,24 @@ const HALO_PX = 3;
 // Nudge the glyph down within its box (~20%) so it sits on the text baseline
 // instead of riding high next to the angle code.
 const Y_OFFSET = Math.round(PX * 0.3);
-// The zenith-stamp glyph sits 15% of the box below center, so it reads as
-// optically centered within its circle rather than riding high.
-const ZENITH_Y_OFFSET = Math.round(PX * 0.1);
+// The zenith STAMP sprite bakes the disc + planet-colour ring behind the glyph, so
+// each stamp is a SINGLE icon. Overlapping zeniths then stack as whole coins (disc
+// and glyph together) instead of the discs and glyphs interleaving across two flat
+// layers (which read as a merged blob). Sized to the resting disc — these mirror
+// the hover-grow circle's rest radius / ring in Map.tsx, so the circle (now a
+// hover-only bloom behind the stamp) lines up with the baked disc.
+const ZENITH_STAMP_PX = 62; // canvas px (≈31px on the map at RATIO 2)
+const ZENITH_DISC_R = 26; // 13px display radius — matches circle-radius at rest
+const ZENITH_RING_W = 3; // 1.5px display ring — matches circle-stroke-width at rest
+const ZENITH_STAMP_GLYPH_PX = 40; // 20px display — same glyph size as the old stamp
+const ZENITH_STAMP_DY = 4; // optical down-nudge so the glyph sits centred in the disc
+
+// The nadir STAMP: the same canvas + fill/ring as the zenith, but a DIAMOND (a
+// 45°-rotated square) instead of a circle, so the underfoot point reads as a
+// distinct marker. Its half-diagonal reaches a touch past the disc radius; the
+// glyph is nudged a hair smaller so it sits inside the diamond's narrower body.
+const NADIR_DIAMOND_R = 28; // canvas half-diagonal (≈14px display)
+const NADIR_STAMP_GLYPH_PX = 34; // ≈17px display — smaller than the zenith to fit the diamond
 
 // Load the symbol font once before any rasterization, so fillText() draws the
 // real glyph rather than a fallback box. Memoized.
@@ -90,10 +108,17 @@ function rasterize(
 
 // The star-line spark: a five-pointed star PATH (no font involved, so it looks
 // identical on every platform), baked at the theme's star tint with the theme
-// halo so it reads on the pale basemaps. Sized small — it repeats along the
-// line as ✦—✦—✦, with the dotted base line as the thread between sparks.
-const STAR_LOGICAL = 11;
-const STAR_PX = STAR_LOGICAL * RATIO;
+// halo so it reads on the pale basemaps. Baked small and dense: at ≈70% smaller
+// than the old 11px spark it repeats three-times-tighter (see symbol-spacing in
+// Map.tsx) as a fine ✦✦✦ bead-thread over the dotted base line, rather than a row
+// of big stars. Baked at 4× (vs the glyphs' 2×) for crispness at this small size,
+// with its own halo width — the glyphs' HALO_PX would swamp a ~3.5px spark.
+const STAR_LOGICAL = 3.5;
+const STAR_RATIO = 4;
+const STAR_PX = STAR_LOGICAL * STAR_RATIO;
+// Halo rim for the spark, in canvas px (≈0.5 logical on the map): a thin lift off
+// the pale basemaps without thickening the small star into a blob.
+const STAR_HALO_PX = 2;
 
 function rasterizeStarMark(color: string, halo: string): ImageData | null {
   const canvas = document.createElement('canvas');
@@ -117,13 +142,95 @@ function rasterizeStarMark(color: string, halo: string): ImageData | null {
   ctx.closePath();
   if (halo) {
     ctx.lineJoin = 'round';
-    ctx.lineWidth = HALO_PX;
+    ctx.lineWidth = STAR_HALO_PX;
     ctx.strokeStyle = halo;
     ctx.stroke();
   }
   ctx.fillStyle = color;
   ctx.fill();
   return ctx.getImageData(0, 0, STAR_PX, STAR_PX);
+}
+
+// Draw a stamp's planet glyph, optically centred and haloed in the disc fill so its
+// edge melts into the coin rather than reading as a hard cut. Shared by the zenith
+// (circle) and nadir (diamond) stamps, which differ only in the shape behind it.
+function drawStampGlyph(
+  ctx: CanvasRenderingContext2D,
+  planet: PlanetName,
+  color: string,
+  discFill: string,
+  cx: number,
+  cy: number,
+  fontPx: number,
+): void {
+  ctx.font = `${fontPx}px ${FONT_FAMILY}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+  ctx.lineWidth = HALO_PX;
+  ctx.strokeStyle = discFill;
+  ctx.strokeText(PLANET_GLYPHS[planet], cx, cy);
+  ctx.fillStyle = color;
+  ctx.fillText(PLANET_GLYPHS[planet], cx, cy);
+}
+
+// Bake a zenith STAMP: the disc (theme `discFill`) + the planet-colour ring, with
+// the glyph on top. One sprite per body, so the stamp draws as a single unit that
+// stacks cleanly when two zeniths overlap (see ZENITH_STAMP_PX above).
+function rasterizeZenith(
+  planet: PlanetName,
+  color: string,
+  discFill: string,
+): ImageData | null {
+  const canvas = document.createElement('canvas');
+  canvas.width = ZENITH_STAMP_PX;
+  canvas.height = ZENITH_STAMP_PX;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const c = ZENITH_STAMP_PX / 2;
+  // Disc fill + planet-colour ring, centred on the sprite (i.e. on the point).
+  ctx.beginPath();
+  ctx.arc(c, c, ZENITH_DISC_R, 0, Math.PI * 2);
+  ctx.fillStyle = discFill;
+  ctx.fill();
+  ctx.lineWidth = ZENITH_RING_W;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+  drawStampGlyph(ctx, planet, color, discFill, c, c + ZENITH_STAMP_DY, ZENITH_STAMP_GLYPH_PX);
+  return ctx.getImageData(0, 0, ZENITH_STAMP_PX, ZENITH_STAMP_PX);
+}
+
+// Bake a nadir STAMP: like the zenith coin but a DIAMOND (a 45°-rotated square) —
+// sharp-cornered so it never reads as a squashed circle — over the same theme fill
+// + planet ring, with the glyph on top. A distinct shape for the underfoot point.
+function rasterizeNadir(
+  planet: PlanetName,
+  color: string,
+  discFill: string,
+): ImageData | null {
+  const canvas = document.createElement('canvas');
+  canvas.width = ZENITH_STAMP_PX;
+  canvas.height = ZENITH_STAMP_PX;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const c = ZENITH_STAMP_PX / 2;
+  const r = NADIR_DIAMOND_R;
+  // Diamond: vertices at top / right / bottom / left. Sharp corners (default miter
+  // join) so it reads as a crisp square stood on its point.
+  ctx.beginPath();
+  ctx.moveTo(c, c - r);
+  ctx.lineTo(c + r, c);
+  ctx.lineTo(c, c + r);
+  ctx.lineTo(c - r, c);
+  ctx.closePath();
+  ctx.fillStyle = discFill;
+  ctx.fill();
+  ctx.lineWidth = ZENITH_RING_W;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+  drawStampGlyph(ctx, planet, color, discFill, c, c + ZENITH_STAMP_DY, NADIR_STAMP_GLYPH_PX);
+  return ctx.getImageData(0, 0, ZENITH_STAMP_PX, ZENITH_STAMP_PX);
 }
 
 // (Re)bake the planet-glyph images onto the map, each at its planet color with
@@ -152,20 +259,26 @@ export async function ensureGlyphImages(
       if (map.hasImage(id)) map.removeImage(id);
       map.addImage(id, data, { pixelRatio: RATIO });
     }
-    // Zenith-stamp glyph: nudged down to sit optically centered in its circle, and
-    // outlined in the disc-fill color so the halo blends into the disc (no visible
-    // border — the disc fill alone carries legibility).
+    // Zenith STAMP: the full coin (disc + ring + glyph) baked as one image, so the
+    // stamp draws as a single overlap-stacking unit. `zenithHalo` is the disc fill.
     const zid = `${ZENITH_GLYPH_PREFIX}${p}`;
-    const zdata = rasterize(p, color, zenithHalo, ZENITH_Y_OFFSET);
+    const zdata = rasterizeZenith(p, color, zenithHalo);
     if (zdata) {
       if (map.hasImage(zid)) map.removeImage(zid);
       map.addImage(zid, zdata, { pixelRatio: RATIO });
+    }
+    // Nadir STAMP: the diamond variant, same fill/ring, for the antipodal point.
+    const nid = `${NADIR_GLYPH_PREFIX}${p}`;
+    const ndata = rasterizeNadir(p, color, zenithHalo);
+    if (ndata) {
+      if (map.hasImage(nid)) map.removeImage(nid);
+      map.addImage(nid, ndata, { pixelRatio: RATIO });
     }
   }
   // The star-line spark, in the theme's star tint (see STAR_LINE_COLORS).
   const star = rasterizeStarMark(STAR_LINE_COLORS[theme], halo);
   if (star) {
     if (map.hasImage(STAR_MARK_IMAGE)) map.removeImage(STAR_MARK_IMAGE);
-    map.addImage(STAR_MARK_IMAGE, star, { pixelRatio: RATIO });
+    map.addImage(STAR_MARK_IMAGE, star, { pixelRatio: STAR_RATIO });
   }
 }
