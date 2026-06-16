@@ -9,8 +9,9 @@
 /* Bottom-center HUD for the active Eclipses overlay. Mirrors the timeline + synastry
    bars: a protruding nub (grip + "Eclipses" + an eye that collapses the body) atop a
    panel that holds the picker, the eclipse vitals, its natal contacts, the line
-   toggles, and the solar isoline interval. Accent tracks --map-accent; --es-width
-   shifts it clear of the expanded sidebar. Same slot as TimelineHud/SynastryHud. */
+   toggles, and the solar isoline interval. Chrome defaults to the steady brand
+   accent; only the bar's edge border keeps the pin-state glow. --es-width shifts
+   it clear of the expanded sidebar. Same slot as TimelineHud/SynastryHud. */
 .eclipse-hud {
   position: absolute;
   bottom: 16px;
@@ -20,9 +21,10 @@
   transition: left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
   max-width: calc(100vw - var(--es-width, 0px) - 80px);
 
-  --accent: var(--map-accent);
-  --accent-rgb: var(--map-accent-rgb);
+  --accent: var(--accent-brand);
+  --accent-rgb: var(--accent-brand-rgb);
   background: rgba(var(--bg-panel), 0.96);
+  /* The edge border keeps the pin-state glow (a designated map-state cue). */
   border: 1px solid rgba(var(--map-accent-rgb), 0.6);
   border-radius: 13px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
@@ -46,6 +48,7 @@
   padding: 3px 14px 5px;
   background: rgba(var(--bg-panel), 0.96);
   border-radius: 9px 9px 0 0;
+  /* Title + move-grip (currentColor) track the pin state (designated map-state cue). */
   color: var(--map-accent);
   font-size: 12px;
   font-weight: 700;
@@ -126,11 +129,11 @@
 .eclipse-hud-eye:hover,
 .eclipse-hud-eye:focus-visible {
   opacity: 1;
-  background: rgba(var(--map-accent-rgb), 0.12);
+  background: rgba(var(--accent-brand-rgb), 0.12);
 }
 .eclipse-hud-eye:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(var(--map-accent-rgb), 0.5);
+  box-shadow: 0 0 0 2px rgba(var(--accent-brand-rgb), 0.5);
 }
 
 /* Collapsed (eye off): no body — the bar reduces to just its nub as a standalone pill. */
@@ -309,7 +312,7 @@
 }
 .eclipse-hud-search:focus {
   outline: none;
-  border-color: rgba(var(--map-accent-rgb), 0.5);
+  border-color: rgba(var(--accent-brand-rgb), 0.5);
 }
 
 /* Filter chip rows: body (All / Solar / Lunar), then — once a body is
@@ -336,9 +339,9 @@
   background: rgba(var(--tint), 0.06);
 }
 .eclipse-hud-filter.active {
-  color: var(--map-accent);
-  border-color: rgba(var(--map-accent-rgb), 0.5);
-  background: rgba(var(--map-accent-rgb), 0.1);
+  color: var(--accent-brand);
+  border-color: rgba(var(--accent-brand-rgb), 0.5);
+  background: rgba(var(--accent-brand-rgb), 0.1);
 }
 
 .eclipse-hud-menu ul {
@@ -355,7 +358,7 @@
 }
 
 .eclipse-hud-menu li.active .eclipse-hud-row {
-  background: rgba(var(--map-accent-rgb), 0.14);
+  background: rgba(var(--accent-brand-rgb), 0.14);
 }
 
 .eclipse-hud-row {
@@ -509,13 +512,13 @@
   transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s;
 }
 .eclipse-hud-toggle:hover {
-  background: rgba(var(--map-accent-rgb), 0.12);
-  border-color: rgba(var(--map-accent-rgb), 0.5);
+  background: rgba(var(--accent-brand-rgb), 0.12);
+  border-color: rgba(var(--accent-brand-rgb), 0.5);
 }
 .eclipse-hud-toggle.on {
-  color: var(--map-accent);
-  background: rgba(var(--map-accent-rgb), 0.1);
-  border-color: rgba(var(--map-accent-rgb), 0.45);
+  color: var(--accent-brand);
+  background: rgba(var(--accent-brand-rgb), 0.1);
+  border-color: rgba(var(--accent-brand-rgb), 0.45);
 }
 .eclipse-hud-toggle.off {
   opacity: 0.6;

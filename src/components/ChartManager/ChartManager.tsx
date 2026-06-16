@@ -4,7 +4,7 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   chartRecency,
   chartTag,
@@ -33,9 +33,13 @@ const FILTER_CHIPS = [
 interface ChartManagerProps {
   charts: StoredChart[];
   currentId: string | null;
-  /** Header + dialog label override (e.g. "Choose companion" when the synastry
-   *  overlay opens the browser to pick a partner). Defaults to "My Charts". */
+  /** Header + dialog label override (e.g. "Synastry with X" when the synastry
+   *  overlay opens the browser to pick a partner). Used as the accessible label;
+   *  defaults to "My Charts". */
   title?: string;
+  /** Optional rich heading shown in place of the `title` text (e.g. a synastry
+   *  icon + the compared chart's name). `title` is still the accessible label. */
+  heading?: ReactNode;
   /** When set, opens with this chart loaded in the form for editing. */
   initialEditId?: string | null;
   /** A chart id to omit from the list — e.g. the active chart, which can't be its own
@@ -62,6 +66,7 @@ export function ChartManager({
   charts,
   currentId,
   title,
+  heading,
   initialEditId,
   excludeId = null,
   onSelect,
@@ -177,7 +182,7 @@ export function ChartManager({
         aria-label={title ?? t('chartManager.dialogLabel')}
       >
         <header className="cm-header">
-          <h2>{title ?? t('chartManager.title')}</h2>
+          <h2>{heading ?? title ?? t('chartManager.title')}</h2>
           <button
             type="button"
             className="cm-close"

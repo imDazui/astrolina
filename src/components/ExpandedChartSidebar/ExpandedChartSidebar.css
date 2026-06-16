@@ -77,11 +77,52 @@
 
 /* Advanced toggle sits to the left of the collapse button, top-right. */
 .es-header-actions {
+  position: relative;
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+/* Clickable NEW/ADV cue mirroring the profile strip's plan tag (NEW = basic gold,
+   ADV = the advanced gradient). It sits absolutely just below the Hide button, at
+   the right edge — overlaying the empty right side of the date row, so it adds NO
+   height to the header. (.es-header-actions is its positioning context.) */
+.es-plan-tag {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: filter 0.12s ease;
+}
+.es-plan-tag:hover {
+  filter: brightness(1.12);
+}
+.es-plan-tag.new {
+  background: rgba(var(--accent-brand-rgb), 0.18);
+  color: var(--accent-brand);
+  border-color: rgba(var(--accent-brand-rgb), 0.35);
+}
+/* ADV uses the advanced-mode gradient (same as the Advanced settings tab): a
+   half-opacity tint at top-left deepening to the full advanced red at bottom-right. */
+.es-plan-tag.adv {
+  background: linear-gradient(
+    to bottom right,
+    rgba(var(--advanced-rgb), 0.5),
+    var(--advanced)
+  );
+  color: #fff;
+  border-color: rgba(var(--advanced-rgb), 0.5);
 }
 
 .es-close-btn {

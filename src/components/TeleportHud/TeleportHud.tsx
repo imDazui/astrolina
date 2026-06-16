@@ -5,30 +5,21 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import { useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
 import type { PlaceResult } from '../../lib/atlas/cityLookup';
-import type { LsOriginPref } from '../../lib/overlayPrefs';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { HoverTip } from '../ui/HoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
 import { useHoverTip } from '../ui/useHoverTip';
-import { CLOSE_ZOOM } from '../Map/Map';
-// Reuse the overlay bar's chrome (.timeline-hud + its per-theme overrides), so the
-// window frosts/recolors with the theme for free.
+// Reuse the overlay bar's chrome (.timeline-hud) + the shared location-window styles
+// (.location-* classes), so the window frosts/recolors with the theme for free.
 import '../TimelineHud/TimelineHud.css';
-import './LocationHud.css';
+import '../LocationHud/LocationHud.css';
 
-// v2: the default centre is now sidebar-aware (effectiveCenterX, below). Bumping
-// the key drops any centre saved under the old sidebar-blind logic, so the window
-// opens correctly centred once rather than restoring a stale off-centre spot.
-const POS_KEY = 'astro:location-pos:v2';
-// "Fly to origin" lands at the map's CLOSE_ZOOM — the compass is full-size there, and
-// it's the threshold that surfaces the map's "Zoom out" button, so you arrive already
-// "zoomed in" to the local horizon.
-const FLY_TO_ORIGIN_ZOOM = CLOSE_ZOOM;
+// Its own saved position (independent of the Local Space window).
+const POS_KEY = 'astro:teleport-pos:v1';
 
-interface LocationHudProps {
+interface TeleportHudProps {
   /** Fly the map camera to a coordinate at a given zoom (does not pin/relocate). */
   onFlyTo: (lat: number, lng: number, zoom?: number) => void;
   /** Toggle between the current spot and the one before the last jump. */
@@ -39,160 +30,19 @@ interface LocationHudProps {
    *  as a rough place name so the user sees where they're about to jump. */
   teleportTarget: { lat: number; lng: number } | null;
   onClose: () => void;
-  // ── Local Space (moved here from Map Filters) ──────────────────────────────
-  showLocalSpace: boolean;
-  setShowLocalSpace: (v: boolean) => void;
-  lsOrigin: LsOriginPref;
-  setLsOrigin: (o: LsOriginPref) => void;
-  hideLsInbound: boolean;
-  setHideLsInbound: (v: boolean) => void;
-  hideLsCompass: boolean;
-  setHideLsCompass: (v: boolean) => void;
-  /** The point the local-space lines radiate from (pin or birthplace); null when
-   *  there's nothing to anchor to — disables "Fly to origin". */
-  localSpaceOrigin: { lat: number; lng: number } | null;
 }
 
-// Eye (shown) / eye-off (hidden) marker for the local-space toggles — mirrors the
-// sidebar's show/hide affordance; colour is inherited from the button via currentColor.
-function EyeIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      className="location-ls-eye"
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {open ? (
-        <>
-          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-          <circle cx="12" cy="12" r="3" />
-        </>
-      ) : (
-        <>
-          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-          <line x1="1" y1="1" x2="23" y2="23" />
-        </>
-      )}
-    </svg>
-  );
-}
-
-// The map-pin teardrop (same glyph as elsewhere in the UI) — shown in the "From the
-// pin" origin button so the choice reads at a glance. Inherits the button's colour.
-function PinIcon() {
-  return (
-    <svg
-      className="location-ls-pin"
-      width="11"
-      height="11"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-      <circle cx="12" cy="10" r="3" />
-    </svg>
-  );
-}
-
-// The "From the pin" label with the pin glyph slotted just before its final word
-// ("From the [icon] pin"). The text comes from i18n; splitting on the last space keeps
-// the words translatable. The button is an inline-flex row, so the parts space via its
-// gap. (The button's tooltip keeps the plain, un-iconified label.)
-function PinOriginLabel({ label }: { label: string }) {
-  const i = label.lastIndexOf(' ');
-  if (i < 0) {
-    return (
-      <>
-        <PinIcon />
-        {label}
-      </>
-    );
-  }
-  return (
-    <>
-      {label.slice(0, i)}
-      <PinIcon />
-      {label.slice(i + 1)}
-    </>
-  );
-}
-
-// A button that reveals a shared .ui-tip (title + hint) on hover/focus — used for the
-// Local Space toggles, the origin segmented control, and "Fly to origin".
-function LsTipButton({
-  className,
-  onClick,
-  ariaPressed,
-  disabled,
-  title,
-  hint,
-  children,
-}: {
-  className: string;
-  onClick: () => void;
-  ariaPressed?: boolean;
-  disabled?: boolean;
-  title: string;
-  hint: string;
-  children: ReactNode;
-}) {
-  const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('top');
-  return (
-    <>
-      <button
-        ref={ref}
-        type="button"
-        className={className}
-        onClick={onClick}
-        aria-pressed={ariaPressed}
-        disabled={disabled}
-        onMouseEnter={show}
-        onMouseLeave={hide}
-        onFocus={show}
-        onBlur={hide}
-      >
-        {children}
-      </button>
-      <HoverTip pos={pos} placement="top" title={title} hint={hint} />
-    </>
-  );
-}
-
-// A movable window that flies the map to any place AND hosts the local-space
-// controls — the two faces of "where am I standing, and what's the sky from here".
-// Search a city, region or country and jump straight there (e.g. Oklahoma → Hong
-// Kong) without panning; fully offline (bundled GeoNames set only, no third-party
-// API), zoomed by precision. Camera-only: it doesn't move the pin/chart. Below the
-// search sits Local Space: show/hide, origin, inbound/compass visibility, and a jump
-// to the origin.
-export function LocationHud({
+// A movable window that flies the map to any place: search a city, region or country
+// and jump straight there (e.g. Oklahoma → Hong Kong) without panning, then jump back.
+// Fully offline (bundled GeoNames set only, no third-party API), zoomed by precision.
+// Camera-only: it doesn't move the pin/chart. (Local Space split off into its own view.)
+export function TeleportHud({
   onFlyTo,
   onGoBack,
   backState,
   teleportTarget,
   onClose,
-  showLocalSpace,
-  setShowLocalSpace,
-  lsOrigin,
-  setLsOrigin,
-  hideLsInbound,
-  setHideLsInbound,
-  hideLsCompass,
-  setHideLsCompass,
-  localSpaceOrigin,
-}: LocationHudProps) {
+}: TeleportHudProps) {
   const { t } = useT();
   const hudRef = useRef<HTMLDivElement>(null);
   const { pos, dragging, handleProps } = useMovableHud(hudRef, {
@@ -313,7 +163,7 @@ export function LocationHud({
   return (
     <div
       ref={hudRef}
-      className={`timeline-hud location-hud${dragging ? ' thud-dragging' : ''}`}
+      className={`timeline-hud location-hud teleport-hud${dragging ? ' thud-dragging' : ''}`}
       style={
         pos
           ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto', transform: 'none' }
@@ -329,7 +179,7 @@ export function LocationHud({
           onMouseLeave={hideGripTip}
         >
           <span className="hud-grip" aria-hidden="true" />
-          <span className="location-title">{t('locationHud.title')}</span>
+          <span className="location-title">{t('teleportHud.title')}</span>
         </div>
         <HoverTip
           pos={dragging ? null : gripTipPos}
@@ -349,7 +199,7 @@ export function LocationHud({
           type="button"
           className="location-close"
           onClick={onClose}
-          aria-label={t('locationHud.closeAria')}
+          aria-label={t('teleportHud.closeAria')}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
             <path d="M5 5l14 14M19 5L5 19" />
@@ -372,10 +222,10 @@ export function LocationHud({
             setQuery(e.target.value);
           }}
           onKeyDown={onKeyDown}
-          placeholder={t('locationHud.placeholder')}
+          placeholder={t('teleportHud.placeholder')}
           spellCheck={false}
           autoComplete="off"
-          aria-label={t('locationHud.searchAria')}
+          aria-label={t('teleportHud.searchAria')}
         />
         {searching && <span className="location-spinner" aria-hidden="true" />}
       </div>
@@ -392,7 +242,7 @@ export function LocationHud({
               >
                 <span className="location-result-main">
                   <span className="location-result-label">{r.label}</span>
-                  <span className={`location-kind location-kind-${r.kind}`}>{t(`locationHud.kind.${r.kind}`)}</span>
+                  <span className={`location-kind location-kind-${r.kind}`}>{t(`teleportHud.kind.${r.kind}`)}</span>
                 </span>
                 <span className="location-result-coord">
                   {Math.abs(r.lat).toFixed(1)}°{r.lat >= 0 ? 'N' : 'S'}{' '}
@@ -433,7 +283,7 @@ export function LocationHud({
                 <path d="M19 12H5M11 6l-6 6 6 6" />
               )}
             </svg>
-            <span>{backState === 'forward' ? t('locationHud.goForward') : t('locationHud.goBack')}</span>
+            <span>{backState === 'forward' ? t('teleportHud.goForward') : t('teleportHud.goBack')}</span>
           </button>
           {targetName && (
             <span className="location-back-target">{targetName}</span>
@@ -441,91 +291,11 @@ export function LocationHud({
           <HoverTip
             pos={backTipPos}
             placement="top"
-            title={backState === 'forward' ? t('locationHud.goForward') : t('locationHud.goBack')}
+            title={backState === 'forward' ? t('teleportHud.goForward') : t('teleportHud.goBack')}
             hotkey="Backspace"
           />
         </div>
       )}
-
-      {/* Local Space lives here now (it left Map Filters): the master show toggle is
-          always present; the rest reveal once it's on. */}
-      <div className="location-ls">
-        <div className="location-ls-head">{t('locationHud.localSpaceSection')}</div>
-        <LsTipButton
-          className={`location-ls-toggle ${showLocalSpace ? 'on' : 'off'}`}
-          onClick={() => setShowLocalSpace(!showLocalSpace)}
-          ariaPressed={showLocalSpace}
-          title={t('locationHud.localSpace.title')}
-          hint={t('locationHud.localSpace.hint')}
-        >
-          <EyeIcon open={showLocalSpace} />
-          <span className="location-ls-name">{t('locationHud.localSpace.title')}</span>
-        </LsTipButton>
-        {showLocalSpace && (
-          <>
-            {/* Origin: where the lines radiate from. Segmented (two options) rather
-                than a dropdown — fits the narrow HUD and reads at a glance. */}
-            <div className="location-ls-seg" role="group">
-              {(['pin', 'birthplace'] as const).map((o) => (
-                <LsTipButton
-                  key={o}
-                  className={`location-ls-seg-btn location-ls-seg-${o} ${lsOrigin === o ? 'active' : ''}`}
-                  onClick={() => setLsOrigin(o)}
-                  ariaPressed={lsOrigin === o}
-                  title={t(`locationHud.lsOrigin.${o}`)}
-                  hint={t(`locationHud.lsOrigin.${o}Hint`)}
-                >
-                  {o === 'pin' ? (
-                    <PinOriginLabel label={t('locationHud.lsOrigin.pin')} />
-                  ) : (
-                    t(`locationHud.lsOrigin.${o}`)
-                  )}
-                </LsTipButton>
-              ))}
-            </div>
-            <LsTipButton
-              className={`location-ls-toggle ${!hideLsInbound ? 'on' : 'off'}`}
-              onClick={() => setHideLsInbound(!hideLsInbound)}
-              ariaPressed={hideLsInbound}
-              title={t('locationHud.hideInbound.title')}
-              hint={t('locationHud.hideInbound.hint')}
-            >
-              <EyeIcon open={!hideLsInbound} />
-              <span className="location-ls-name">{t('locationHud.hideInbound.title')}</span>
-            </LsTipButton>
-            <LsTipButton
-              className={`location-ls-toggle ${!hideLsCompass ? 'on' : 'off'}`}
-              onClick={() => setHideLsCompass(!hideLsCompass)}
-              ariaPressed={hideLsCompass}
-              title={t('locationHud.hideCompass.title')}
-              hint={t('locationHud.hideCompass.hint')}
-            >
-              <EyeIcon open={!hideLsCompass} />
-              <span className="location-ls-name">{t('locationHud.hideCompass.title')}</span>
-            </LsTipButton>
-            <LsTipButton
-              className="location-ls-fly"
-              onClick={() => {
-                if (localSpaceOrigin)
-                  onFlyTo(localSpaceOrigin.lat, localSpaceOrigin.lng, FLY_TO_ORIGIN_ZOOM);
-              }}
-              disabled={!localSpaceOrigin}
-              title={t('locationHud.flyToOrigin.title')}
-              hint={t('locationHud.flyToOrigin.hint')}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="7" />
-                <path d="M12 1v3" />
-                <path d="M12 20v3" />
-                <path d="M1 12h3" />
-                <path d="M20 12h3" />
-                <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
-              </svg>
-              <span>{t('locationHud.flyToOrigin.title')}</span>
-            </LsTipButton>
-          </>
-        )}
-      </div>
     </div>
   );
 }

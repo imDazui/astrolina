@@ -4,7 +4,14 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
+import {
+  Fragment,
+  type CSSProperties,
+  type ReactNode,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import {
   ASTEROID_NAMES,
@@ -30,6 +37,11 @@ import { ASPECT_NAMES, type AspectName, type AspectOrbs } from '../../lib/aspect
 import type { StarSetPref } from '../../lib/overlayPrefs';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import { EyeIcon } from '../ui/EyeIcon';
+import { CycleHotkey } from '../ui/CycleHotkey';
+import {
+  getSettingsSections,
+  isEntitled,
+} from '../../lib/extensions/settingsSection';
 import { useHoverTip } from '../ui/useHoverTip';
 import { glyphify } from '../ui/glyphify';
 import { useT, LANGUAGES } from '../../i18n';
@@ -81,9 +93,6 @@ interface SidebarProps {
   /** Whether the Advanced settings tab is shown — true whenever the Advanced toggle
    *  is on (it no longer also requires the expanded chart sidebar to be open). */
   showAdvancedTab: boolean;
-  /** Overlay wheel layout (Advanced ▸ Wheel layout): bi-wheel vs Dual Wheels. */
-  dualWheels: boolean;
-  setDualWheels: (v: boolean) => void;
   nodeType: NodeType;
   setNodeType: (n: NodeType) => void;
   angleProgression: AngleProgression;
@@ -167,7 +176,15 @@ const PRIMARY_RATE_VALUES: PrimaryRate[] = [
 // Sidebar sections behave as an accordion — at most one open at a time — so the
 // panel never grows into a tall stack of expanded sections. The open section is
 // owned by App (so the Info chip can open the Calculation tab from outside).
-export type SidebarSection = 'theme' | 'filters' | 'calc' | 'advanced';
+// The four core sections, plus any id a downstream build registers via the
+// settings-section seam (lib/extensions/settingsSection). The (string & {}) keeps
+// autocomplete for the core ids while still accepting extension ids.
+export type SidebarSection =
+  | 'theme'
+  | 'filters'
+  | 'calc'
+  | 'advanced'
+  | (string & {});
 
 // Sidebar hints use the shared useHoverTip with its default 'left' placement: the
 // sidebar is docked at the screen's right edge, so cards pop left onto the open
@@ -271,7 +288,7 @@ function HintOption({
   label: string;
   hint: string;
   /** Optional keyboard shortcut, shown as the yellow pill in the hover tip. */
-  hotkey?: string;
+  hotkey?: ReactNode;
 }) {
   return (
     <TipToggle
@@ -732,8 +749,6 @@ export function Sidebar({
   zodiacMode,
   setZodiacMode,
   showAdvancedTab,
-  dualWheels,
-  setDualWheels,
   nodeType,
   setNodeType,
   angleProgression,
@@ -861,9 +876,8 @@ export function Sidebar({
               <EyeIcon open={showLabels} />
               <span className="name">{t('settings.details.placeNames')}</span>
             </TipToggle>
-            {/* Zenith stamps (overhead, circle) + their antipodal nadir stamps
-                (underfoot, diamond) and the ecliptic reference curve. Hover either
-                stamp to identify it; click to fly there. Off by default. */}
+            {/* Zenith stamps (overhead, circle) + antipodal nadir stamps
+                (underfoot, diamond) and the ecliptic reference curve. */}
             <TipToggle
               className={`tech-toggle ${showZenith ? 'on' : 'off'}`}
               onClick={() => setShowZenith(!showZenith)}
@@ -875,58 +889,6 @@ export function Sidebar({
               <EyeIcon open={showZenith} />
               <span className="name">{t('settings.zenithNadir.title')}</span>
             </TipToggle>
-            {/* Night Shade lives here with the other basemap-appearance toggles
-                (it shades the night half of Earth) rather than with the chart
-                line filters. */}
-            <TipToggle
-              className={`tech-toggle ${showNightShade ? 'on' : 'off'}`}
-              onClick={() => setShowNightShade(!showNightShade)}
-              ariaPressed={showNightShade}
-              title={t('settings.nightShade.title')}
-              hotkey="Shift N"
-              hint={t('settings.nightShade.hint')}
-            >
-              <EyeIcon open={showNightShade} />
-              <span className="name">{t('settings.nightShade.title')}</span>
-            </TipToggle>
-            {/* Orb zones — the soft influence band drawn around each line — is a
-                rendering-appearance toggle, so it sits here with the other
-                Details switches; its width steppers reveal when it's on. */}
-            <TipToggle
-              className={`tech-toggle ${showOrbZones ? 'on' : 'off'}`}
-              onClick={() => setShowOrbZones(!showOrbZones)}
-              ariaPressed={showOrbZones}
-              title={t('settings.orbZones.title')}
-              hotkey="Shift O"
-              hint={t('settings.orbZones.hint')}
-            >
-              <EyeIcon open={showOrbZones} />
-              <span className="name">{t('settings.orbZones.title')}</span>
-            </TipToggle>
-            {showOrbZones && (
-              <li className="orb-zone-row orb-zone-steppers">
-                <StepperField
-                  id="orb-zone-km"
-                  label={t('settings.orbZones.lineLabel')}
-                  value={orbZoneKm}
-                  onChange={setOrbZoneKm}
-                  min={10}
-                  max={2000}
-                  step={10}
-                  ariaLabel={t('settings.orbZones.lineAria')}
-                />
-                <StepperField
-                  id="orb-zone-paran"
-                  label={t('settings.orbZones.paranLabel')}
-                  value={paranOrbDeg}
-                  onChange={setParanOrbDeg}
-                  min={0.25}
-                  max={5}
-                  step={0.25}
-                  ariaLabel={t('settings.orbZones.paranAria')}
-                />
-              </li>
-            )}
           </ul>
 
           <h2>{t('settings.headings.projection')}</h2>
@@ -938,7 +900,7 @@ export function Sidebar({
                 onSelect={() => setProjection(value)}
                 label={labels.projection(value)}
                 hint={labels.projectionHint(value)}
-                hotkey={value === '2d' ? 'Shift F' : 'Shift G'}
+                hotkey={<CycleHotkey label="Shift F" />}
               />
             ))}
           </ul>
@@ -1020,75 +982,6 @@ export function Sidebar({
                 </TipToggle>
               );
             })}
-          </ul>
-
-          {/* Parans / Aspect / Midpoint toggles sit under Lines without their own heading. */}
-          <ul className="technique-list">
-            <TipToggle
-              className={`tech-toggle ${showParans ? 'on' : 'off'}`}
-              onClick={() => setShowParans(!showParans)}
-              ariaPressed={showParans}
-              title={t('settings.parans.title')}
-              hotkey="Shift P"
-              hint={t('settings.parans.hint')}
-            >
-              <EyeIcon open={showParans} />
-              <span className="name">{t('settings.parans.title')}</span>
-            </TipToggle>
-            {/* Local Space + its origin selector moved to the Location view. */}
-            <TipToggle
-              className={`tech-toggle ${showAspectLines ? 'on' : 'off'}`}
-              onClick={() => setShowAspectLines(!showAspectLines)}
-              ariaPressed={showAspectLines}
-              title={t('settings.aspectLines.title')}
-              hotkey="Shift A"
-              hint={t('settings.aspectLines.hint')}
-            >
-              <EyeIcon open={showAspectLines} />
-              <span className="name">{t('settings.aspectLines.title')}</span>
-            </TipToggle>
-            <TipToggle
-              className={`tech-toggle ${showMidpointLines ? 'on' : 'off'}`}
-              onClick={() => setShowMidpointLines(!showMidpointLines)}
-              ariaPressed={showMidpointLines}
-              title={t('settings.midpointLines.title')}
-              hotkey="Shift M"
-              hint={t('settings.midpointLines.hint')}
-            >
-              <EyeIcon open={showMidpointLines} />
-              <span className="name">{t('settings.midpointLines.title')}</span>
-            </TipToggle>
-            <TipToggle
-              className={`tech-toggle ${showStarLines ? 'on' : 'off'}`}
-              onClick={() => setShowStarLines(!showStarLines)}
-              ariaPressed={showStarLines}
-              title={t('settings.starLines.title')}
-              hotkey="Shift S"
-              hint={t('settings.starLines.hint')}
-            >
-              <EyeIcon open={showStarLines} />
-              <span className="name">{t('settings.starLines.title')}</span>
-            </TipToggle>
-            {showStarLines && (
-              <li className="orb-zone-row">
-                <HintMenu
-                  value={starSet}
-                  onChange={setStarSet}
-                  options={[
-                    {
-                      value: 'bright',
-                      label: t('settings.starLines.bright'),
-                      hint: t('settings.starLines.brightHint'),
-                    },
-                    {
-                      value: 'all',
-                      label: t('settings.starLines.all'),
-                      hint: t('settings.starLines.allHint'),
-                    },
-                  ]}
-                />
-              </li>
-            )}
           </ul>
         </div>
       )}
@@ -1188,7 +1081,7 @@ export function Sidebar({
       {showAdvancedTab && (
         <button
           type="button"
-          className="sidebar-header"
+          className="sidebar-header sidebar-header-accent sidebar-accent-advanced"
           onClick={() => toggleSection('advanced')}
           aria-expanded={openSection === 'advanced'}
         >
@@ -1198,7 +1091,131 @@ export function Sidebar({
       )}
 
       {showAdvancedTab && openSection === 'advanced' && (
-        <div className="sidebar-section">
+        <div className="sidebar-section sidebar-section-accent sidebar-accent-advanced">
+          {/* Display + Lines overlay toggles, consolidated into Advanced from
+              the Appearance and Map-filter sections. Their Shift-key shortcuts
+              still work even while this section is collapsed/hidden. */}
+          <h2>{t('settings.headings.display')}</h2>
+          <ul className="technique-list">
+            {/* Night Shade — shades the night half of Earth. */}
+            <TipToggle
+              className={`tech-toggle ${showNightShade ? 'on' : 'off'}`}
+              onClick={() => setShowNightShade(!showNightShade)}
+              ariaPressed={showNightShade}
+              title={t('settings.nightShade.title')}
+              hotkey="Shift N"
+              hint={t('settings.nightShade.hint')}
+            >
+              <EyeIcon open={showNightShade} />
+              <span className="name">{t('settings.nightShade.title')}</span>
+            </TipToggle>
+            {/* Orb zones — the soft influence band around each line; its width
+                steppers reveal when it's on. */}
+            <TipToggle
+              className={`tech-toggle ${showOrbZones ? 'on' : 'off'}`}
+              onClick={() => setShowOrbZones(!showOrbZones)}
+              ariaPressed={showOrbZones}
+              title={t('settings.orbZones.title')}
+              hotkey="Shift O"
+              hint={t('settings.orbZones.hint')}
+            >
+              <EyeIcon open={showOrbZones} />
+              <span className="name">{t('settings.orbZones.title')}</span>
+            </TipToggle>
+            {showOrbZones && (
+              <li className="orb-zone-row orb-zone-steppers">
+                <StepperField
+                  id="orb-zone-km"
+                  label={t('settings.orbZones.lineLabel')}
+                  value={orbZoneKm}
+                  onChange={setOrbZoneKm}
+                  min={10}
+                  max={2000}
+                  step={10}
+                  ariaLabel={t('settings.orbZones.lineAria')}
+                />
+                <StepperField
+                  id="orb-zone-paran"
+                  label={t('settings.orbZones.paranLabel')}
+                  value={paranOrbDeg}
+                  onChange={setParanOrbDeg}
+                  min={0.25}
+                  max={5}
+                  step={0.25}
+                  ariaLabel={t('settings.orbZones.paranAria')}
+                />
+              </li>
+            )}
+          </ul>
+
+          <h2>{t('settings.headings.lines')}</h2>
+          <ul className="technique-list">
+            <TipToggle
+              className={`tech-toggle ${showParans ? 'on' : 'off'}`}
+              onClick={() => setShowParans(!showParans)}
+              ariaPressed={showParans}
+              title={t('settings.parans.title')}
+              hotkey="Shift P"
+              hint={t('settings.parans.hint')}
+            >
+              <EyeIcon open={showParans} />
+              <span className="name">{t('settings.parans.title')}</span>
+            </TipToggle>
+            <TipToggle
+              className={`tech-toggle ${showAspectLines ? 'on' : 'off'}`}
+              onClick={() => setShowAspectLines(!showAspectLines)}
+              ariaPressed={showAspectLines}
+              title={t('settings.aspectLines.title')}
+              hotkey="Shift A"
+              hint={t('settings.aspectLines.hint')}
+            >
+              <EyeIcon open={showAspectLines} />
+              <span className="name">{t('settings.aspectLines.title')}</span>
+            </TipToggle>
+            <TipToggle
+              className={`tech-toggle ${showMidpointLines ? 'on' : 'off'}`}
+              onClick={() => setShowMidpointLines(!showMidpointLines)}
+              ariaPressed={showMidpointLines}
+              title={t('settings.midpointLines.title')}
+              hotkey="Shift M"
+              hint={t('settings.midpointLines.hint')}
+            >
+              <EyeIcon open={showMidpointLines} />
+              <span className="name">{t('settings.midpointLines.title')}</span>
+            </TipToggle>
+            <TipToggle
+              className={`tech-toggle ${showStarLines ? 'on' : 'off'}`}
+              onClick={() => setShowStarLines(!showStarLines)}
+              ariaPressed={showStarLines}
+              title={t('settings.starLines.title')}
+              hotkey="Shift S"
+              hint={t('settings.starLines.hint')}
+            >
+              <EyeIcon open={showStarLines} />
+              <span className="name">{t('settings.starLines.title')}</span>
+            </TipToggle>
+            {showStarLines && (
+              <li className="orb-zone-row">
+                <HintMenu
+                  value={starSet}
+                  onChange={setStarSet}
+                  options={[
+                    {
+                      value: 'bright',
+                      label: t('settings.starLines.bright'),
+                      hint: t('settings.starLines.brightHint'),
+                    },
+                    {
+                      value: 'all',
+                      label: t('settings.starLines.all'),
+                      hint: t('settings.starLines.allHint'),
+                    },
+                  ]}
+                />
+              </li>
+            )}
+          </ul>
+
           <h2>{t('settings.headings.houseSystem')}</h2>
           <HintMenu
             value={houseSystem}
@@ -1216,24 +1233,6 @@ export function Sidebar({
               hint: t(`settings.zodiac.${m}.hint`),
             }))}
           />
-
-          {/* One or the other, like the Projection picker: the classic bi-wheel
-              (overlay as an outer ring) or two full stacked wheels. */}
-          <h2>{t('settings.headings.wheelLayout')}</h2>
-          <ul className="theme-list">
-            <HintOption
-              selected={!dualWheels}
-              onSelect={() => setDualWheels(false)}
-              label={t('settings.wheelLayout.biwheel.label')}
-              hint={t('settings.wheelLayout.biwheel.hint')}
-            />
-            <HintOption
-              selected={dualWheels}
-              onSelect={() => setDualWheels(true)}
-              label={t('settings.wheelLayout.dual.label')}
-              hint={t('settings.wheelLayout.dual.hint')}
-            />
-          </ul>
 
           <h2 className="orb-heading">
             {t('settings.headings.aspectOrbs')}
@@ -1309,6 +1308,40 @@ export function Sidebar({
         </div>
       )}
 
+      {/* Downstream-registered sections (settings-section seam) — a 5th+ tab added
+          outside core. The header always shows; the body is the controls when
+          entitled, else the gated CTA. Empty in the open core. */}
+      {getSettingsSections().map((ext) => {
+        // A registered section opts into the coloured (Advanced-style) treatment by
+        // supplying accentRgb; the shared --section-accent-rgb drives both header + body.
+        const accentStyle = ext.accentRgb
+          ? ({ '--section-accent-rgb': ext.accentRgb } as CSSProperties)
+          : undefined;
+        return (
+          <Fragment key={ext.id}>
+            <button
+              type="button"
+              className={ext.accentRgb ? 'sidebar-header sidebar-header-accent' : 'sidebar-header'}
+              style={accentStyle}
+              onClick={() => toggleSection(ext.id)}
+              aria-expanded={openSection === ext.id}
+            >
+              <span className="sidebar-title">{ext.label}</span>
+              <span className="sidebar-chevron">{openSection === ext.id ? '▾' : '▸'}</span>
+            </button>
+            {openSection === ext.id && (
+              <div
+                className={
+                  ext.accentRgb ? 'sidebar-section sidebar-section-accent' : 'sidebar-section'
+                }
+                style={accentStyle}
+              >
+                {isEntitled(ext) ? ext.render() : ext.renderLocked?.()}
+              </div>
+            )}
+          </Fragment>
+        );
+      })}
     </aside>
   );
 }

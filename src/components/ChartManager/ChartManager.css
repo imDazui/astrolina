@@ -43,6 +43,17 @@
   color: var(--text-strong);
 }
 
+/* Synastry partner-picker heading: the synastry icon + the compared chart's name
+   (the "Synastry with" wording lives on in the heading's accessible label). */
+.cm-comparison-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.cm-comparison-title svg {
+  flex-shrink: 0;
+}
+
 .cm-close {
   background: transparent;
   border: none;

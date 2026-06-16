@@ -1,0 +1,83 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* Same panel chrome as the coordinates readout (.app-header), but sized to its
+   own content: align-self keeps it from stretching to the coordinates window's
+   width below it, so the two windows are independent. The position is owned by
+   the .top-left-stack wrapper (see index.css). */
+.profile-window {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(var(--bg-panel), 0.94);
+  border: 1px solid rgba(var(--tint), 0.08);
+  border-radius: 8px;
+  transition: border-color 0.15s;
+}
+
+/* Border follows the pin state like the coordinates window (.app-header) it stacks
+   above and the minimap (.chart-wheel): a subtle tint at rest, the pin-state colour
+   (blue hover / orange pinned / green natal-pinned) when the map is active. */
+html[data-mapstate='hover'] .profile-window,
+html[data-mapstate='pinned'] .profile-window,
+html[data-mapstate='natal-pinned'] .profile-window {
+  border-color: rgba(var(--map-accent-rgb), 0.55);
+}
+
+/* The plan tag: a small pill whose colour states stand for the reading mode.
+   NEW is the steady brand gold; ADV is the danger red/pink. Both retint per
+   theme via the *-rgb tokens. In the open core this is the strip's only control;
+   clicking it flips Advanced (a gated build may give it its own action). */
+.pw-plan-tag {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease, background 0.15s,
+    color 0.15s, border-color 0.15s;
+}
+.pw-plan-tag.new {
+  background: rgba(var(--accent-brand-rgb), 0.18);
+  color: var(--accent-brand);
+  border-color: rgba(var(--accent-brand-rgb), 0.35);
+}
+/* Matches the wheel sidebar's ADV cue (.es-plan-tag.adv): the advanced-mode gradient,
+   half-opacity tint at top-left deepening to the full advanced red at bottom-right. */
+.pw-plan-tag.adv {
+  background: linear-gradient(
+    to bottom right,
+    rgba(var(--advanced-rgb), 0.5),
+    var(--advanced)
+  );
+  color: #fff;
+  border-color: rgba(var(--advanced-rgb), 0.5);
+}
+.pw-plan-tag:hover {
+  transform: scale(1.06);
+  filter: brightness(1.08);
+}
+
+/* Honour reduced-motion: keep the colour feedback, drop the scale/brightness
+   nudge (matches the map's edge-glow guard). */
+@media (prefers-reduced-motion: reduce) {
+  .pw-plan-tag {
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .pw-plan-tag:hover {
+    transform: none;
+    filter: none;
+  }
+}

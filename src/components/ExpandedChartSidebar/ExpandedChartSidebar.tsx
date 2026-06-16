@@ -190,13 +190,14 @@ interface ExpandedChartSidebarProps {
   angleCoords: Record<'asc' | 'mc' | 'dsc' | 'ic' | 'vertex' | 'antivertex', AngleCoords> | null;
   /** Per-aspect orb limits (Advanced ▸ Aspect orbs) for the grid + wheel lines. */
   aspectOrbs: AspectOrbs;
-  /** The Advanced reading mode (degree rim, aspect grid, coordinate tables).
-   *  Lifted to App so the Info chip can gate its Advanced-tab items on it. */
+  /** The Advanced reading mode (degree rim, aspect grid, coordinate tables). The
+   *  NEW/ADV cue below the Hide button toggles it (the profile plan tag does too). */
   advanced: boolean;
   setAdvanced: (v: boolean) => void;
-  /** Overlay wheel layout (Advanced ▸ Wheel layout): true splits the bi-wheel
-   *  into two full stacked wheels whenever an overlay ring exists. */
+  /** Overlay wheel layout (the Dual toggle in this header): true splits the
+   *  bi-wheel into two full stacked wheels whenever an overlay ring exists. */
   dualWheels: boolean;
+  setDualWheels: (v: boolean) => void;
   onClose: () => void;
   /** Fired while the panel is being drag-resized, so the map can pause hover. */
   onResizingChange?: (resizing: boolean) => void;
@@ -520,6 +521,7 @@ export function ExpandedChartSidebar({
   advanced,
   setAdvanced,
   dualWheels,
+  setDualWheels,
   onClose,
   onResizingChange,
   onSelectChart,
@@ -576,6 +578,9 @@ export function ExpandedChartSidebar({
     .sort((a, b) => planetRank(a.name) - planetRank(b.name));
   const shownOverlay =
     overlayPlanets?.filter((p) => visiblePlanets.has(p.name)) ?? null;
+  // Whether a drawable overlay ring exists — the Dual toggle (and the dual
+  // layout it controls) only mean anything when there's a second wheel to split.
+  const hasOverlay = !!shownOverlay && shownOverlay.length > 0 && !!overlayAngles;
 
   // The four chart angles, gated by the Map Filter's line-type toggles. Drives
   // which angle marks (As/Ds/Mc/Ic) the wheel draws.
@@ -752,18 +757,18 @@ export function ExpandedChartSidebar({
             />
           </div>
           <div className="es-header-actions">
-            {angles && (
+            {angles && hasOverlay && (
               <TipButton
                 type="button"
-                className={`es-advanced-toggle ${advanced ? 'on' : 'off'}`}
-                onClick={() => setAdvanced(!advanced)}
+                className={`es-advanced-toggle ${dualWheels ? 'on' : 'off'}`}
+                onClick={() => setDualWheels(!dualWheels)}
                 role="switch"
-                aria-checked={advanced}
+                aria-checked={dualWheels}
                 placement="bottom"
-                tip={t('expandedSidebar.advanced.tip')}
-                hint={t('expandedSidebar.advanced.hint')}
+                tip={t('expandedSidebar.dual.tip')}
+                hint={t('expandedSidebar.dual.hint')}
               >
-                <span className="es-toggle-label">{t('expandedSidebar.advanced.label')}</span>
+                <span className="es-toggle-label">{t('expandedSidebar.dual.label')}</span>
                 <span className="es-toggle-track">
                   <span className="es-toggle-thumb" />
                 </span>
@@ -794,6 +799,21 @@ export function ExpandedChartSidebar({
                 <path d="M16 15l-3-3 3-3" />
               </svg>
               <span>{t('expandedSidebar.close.label')}</span>
+            </TipButton>
+            {/* Clickable NEW/ADV cue, absolutely positioned just below the Hide
+                button so it adds no header height. Toggles Advanced reading mode —
+                the profile plan tag does the same. */}
+            <TipButton
+              type="button"
+              className={`es-plan-tag ${advanced ? 'adv' : 'new'}`}
+              onClick={() => setAdvanced(!advanced)}
+              role="switch"
+              aria-checked={advanced}
+              placement="left"
+              tip={t('profile.planTag.tip')}
+              hint={t('profile.planTag.hint')}
+            >
+              {advanced ? t('profile.planTag.adv') : t('profile.planTag.new')}
             </TipButton>
           </div>
         </div>
@@ -887,11 +907,7 @@ export function ExpandedChartSidebar({
           // Dual Wheels (Advanced ▸ Wheel layout): split the bi-wheel into two
           // full wheels — natal, then the overlay as a standalone chart with
           // its own internal aspect chords. Bi-wheel is the default.
-          const showDual =
-            dualWheels &&
-            !!shownOverlay &&
-            shownOverlay.length > 0 &&
-            !!overlayAngles;
+          const showDual = dualWheels && hasOverlay;
           return (
             <>
               {/* Use the wheel's empty top corners: the chart-state title (left,

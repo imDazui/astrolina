@@ -20,6 +20,17 @@
   flex-direction: column;
   overflow: hidden;
   max-height: calc(100vh - 32px);
+  transition: border-color 0.15s;
+}
+
+/* The settings window's border follows the pin state like the coordinates window
+   (.app-header), the profile window (.profile-window), and the minimap (.chart-wheel):
+   a subtle tint at rest, the pin-state colour (blue hover / orange pinned / green
+   natal-pinned) when the map is active. */
+html[data-mapstate='hover'] .sidebar,
+html[data-mapstate='pinned'] .sidebar,
+html[data-mapstate='natal-pinned'] .sidebar {
+  border-color: rgba(var(--map-accent-rgb), 0.55);
 }
 
 .sidebar-header {
@@ -66,6 +77,52 @@
      (scaling is post-layout, so the button keeps its height). */
   display: inline-block;
   transform: scale(1.3);
+}
+
+/* A "coloured" settings section — the core Advanced tab, or a downstream-registered
+   (gated) tab — keys its whole look off ONE triplet, --section-accent-rgb: a strong
+   diagonal gradient header (half-opacity at top-left → full colour at bottom-right, so
+   it reads as that section's zone) with a white label/chevron for contrast, plus the
+   faintest wash behind its open body (below). Advanced sets the danger red via
+   .sidebar-accent-advanced; a registered section passes its own colour inline, so a 5th
+   tab themes itself with no edit here. (These rules sit after the base .sidebar-header
+   ones so they win the equal-specificity hover / aria-expanded ties by source order;
+   the glass theme's white-chip override excludes .sidebar-header-accent — see index.css.) */
+.sidebar-header-accent {
+  background: linear-gradient(
+    to bottom right,
+    rgba(var(--section-accent-rgb), 0.5),
+    rgb(var(--section-accent-rgb))
+  );
+}
+.sidebar-header-accent:hover {
+  background: linear-gradient(
+    to bottom right,
+    rgba(var(--section-accent-rgb), 0.62),
+    rgb(var(--section-accent-rgb))
+  );
+}
+.sidebar-header-accent .sidebar-title,
+.sidebar-header-accent:hover .sidebar-title,
+.sidebar-header-accent[aria-expanded='true'] .sidebar-title {
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.22);
+}
+.sidebar-header-accent .sidebar-chevron {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* The open body of a coloured section: the faintest tint of its accent so the section
+   reads as one continuous zone with its header, without the wash fighting the controls
+   layered over it. Carries .sidebar-section too, so padding/border/scroll still apply. */
+.sidebar-section-accent {
+  background: rgba(var(--section-accent-rgb), 0.05);
+}
+
+/* The only Advanced-specific line: set the shared accent to the danger red. Applied to
+   BOTH the Advanced header and body so each half resolves the same colour. */
+.sidebar-accent-advanced {
+  --section-accent-rgb: var(--advanced-rgb);
 }
 
 .sidebar-section {

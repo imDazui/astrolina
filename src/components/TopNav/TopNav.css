@@ -6,16 +6,6 @@
  * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
  */
 
-/* "[cycle] O" tag inside the overlay-mode tips' hotkey pill: glyph + letter. */
-.cycle-hotkey {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-.cycle-hotkey-icon {
-  flex-shrink: 0;
-}
-
 /* The top command bar reuses the overlay bar's chrome (.timeline-hud — theme +
    accent + mapstate-driven border), but docks at the top center as an inset
    island whose lower corners sweep down. */
@@ -310,6 +300,10 @@
   /* Reserve the width of the longest label ("NATAL PIN" + pin icon) so the bar
      doesn't jump as the status changes. */
   min-width: 108px;
+  /* The status pill is the deliberate map-state indicator, so it opts back into
+     the pin-state color (the nav bar's --accent is steady brand by default). */
+  --accent: var(--map-accent);
+  --accent-rgb: var(--map-accent-rgb);
   border: 1px solid rgba(var(--accent-rgb), 0.4);
   border-radius: 999px;
   background: rgba(var(--accent-rgb), 0.12);
@@ -410,6 +404,20 @@ button.topnav-status:hover {
   color: var(--text-faint);
 }
 
+/* "Map-state" triggers (Tools / Overlay) take the pin-state colour on open/active —
+   neutral gray at rest, blue on hover, orange when pinned, green when natal-pinned —
+   instead of the bar's steady brand accent, matching the map cues those menus drive. */
+.navmenu-trigger.navmenu-mapstate.open,
+.navmenu-trigger.navmenu-mapstate.active {
+  border-color: rgba(var(--map-accent-rgb), 0.55);
+  background: rgba(var(--map-accent-rgb), 0.1);
+  color: var(--map-accent);
+}
+.navmenu-trigger.navmenu-mapstate.open .navmenu-caret,
+.navmenu-trigger.navmenu-mapstate.active .navmenu-caret {
+  color: var(--map-accent);
+}
+
 .navmenu-panel {
   position: absolute;
   top: calc(100% + 6px);
@@ -476,6 +484,35 @@ button.topnav-status:hover {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+/* Tier badge on a plan-gated menu row — ADV (advanced) or the gated/downstream tier. ONE
+   badge for both upgrade rungs (src/lib/plan.ts), so a downstream feature gets the same
+   treatment by declaring its tier. Uses the plan-tag's diagonal gradient (lighter top-left
+   → full colour, white label): red for ADV, purple for the gated tier. Sits right BESIDE
+   the row's label (no auto margin), so it hugs the name; any hotkey key keeps its own
+   right-alignment and stays at the far right of the row. */
+.navmenu-tier {
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.navmenu-tier.tier-adv {
+  background: linear-gradient(
+    to bottom right,
+    rgba(var(--advanced-rgb), 0.5),
+    var(--advanced)
+  );
+}
+.navmenu-tier.tier-gated {
+  background: linear-gradient(
+    to bottom right,
+    rgba(var(--gated-rgb), 0.5),
+    var(--gated)
+  );
 }
 
 .navmenu-marker {

@@ -252,6 +252,12 @@
   border-top: 1px solid rgba(var(--tint), 0.08);
 }
 
+/* In the standalone Local Space window the header already provides the divider, so
+   the section is the whole body — drop its top border to avoid a double line. */
+.local-space-hud .location-ls {
+  border-top: none;
+}
+
 .location-ls-head {
   padding: 2px 4px 4px;
   font-size: 9px;
@@ -339,11 +345,12 @@
 }
 /* The pin origin mirrors the relocated local space, so its active state DOES track the
    map pin-state accent (orange when a pin is placed, green on the natal pin, neutral
-   grey when none — --accent is aliased to --map-accent inside .timeline-hud). */
+   grey when none) — a designated map-state cue, so it reads --map-accent directly
+   (the bar's --accent is steady brand by default). */
 .location-ls-seg-pin.active {
-  color: var(--accent);
-  border-color: rgba(var(--accent-rgb), 0.5);
-  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--map-accent);
+  border-color: rgba(var(--map-accent-rgb), 0.5);
+  background: rgba(var(--map-accent-rgb), 0.1);
 }
 /* …except in the hover state, where the accent is a blue hover PREVIEW with no pin
    actually placed — so the pin button falls back to the neutral grey (the no-pin look)

@@ -40,30 +40,18 @@
   backdrop-filter: blur(6px);
 }
 
-/* The map chrome recolors its WHOLE accent to track the active map location:
-   every control reading var(--accent)/var(--accent-rgb) (dropdowns, step/play
-   buttons, focus rings, the measure pill, the border) shifts with it, matching
-   the edge glow. Rather than re-deriving the gray/blue/orange/green per state
-   here, the bar simply aliases its --accent to the shared --map-accent source
-   (set once on <html> per pin state — see index.css). */
+/* The bar's chrome (dropdowns, step/play buttons, focus rings, the measure pill)
+   defaults to the STEADY brand accent. Only designated map-state cues opt back
+   into the shared --map-accent source (set on <html> per pin state — see
+   index.css): the bar's edge BORDER and the scrubber NEEDLE, both below. */
 .timeline-hud {
-  --accent: var(--map-accent);
-  --accent-rgb: var(--map-accent-rgb);
-  --accent-hover: var(--map-accent);
-  border-color: rgba(var(--map-accent-rgb), 0.55);
-}
-
-/* …but the play/pause button, the scale picker, and the Returns group stay the
-   STEADY brand accent rather than tracking the map pin state — they read as fixed
-   transport controls. (The Returns buttons then use that accent only as an
-   "active return" cue; see .thud-return-btn.active below.) */
-.thud-play,
-.thud-select,
-.thud-returns {
   --accent: var(--accent-brand);
   --accent-rgb: var(--accent-brand-rgb);
   --accent-hover: var(--accent-brand);
+  /* The edge border keeps the pin-state glow, matching the map edge glow. */
+  border-color: rgba(var(--map-accent-rgb), 0.55);
 }
+
 
 /* The overlay label (Transits / Progressed Age / Sun Angle) drawn as a NUB that
    protrudes from the top of the bar and flares into it with a concave fillet on
@@ -81,7 +69,9 @@
   padding: 3px 14px 5px;
   background: rgba(var(--bg-panel), 0.94);
   border-radius: 9px 9px 0 0;
-  color: var(--accent);
+  /* Title + move-grip (currentColor) track the pin state — a designated map-state
+     cue, like the bar border (the bar's --accent is steady brand by default). */
+  color: var(--map-accent);
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -126,7 +116,7 @@
   padding: 2px;
   background: none;
   border: none;
-  color: var(--accent);
+  color: var(--map-accent);
   opacity: 0.55;
   cursor: pointer;
   border-radius: 5px;
@@ -545,7 +535,9 @@
   width: 2px;
   height: 22px;
   margin-left: -1px;
-  background: var(--accent);
+  /* Designated map-state cue: the needle tracks the pin state, not the bar's
+     steady brand accent. */
+  background: var(--map-accent);
   pointer-events: none;
 }
 
@@ -557,7 +549,7 @@
   transform: translateX(-50%);
   border-left: 4px solid transparent;
   border-right: 4px solid transparent;
-  border-top: 5px solid var(--accent);
+  border-top: 5px solid var(--map-accent);
 }
 
 /* ── Date readout / picker ─────────────────────────────────────── */
@@ -646,7 +638,11 @@
 .thud-drawer {
   position: absolute;
   top: 50%;
-  left: calc(100% - 1px);
+  /* Flush against the bar's right edge: 100% lands on the inner side of the bar's 1px
+     right border, and border-left:none lets the drawer's matching fill cover that border
+     so the seam disappears. The old calc(100% - 1px) overlapped 1px further into the bar,
+     which — once the drawer became fully opaque — read as the drawer sitting ON the bar. */
+  left: 100%;
   transform: translateY(-50%);
   display: flex;
   align-items: stretch;
@@ -664,22 +660,11 @@
   border-radius: 0 9px 9px 0;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(6px);
-  /* Subdued at rest so the closed handle stays secondary to the bar, yet visible
-     enough to find; brightens to full on hover / keyboard focus / while open. The
-     bright state keys off :has(:focus-visible), NOT :focus-within, so a MOUSE click on
-     the chevron doesn't pin it bright after closing (it only un-lit once you clicked
-     elsewhere) — only real keyboard focus keeps it lit. */
-  opacity: 0.6;
-  transition: opacity 0.22s ease;
-}
-.thud-drawer:hover,
-.thud-drawer:has(:focus-visible),
-.thud-drawer.is-open {
-  /* Full element opacity. The drawer's see-through look is its BACKGROUND alpha
-     (rgba(--bg-panel, 0.94)) — the very same fill the nub uses — so at opacity:1 the
-     open drawer already matches the nub. A value <1 here would MULTIPLY that 0.94 bg
-     (e.g. 0.94×0.94 = 0.88) and make the drawer MORE see-through than the nub. */
-  opacity: 1;
+  /* No element opacity here on purpose: fading the whole drawer at rest also faded its
+     BORDER (0.55 → ~0.33 effective), so the closed handle's edge read a tone lighter
+     than the bar's same-token border and broke the "one continuous edge" illusion. The
+     drawer's fill + border now match the bar in every state; the "secondary at rest"
+     cue lives solely on the chevron's colour (see .thud-drawer-tab). */
 }
 /* The display toggles belong to the open bar — when the eye collapses it to just the
    nub, hide the drawer (kept in the DOM, so its width stays measured for reopen). */
@@ -699,10 +684,22 @@
   padding: 0;
   background: none;
   border: none;
-  color: var(--accent);
+  /* The drawer's fill + border already match the bar, so the closed handle reads as a
+     seamless extension of it — only the chevron is subdued at rest to keep the handle
+     secondary, brightening to the full brand accent on hover / keyboard focus / while
+     open. The bright state keys off :has(:focus-visible) (NOT :focus-within) so a MOUSE
+     click on the chevron doesn't pin it lit after closing — only real keyboard focus
+     does. (0.55 rest alpha matches the nub eye's dim affordance, .thud-eye.) */
+  color: rgba(var(--accent-rgb), 0.55);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
+  transition: color 0.22s ease;
+}
+.thud-drawer:hover .thud-drawer-tab,
+.thud-drawer:has(:focus-visible) .thud-drawer-tab,
+.thud-drawer.is-open .thud-drawer-tab {
+  color: var(--accent);
 }
 .thud-drawer-tab:focus-visible {
   outline: none;

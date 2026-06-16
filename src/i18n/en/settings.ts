@@ -28,7 +28,6 @@ export const settings = {
     lunarNode: 'Lunar node',
     houseSystem: 'House system',
     zodiac: 'Zodiac',
-    wheelLayout: 'Wheel layout',
     aspectOrbs: 'Aspect orbs',
     primaryRate: 'Pri. directions rate',
     display: 'Display',
@@ -65,7 +64,7 @@ export const settings = {
     title: 'Parans',
     hint: 'Latitudes where two bodies are angular at the same moment, one rising as another culminates, and so on. Drawn as horizontal lines across the map.',
   },
-  // Local Space + its origin selector moved to the Location view (i18n locationHud).
+  // Local Space + its origin selector live in the Local Space view (i18n localSpaceHud).
   aspectLines: {
     title: 'Aspect Lines',
     hint: 'Lines where a planet is sextile (⚹), square (□) or trine (△) to the MC or Ascendant — each aspect twice, once per side. A trine to the Asc doubles as a sextile to the Dsc; hover a line to see both readings. Conjunctions and oppositions are the planet’s own angle lines, already on the map.',
@@ -76,19 +75,7 @@ export const settings = {
   },
   zenithNadir: {
     title: 'Zenith/Nadirs',
-    hint: 'Glyph stamps where each body is directly overhead (its zenith — a circle, on the MC line) and directly underfoot (its antipodal nadir — a diamond, on the IC line), plus the ecliptic reference curve through the Sun’s zenith. Hover a stamp to identify it, or click to fly there. Off by default.',
-  },
-  // The overlay wheel's layout (Advanced ▸ Wheel layout) — one or the other,
-  // like the Projection picker.
-  wheelLayout: {
-    biwheel: {
-      label: 'Bi-wheel',
-      hint: 'The classic layout: the overlay rides the natal wheel as an outer ring, with cross-aspect lines between the two.',
-    },
-    dual: {
-      label: 'Dual Wheels',
-      hint: 'Two full stacked wheels: the natal chart, then the overlay as its own chart with its own aspect lines. Applies whenever an overlay is on.',
-    },
+    hint: 'Marks where each body is directly overhead (zenith — a circle on the MC line) and underfoot (nadir — a diamond on the IC line). Hover to identify, click to fly there.',
   },
   aspectOrbs: {
     hint: 'Max distance from exact (degrees) per aspect in the wheel and aspect lists. Luminaries widens every orb when the Sun or Moon is involved; Parallels is the declination orb.',

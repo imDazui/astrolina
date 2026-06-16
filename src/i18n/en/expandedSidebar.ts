@@ -20,11 +20,12 @@ export const expandedSidebar = {
   // is promoted with the natal chart hidden — there's nothing to draw.
   noChart: 'NO CHART (CCG)',
 
-  advanced: {
-    // The Advanced toggle: pill label, hover tip title, and explanation.
-    label: 'Advanced',
-    tip: 'Advanced',
-    hint: 'Detailed natal data: declination, speed, retrograde, exact orbs, and the aspect grid.',
+  dual: {
+    // The Dual toggle in the header: pill label, hover tip title, and explanation.
+    // (Advanced reading mode moved to the profile strip's plan tag.)
+    label: 'Dual',
+    tip: 'Dual wheels',
+    hint: 'Split the bi-wheel into two full stacked wheels — the natal chart, then the overlay as its own chart with its own aspect lines. Applies whenever an overlay is on.',
   },
 
   close: {

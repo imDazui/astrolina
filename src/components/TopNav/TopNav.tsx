@@ -17,8 +17,10 @@ import type { OverlayMode } from '../../lib/astro/timeline';
 import { getMapExtensions } from '../../lib/extensions/mapExtensions';
 import { getToolExtensions } from '../../lib/extensions/toolExtensions';
 import { getOverlayExtensions } from '../../lib/extensions/overlayExtensions';
+import { type PlanTier, tierMet, tierLabel, tierOfEntitlement } from '../../lib/plan';
 import type { StoredChart } from '../../lib/chartLibrary';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
+import { CycleHotkey } from '../ui/CycleHotkey';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
@@ -81,8 +83,14 @@ interface TopNavProps {
   setShowSettings: (v: boolean) => void;
   showInfo: boolean;
   setShowInfo: (v: boolean) => void;
-  showLocation: boolean;
-  setShowLocation: (v: boolean) => void;
+  showTeleport: boolean;
+  setShowTeleport: (v: boolean) => void;
+  showLocalSpace: boolean;
+  setShowLocalSpace: (v: boolean) => void;
+  /** The user's plan tier (src/lib/plan.ts). Gates the menu items by tier — Slide (Tools),
+   *  Local Space (View), Synastry + Eclipses (Overlay) need 'adv'; downstream items need
+   *  'gated'. Each is hidden until the tier is reached, and tier-badged when shown. */
+  planTier: PlanTier;
   /** The guides reference (View ▸ Guides) — revisit the onboarding guides as a glossary.
    *  No hotkey: it's an occasional reference, not a frequently toggled HUD. */
   showGuides: boolean;
@@ -113,6 +121,10 @@ const OVERLAY_MODES: Exclude<OverlayMode, 'off'>[] = [
   'synastry',
   'eclipses',
 ];
+
+// The two overlay modes available only in Advanced mode: hidden from the Overlay menu
+// (and from App's 'o' cycle) when Advanced is off, ADV-badged when shown.
+const ADVANCED_OVERLAY_MODES = new Set<OverlayMode>(['synastry', 'eclipses']);
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -252,29 +264,13 @@ function ToolMenuIcon({ tool }: { tool: MapTool }) {
   );
 }
 
-// The overlay-mode hotkey tag: "O" + a cycle glyph, since pressing O *cycles*
-// through the overlay modes rather than jumping to a fixed one.
-function CycleHotkey() {
-  return (
-    <span className="cycle-hotkey">
-      O
-      <svg
-        className="cycle-hotkey-icon"
-        width="11"
-        height="11"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-        <path d="M21 3v5h-5" />
-      </svg>
-    </span>
-  );
+// The small tier badge on a plan-gated menu row (ADV / the gated tier) — see
+// src/lib/plan.ts. It right-aligns and sits left of any hotkey key; NEW (or a gated tier
+// whose downstream label is unset) renders nothing.
+function TierBadge({ tier }: { tier?: PlanTier }) {
+  if (!tier || tier === 'new') return null;
+  const label = tierLabel(tier);
+  return label ? <span className={`navmenu-tier tier-${tier}`}>{label}</span> : null;
 }
 
 // A single-select row (radio dot). Its description + shortcut surface in a hover
@@ -286,6 +282,7 @@ function RadioItem({
   onSelect,
   hint,
   hotkey,
+  tier,
 }: {
   label: string;
   /** Fuller name shown as the hover-tip title when `label` is abbreviated. */
@@ -294,6 +291,8 @@ function RadioItem({
   onSelect: () => void;
   hint?: string;
   hotkey?: ReactNode;
+  /** The plan tier this row belongs to — renders its tier badge (ADV / gated). */
+  tier?: PlanTier;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('left');
   return (
@@ -312,6 +311,7 @@ function RadioItem({
       >
         <span className="navmenu-marker">{checked ? '●' : '○'}</span>
         <span>{label}</span>
+        <TierBadge tier={tier} />
       </button>
       <HoverTip
         pos={pos}
@@ -331,11 +331,14 @@ function CheckItem({
   checked,
   onToggle,
   hotkey,
+  tier,
 }: {
   label: string;
   checked: boolean;
   onToggle: () => void;
   hotkey?: string;
+  /** The plan tier this row belongs to — renders its tier badge (ADV / gated). */
+  tier?: PlanTier;
 }) {
   return (
     <button
@@ -347,6 +350,7 @@ function CheckItem({
     >
       <span className="navmenu-marker check">{checked ? '✓' : ''}</span>
       <span>{label}</span>
+      <TierBadge tier={tier} />
       {hotkey && <span className="navmenu-key">{hotkey}</span>}
     </button>
   );
@@ -363,6 +367,7 @@ function ToolItem({
   disabled,
   hint,
   onToggle,
+  tier,
 }: {
   label: string;
   /** The tool's glyph, shown beside the label and in its hover tip. Optional —
@@ -374,6 +379,8 @@ function ToolItem({
   disabled?: boolean;
   hint?: string;
   onToggle: () => void;
+  /** The plan tier this row belongs to — renders its tier badge (ADV / gated). */
+  tier?: PlanTier;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('left');
   // Disabled rows stay enabled at the DOM level (greyed via .disabled, click
@@ -405,6 +412,7 @@ function ToolItem({
           </span>
         )}
         <span>{label}</span>
+        <TierBadge tier={tier} />
         {hotkey && <span className="navmenu-key">{hotkey}</span>}
       </button>
       <HoverTip
@@ -460,8 +468,11 @@ export function TopNav({
   setShowSettings,
   showInfo,
   setShowInfo,
-  showLocation,
-  setShowLocation,
+  showTeleport,
+  setShowTeleport,
+  showLocalSpace,
+  setShowLocalSpace,
+  planTier,
   showGuides,
   setShowGuides,
   openExtensions,
@@ -486,25 +497,29 @@ export function TopNav({
     checked: boolean;
     onToggle: () => void;
     hotkey?: string;
+    tier?: PlanTier;
   }[] = [
     { id: 'coordinates', label: t('topNav.view.coordinates'), hotkey: 'C', checked: showCoords, onToggle: () => setShowCoords(!showCoords) },
     { id: 'minimap', label: t('topNav.view.minimap'), hotkey: 'M', checked: showChart, onToggle: () => setShowChart(!showChart) },
     { id: 'settings', label: t('topNav.view.settings'), hotkey: 'S', checked: showSettings, onToggle: () => setShowSettings(!showSettings) },
-    { id: 'location', label: t('topNav.view.location'), hotkey: 'L', checked: showLocation, onToggle: () => setShowLocation(!showLocation) },
+    { id: 'teleport', label: t('topNav.view.teleport'), hotkey: 'G', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
+    { id: 'localSpace', label: t('topNav.view.localSpace'), hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace) },
     { id: 'guides', label: t('topNav.view.guides'), checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
     { id: 'info', label: t('topNav.view.info'), checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
     ...getMapExtensions().map((ext) => ({
       id: ext.id,
       label: ext.label,
       hotkey: ext.hotkey,
+      tier: tierOfEntitlement(ext.tier),
       checked: openExtensions.has(ext.id),
       onToggle: () => onToggleExtension(ext.id),
     })),
   ];
+  // Items above the user's tier (e.g. Local Space needs 'adv') drop out of the menu.
   const orderedViewItems = [
     ...viewItems.filter((i) => i.hotkey),
     ...viewItems.filter((i) => !i.hotkey),
-  ];
+  ].filter((i) => tierMet(planTier, i.tier ?? 'new'));
 
   const measuring = tool === 'measure';
   const sliding = tool === 'slide';
@@ -649,7 +664,7 @@ export function TopNav({
               label={<ToolMenuIcon tool={tool} />}
               ariaLabel={t('topNav.tools.menuLabel')}
               active={tool !== 'off'}
-              className="topnav-tool"
+              className="topnav-tool navmenu-mapstate"
             >
               {(close) => (
                 <>
@@ -664,22 +679,26 @@ export function TopNav({
                       close();
                     }}
                   />
-                  <ToolItem
-                    label={t('topNav.tools.slideItem')}
-                    icon={<ToolMenuIcon tool="slide" />}
-                    hint={
-                      slideEnabled
-                        ? t('topNav.tools.slideHint')
-                        : t('topNav.tools.slideUnavailable')
-                    }
-                    hotkey="Y"
-                    checked={sliding}
-                    disabled={!slideEnabled}
-                    onToggle={() => {
-                      onToggleSlide();
-                      close();
-                    }}
-                  />
+                  {/* Slide needs the 'adv' tier: hidden below it, tier-badged at/above it. */}
+                  {tierMet(planTier, 'adv') && (
+                    <ToolItem
+                      label={t('topNav.tools.slideItem')}
+                      icon={<ToolMenuIcon tool="slide" />}
+                      hint={
+                        slideEnabled
+                          ? t('topNav.tools.slideHint')
+                          : t('topNav.tools.slideUnavailable')
+                      }
+                      hotkey="Y"
+                      tier="adv"
+                      checked={sliding}
+                      disabled={!slideEnabled}
+                      onToggle={() => {
+                        onToggleSlide();
+                        close();
+                      }}
+                    />
+                  )}
                   {/* Registered Tools-menu extensions (registerToolExtension) — add-on
                       tools attach here with no edits to this file. The checkmark
                       mirrors their open state; whether the click opens the real HUD or a
@@ -690,6 +709,7 @@ export function TopNav({
                       label={ext.label}
                       hint={ext.hint}
                       hotkey={ext.hotkey}
+                      tier={tierOfEntitlement(ext.tier)}
                       checked={openTools.has(ext.id)}
                       onToggle={() => {
                         onToggleTool(ext.id);
@@ -701,7 +721,7 @@ export function TopNav({
               )}
             </NavMenu>
 
-            <NavMenu label={t('topNav.overlay.menuLabel')} active={overlayActive}>
+            <NavMenu label={t('topNav.overlay.menuLabel')} active={overlayActive} className="navmenu-mapstate">
               {(close) => (
                 <>
                   {/* Explicit "None" row (selected whenever no overlay is shown) is
@@ -720,7 +740,11 @@ export function TopNav({
                       close();
                     }}
                   />
-                  {OVERLAY_MODES.map((mode) => (
+                  {/* Synastry + Eclipses need the 'adv' tier: filtered out below it,
+                      tier-badged at/above it (see ADVANCED_OVERLAY_MODES). */}
+                  {OVERLAY_MODES.filter((mode) =>
+                    tierMet(planTier, ADVANCED_OVERLAY_MODES.has(mode) ? 'adv' : 'new'),
+                  ).map((mode) => (
                     <RadioItem
                       key={mode}
                       label={t(`topNav.overlay.modes.${mode}.label`)}
@@ -734,7 +758,8 @@ export function TopNav({
                               : undefined
                       }
                       hint={t(`topNav.overlay.modes.${mode}.desc`)}
-                      hotkey={<CycleHotkey />}
+                      hotkey={<CycleHotkey label="O" />}
+                      tier={ADVANCED_OVERLAY_MODES.has(mode) ? 'adv' : undefined}
                       checked={overlayMode === mode}
                       onSelect={() => {
                         setOverlayMode(mode);
@@ -753,6 +778,7 @@ export function TopNav({
                       tipTitle={ext.tipTitle}
                       hint={ext.hint}
                       hotkey={ext.hotkey}
+                      tier={tierOfEntitlement(ext.tier)}
                       checked={activeOverlayExt === ext.id}
                       onSelect={() => {
                         onSelectOverlayExt(ext.id);
@@ -773,6 +799,7 @@ export function TopNav({
                   label={it.label}
                   hotkey={it.hotkey}
                   checked={it.checked}
+                  tier={it.tier}
                   onToggle={it.onToggle}
                 />
               ))}

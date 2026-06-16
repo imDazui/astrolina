@@ -22,10 +22,10 @@
   transition: left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
   max-width: calc(100vw - var(--es-width, 0px) - 80px);
 
-  /* Alias the bar's accent to the shared map-state source, like the timeline bar, so
-     borders/buttons track the pin state. */
-  --accent: var(--map-accent);
-  --accent-rgb: var(--map-accent-rgb);
+  /* The bar's chrome defaults to the steady brand accent. The bar's edge border
+     (below) keeps the pin-state glow as a designated map-state cue. */
+  --accent: var(--accent-brand);
+  --accent-rgb: var(--accent-brand-rgb);
   background: rgba(var(--bg-panel), 0.96);
   border: 1px solid rgba(var(--map-accent-rgb), 0.6);
   border-radius: 13px;
@@ -50,6 +50,7 @@
   padding: 3px 14px 5px;
   background: rgba(var(--bg-panel), 0.96);
   border-radius: 9px 9px 0 0;
+  /* Title + move-grip (currentColor) track the pin state (designated map-state cue). */
   color: var(--map-accent);
   font-size: 12px;
   font-weight: 700;
@@ -130,11 +131,11 @@
 .synastry-hud-eye:hover,
 .synastry-hud-eye:focus-visible {
   opacity: 1;
-  background: rgba(var(--map-accent-rgb), 0.12);
+  background: rgba(var(--accent-brand-rgb), 0.12);
 }
 .synastry-hud-eye:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(var(--map-accent-rgb), 0.5);
+  box-shadow: 0 0 0 2px rgba(var(--accent-brand-rgb), 0.5);
 }
 
 /* Collapsed (eye off): no body, so the bar reduces to just its nub — strip the bar
@@ -305,18 +306,18 @@
 }
 
 /* Generate: the commit action — builds the relationship chart and switches to it.
-   Tracks the map-state color (blue hover / orange pinned / green natal-pinned) via
-   --map-accent, so it reads as "the chart you're about to create"; dimmed + not-
+   Steady brand accent: the result is the midpoint of the two charts and does NOT
+   depend on the pin location, so it doesn't track the map state. Dimmed + not-
    allowed when blocked. The leading space-tag glyph keeps its own --tag-space colour. */
 .synastry-hud-generate {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 6px 13px;
-  background: rgba(var(--map-accent-rgb), 0.16);
-  border: 1px solid rgba(var(--map-accent-rgb), 0.5);
+  background: rgba(var(--accent-brand-rgb), 0.16);
+  border: 1px solid rgba(var(--accent-brand-rgb), 0.5);
   border-radius: 7px;
-  color: var(--map-accent);
+  color: var(--accent-brand);
   font: inherit;
   font-size: 12px;
   font-weight: 700;
@@ -325,7 +326,7 @@
   transition: background 0.12s, border-color 0.12s, opacity 0.12s;
 }
 .synastry-hud-generate:hover {
-  background: rgba(var(--map-accent-rgb), 0.26);
+  background: rgba(var(--accent-brand-rgb), 0.26);
 }
 .synastry-hud-generate.is-disabled {
   opacity: 0.45;

@@ -14,6 +14,7 @@ import { getToolExtensions } from './lib/extensions/toolExtensions';
 import { getOverlayExtensions } from './lib/extensions/overlayExtensions';
 // Shared entitlement for the Tools + Overlay seams (see lib/extensions/entitlement).
 import { isEntitled as isAddonEntitled } from './lib/extensions/entitlement';
+import { type PlanTier, planTierFor } from './lib/plan';
 import type {
   Feature,
   FeatureCollection,
@@ -33,11 +34,14 @@ import { Sidebar, type SidebarSection } from './components/Sidebar/Sidebar';
 import { TimelineHud } from './components/TimelineHud/TimelineHud';
 import { SynastryHud } from './components/SynastryHud/SynastryHud';
 import { EclipseHud } from './components/EclipseHud/EclipseHud';
-import { LocationHud } from './components/LocationHud/LocationHud';
+import { TeleportHud } from './components/TeleportHud/TeleportHud';
+import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
 import { TopNav, type MapTool } from './components/TopNav/TopNav';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
 import { CoordReadout } from './components/CoordReadout/CoordReadout';
+import { ProfileWindow } from './components/ProfileWindow/ProfileWindow';
+import { SynastryIcon } from './components/ui/SynastryIcon';
 import { InfoBar } from './components/InfoBar/InfoBar';
 import { ChartManager } from './components/ChartManager/ChartManager';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
@@ -130,7 +134,7 @@ import { buildLineCard } from './lib/lineCard';
 import { generateOrbBands } from './lib/astro/orbBands';
 import { generateStarLines, starsOfDate } from './lib/astro/starLines';
 import { generateNightShade } from './lib/astro/nightShade';
-import { loadAspectOrbs, saveAspectOrbs } from './lib/aspectPrefs';
+import { loadAspectOrbs, saveAspectOrbs, DEFAULT_ASPECT_ORBS } from './lib/aspectPrefs';
 import {
   loadAngleProgression,
   loadEclipseChartLines,
@@ -181,6 +185,7 @@ import {
   type EclipseIsoStep,
 } from './lib/overlayPrefs';
 import {
+  displayName,
   loadCharts,
   loadCurrentId,
   newChartId,
@@ -442,7 +447,16 @@ export default function App() {
     () => new Set<LineType>(['MC', 'IC', 'ASC', 'DSC']),
   );
   const [showParans, setShowParans] = useState(false);
-  const [showLocalSpace, setShowLocalSpace] = useState(false);
+  // Local Space is its own View now (View ▸ Local Space, hotkey L): the window's mere
+  // being-open draws the lines, so there's no separate on/off toggle. Persisted, off
+  // by default for a fresh account.
+  // Local Space is Advanced-only, so a stale "open + Advanced off" combo never restores:
+  // require BOTH the open flag and the persisted Advanced flag (matches the runtime gating).
+  const [showLocalSpace, setShowLocalSpace] = useState(
+    () =>
+      localStorage.getItem('astro:view-local-space:v1') === '1' &&
+      localStorage.getItem('astro:advanced:v1') === '1',
+  );
   // The "Aspects to angles" line sets — two independent overlays (they can
   // stack), persisted like the other map preferences below.
   const [showAspectLines, setShowAspectLines] = useState(
@@ -508,11 +522,11 @@ export default function App() {
   const [showInfo, setShowInfo] = useState(
     () => localStorage.getItem('astro:view-info:v1') === '1',
   );
-  // The movable Location window (View ▸ Location) — search/relocate the camera plus
-  // the local-space controls. An on-demand tool, so it defaults OFF (unlike the
-  // always-on readouts above).
-  const [showLocation, setShowLocation] = useState(
-    () => localStorage.getItem('astro:view-location:v1') === '1',
+  // The movable Teleport window (View ▸ Teleport, hotkey G) — search a place and fly
+  // the camera there (no pin/relocate), with a two-deep back/forward. On-demand, so
+  // it defaults OFF.
+  const [showTeleport, setShowTeleport] = useState(
+    () => localStorage.getItem('astro:view-teleport:v1') === '1',
   );
   // The expanded wheel's Advanced reading mode (degree rim, aspect grid,
   // coordinate tables). Lifted here — same storage key the sidebar always
@@ -561,10 +575,10 @@ export default function App() {
   );
   // Appearance ▸ Details ▸ Zenith/Nadirs: draw the NATAL bodies' zenith (overhead)
   // stamps, their antipodal nadir (underfoot) stamps, and the ecliptic reference
-  // curve through the Sun's zenith. Off by default (the natal counterpart of
+  // curve through the Sun's zenith. On by default (the natal counterpart of
   // showOverlayZenith; gated the same way at the Map props).
   const [showZenith, setShowZenith] = useState(
-    () => localStorage.getItem('astro:show-zenith:v1') === '1',
+    () => localStorage.getItem('astro:show-zenith:v1') !== '0',
   );
   // Overlay ▸ Display ▸ Natal: on by default. When off (and a time overlay is
   // active), the natal chart is hidden and the overlay is promoted to BE the chart
@@ -590,9 +604,14 @@ export default function App() {
     return 'filters';
   });
 
-  const [overlayMode, setOverlayMode] = useState<OverlayMode>(() =>
-    loadOverlayMode(),
-  );
+  const [overlayMode, setOverlayMode] = useState<OverlayMode>(() => {
+    const m = loadOverlayMode();
+    // Synastry/Eclipses are Advanced-only; don't restore them while Advanced is off.
+    return (m === 'synastry' || m === 'eclipses') &&
+      localStorage.getItem('astro:advanced:v1') !== '1'
+      ? 'off'
+      : m;
+  });
   // The active Overlay-menu EXTENSION (registerOverlayExtension), single-select and
   // mutually exclusive with overlayMode. Restored only if the id still matches a
   // registered extension, so a stale id from a removed plugin activates nothing. The
@@ -699,6 +718,26 @@ export default function App() {
   const [showNightShade, setShowNightShade] = useState(loadShowNightShade);
   const [showOrbZones, setShowOrbZones] = useState(loadShowOrbZones);
 
+  // ── Effective advanced settings ─────────────────────────────────────────────
+  // Advanced mode is a master switch: while it's OFF the chart/map behave as if
+  // these settings are at their defaults, but the raw values stay in state (and
+  // still back the now-hidden Sidebar controls), so turning Advanced back on
+  // restores exactly what the user had. Only the chart/map COMPUTATION reads
+  // these effective values; the (hidden) Sidebar/InfoBar keep the raw ones.
+  const effHouseSystem = advancedWheel ? houseSystem : 'placidus';
+  const effZodiacMode = advancedWheel ? zodiacMode : 'tropical';
+  const effShowParans = advancedWheel && showParans;
+  const effShowAspectLines = advancedWheel && showAspectLines;
+  const effShowMidpointLines = advancedWheel && showMidpointLines;
+  const effShowStarLines = advancedWheel && showStarLines;
+  const effShowNightShade = advancedWheel && showNightShade;
+  const effShowOrbZones = advancedWheel && showOrbZones;
+  // The user's plan tier on the NEW < ADV < gated ladder (src/lib/plan.ts). Open core
+  // derives it from the Advanced toggle (new ↔ adv); a downstream build installs a resolver
+  // (setPlanTierResolver) to reach 'gated' when entitled. Drives the TopNav menus' per-tier
+  // visibility + tier badges.
+  const planTier: PlanTier = planTierFor(advancedWheel);
+
   // Global keyboard shortcuts. Space centers the map on the active pin (or drops
   // a natal pin and centers if none is set); 'b' toggles the chart sidebar; the
   // other letter keys toggle the View items / tools / add a chart. All are ignored
@@ -707,10 +746,17 @@ export default function App() {
   useEffect(() => {
     // 'o' cycles through the overlays only (never lands on None); 'n' clears to None.
     // From None, indexOf is -1 so the first 'o' lands on the first overlay (transits).
-    const overlayCycle: OverlayMode[] = [
-      'transits', 'progressed', 'tertiary-progressed', 'cyclo', 'solar-arc',
-      'primary-directions', 'synastry', 'eclipses',
-    ];
+    // Synastry + Eclipses are Advanced-only, so the 'o' cycle includes them only while
+    // Advanced is on (matching the Overlay menu's filtering); the plain modes always cycle.
+    const overlayCycle: OverlayMode[] = advancedWheel
+      ? [
+          'transits', 'progressed', 'tertiary-progressed', 'cyclo', 'solar-arc',
+          'primary-directions', 'synastry', 'eclipses',
+        ]
+      : [
+          'transits', 'progressed', 'tertiary-progressed', 'cyclo', 'solar-arc',
+          'primary-directions',
+        ];
     const isTypingField = (el: HTMLElement | null) =>
       !!el &&
       (el.tagName === 'INPUT' ||
@@ -786,24 +832,27 @@ export default function App() {
       // (Local space moved to the Location view — plain 'L'.)
       if (e.shiftKey) {
         switch (e.key.toLowerCase()) {
-          // Map filters ▸ line toggles.
-          case 'p': setShowParans((v) => !v); break;
-          case 'a': setShowAspectLines((v) => !v); break;
-          case 'm': setShowMidpointLines((v) => !v); break;
-          case 's': setShowStarLines((v) => !v); break;
-          // Appearance ▸ Details toggles.
+          // Advanced ▸ Lines toggles — gated on Advanced mode (no-op while off,
+          // like the section that hosts them).
+          case 'p': if (advancedWheel) setShowParans((v) => !v); break;
+          case 'a': if (advancedWheel) setShowAspectLines((v) => !v); break;
+          case 'm': if (advancedWheel) setShowMidpointLines((v) => !v); break;
+          case 's': if (advancedWheel) setShowStarLines((v) => !v); break;
+          // Appearance ▸ Details toggles (always available).
           case 'r':
             // Roads + rivers move together (one Details switch), so stay in sync.
             setShowRoads((v) => !v);
             setShowRivers((v) => !v);
             break;
           case 'l': setShowLabels((v) => !v); break;
-          case 'n': setShowNightShade((v) => !v); break;
-          case 'o': setShowOrbZones((v) => !v); break;
+          // Advanced ▸ Display toggles — gated on Advanced mode.
+          case 'n': if (advancedWheel) setShowNightShade((v) => !v); break;
+          case 'o': if (advancedWheel) setShowOrbZones((v) => !v); break;
+          // Zenith lives in Appearance now, so it stays always available.
           case 'z': setShowZenith((v) => !v); break;
           // Appearance ▸ Projection (absolute mode, not a toggle).
-          case 'f': setProjection('2d'); break;
-          case 'g': setProjection('3d'); break;
+          // One key cycles the projection (flat ↔ globe), like 'o' cycles overlays.
+          case 'f': setProjection((p) => (p === '2d' ? '3d' : '2d')); break;
           default: return;
         }
         e.preventDefault();
@@ -813,7 +862,8 @@ export default function App() {
         case 'm': setShowChart((v) => !v); break;
         case 'c': setShowCoords((v) => !v); break;
         case 's': setShowSettings((v) => !v); break;
-        case 'l': setShowLocation((v) => !v); break;
+        case 'g': setShowTeleport((v) => !v); break;
+        case 'l': if (advancedWheel) setShowLocalSpace((v) => !v); break;
         case 'o':
           // Cycling into a core mode supersedes any active extension overlay.
           setActiveOverlayExt(null);
@@ -826,7 +876,7 @@ export default function App() {
         case 't': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
         // Slide spins the globe under the fixed lines; toggleSlide switches into the
         // 3D globe / celestial frame first if the user isn't already there.
-        case 'y': toggleSlide(); break;
+        case 'y': if (advancedWheel) toggleSlide(); break;
         case 'a': setCreating(true); break;
         case 'b': if (current) setWheelExpanded((v) => !v); break;
         default: return;
@@ -835,7 +885,22 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [current, pinned, toggleSlide]);
+  }, [current, pinned, toggleSlide, advancedWheel]);
+
+  // Turning Advanced OFF deactivates any advanced-only feature that's active (Slide tool,
+  // Local Space view, Synastry/Eclipses overlays) so nothing advanced-only lingers without
+  // a menu control to turn it back off. Used in place of the raw setAdvancedWheel at every
+  // Advanced toggle (the profile plan tag + the wheel-sidebar ADV label). Load-time stale
+  // state is handled in the showLocalSpace / overlayMode initializers instead (an effect
+  // that setState's on mount would cascade renders — see react-hooks/set-state-in-effect).
+  const setAdvancedMode = useCallback((on: boolean) => {
+    if (!on) {
+      setMapTool((tl) => (tl === 'slide' ? 'off' : tl));
+      setShowLocalSpace(false);
+      setOverlayMode((m) => (m === 'synastry' || m === 'eclipses' ? 'off' : m));
+    }
+    setAdvancedWheel(on);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('astro:coord-system:v1', coordSystem);
@@ -877,8 +942,11 @@ export default function App() {
     localStorage.setItem('astro:view-info:v1', showInfo ? '1' : '0');
   }, [showInfo]);
   useEffect(() => {
-    localStorage.setItem('astro:view-location:v1', showLocation ? '1' : '0');
-  }, [showLocation]);
+    localStorage.setItem('astro:view-teleport:v1', showTeleport ? '1' : '0');
+  }, [showTeleport]);
+  useEffect(() => {
+    localStorage.setItem('astro:view-local-space:v1', showLocalSpace ? '1' : '0');
+  }, [showLocalSpace]);
   useEffect(() => {
     localStorage.setItem('astro:sidebar-section:v1', sidebarSection ?? 'none');
   }, [sidebarSection]);
@@ -1118,7 +1186,7 @@ export default function App() {
   // positions for the chart instant, through the same meridian mapping as the
   // planet lines (so they follow Celestial vs Mundane like everything else).
   const starLines = useMemo(() => {
-    if (!showStarLines || !current) return EMPTY_FC;
+    if (!effShowStarLines || !current) return EMPTY_FC;
     return generateStarLines(
       starsOfDate(jd, starSet),
       meridianLng,
@@ -1127,7 +1195,7 @@ export default function App() {
       // gets its own tint (and the baked star sprite matches).
       STAR_LINE_COLORS[theme],
     );
-  }, [showStarLines, current, jd, starSet, meridianLng, lineSystem, eps, theme]);
+  }, [effShowStarLines, current, jd, starSet, meridianLng, lineSystem, eps, theme]);
 
   const lines = useMemo(
     () =>
@@ -1176,19 +1244,19 @@ export default function App() {
   const angleLines = useMemo<
     FeatureCollection<LineString, AngleOverlayLineProps>
   >(() => {
-    if ((!showAspectLines && !showMidpointLines) || !current) return EMPTY_FC;
+    if ((!effShowAspectLines && !effShowMidpointLines) || !current) return EMPTY_FC;
     const effCoordSystem: CoordSystem =
       lineSystem === 'geodetic' ? 'zodiaco' : coordSystem;
     const vis = linePositions.filter((p) => visiblePlanets.has(p.name));
     const features: Feature<LineString, AngleOverlayLineProps>[] = [];
-    if (showAspectLines) {
+    if (effShowAspectLines) {
       // (The generator drops the South Node itself while the North Node is
       // visible — antipodal duplicate set, same spirit as mergeNodeParans.)
       features.push(
         ...generateAspectLines(vis, meridianLng, effCoordSystem, eps).features,
       );
     }
-    if (showMidpointLines) {
+    if (effShowMidpointLines) {
       features.push(
         ...generateMidpointLines(vis, meridianLng, effCoordSystem, eps).features,
       );
@@ -1203,8 +1271,8 @@ export default function App() {
       theme,
     );
   }, [
-    showAspectLines,
-    showMidpointLines,
+    effShowAspectLines,
+    effShowMidpointLines,
     current,
     lineSystem,
     coordSystem,
@@ -1218,18 +1286,15 @@ export default function App() {
 
   const parans = useMemo(
     () =>
-      showParans
+      effShowParans
         ? mergeNodeParans(filterParans(allParans, visiblePlanets), visiblePlanets)
         : EMPTY_FC,
-    [allParans, visiblePlanets, showParans],
+    [allParans, visiblePlanets, effShowParans],
   );
 
-  // Local space renders only while the Location view (its home) is open: closing the
-  // view hides the lines as if LS were off, but showLocalSpace keeps the user's last
-  // on/off preference, so reopening the view restores it. The in-view toggle still
-  // reads/writes the raw showLocalSpace preference (it's only shown when the view is
-  // open, where lsActive === showLocalSpace anyway).
-  const lsActive = showLocation && showLocalSpace;
+  // Local Space is its own View now: the window being open IS the on switch, so the
+  // lines render exactly while showLocalSpace is true (no separate toggle).
+  const lsActive = showLocalSpace;
   const localSpace = useMemo(
     () =>
       lsActive
@@ -1348,10 +1413,10 @@ export default function App() {
             resolvedEclipse,
             // The eclipse degree readout shifts by the ayanamsa of the
             // ECLIPSE's own moment (sidereal frames ride the stars).
-            ayanamsaRad(resolvedEclipse.event.maximum, zodiacMode),
+            ayanamsaRad(resolvedEclipse.event.maximum, effZodiacMode),
           )
         : null,
-    [resolvedEclipse, eclipsesMod, zodiacMode],
+    [resolvedEclipse, eclipsesMod, effZodiacMode],
   );
 
   // Night-side shading (Filters ▸ Night Shading): the hemisphere where the Sun
@@ -1361,7 +1426,7 @@ export default function App() {
   // and the chart's own moment otherwise (symbolic overlays like progressions
   // have no second real instant to shade).
   const nightShade = useMemo(() => {
-    if (!showNightShade || !current) return EMPTY_FC;
+    if (!effShowNightShade || !current) return EMPTY_FC;
     const nightJd =
       overlayMode === 'eclipses' && resolvedEclipse
         ? resolvedEclipse.event.maximum
@@ -1370,7 +1435,7 @@ export default function App() {
           : jd;
     const style = NIGHT_SHADE_STYLE[theme];
     return generateNightShade(nightJd, style.color, style.opacity);
-  }, [showNightShade, current, overlayMode, resolvedEclipse, targetDate, jd, theme]);
+  }, [effShowNightShade, current, overlayMode, resolvedEclipse, targetDate, jd, theme]);
 
   // Local circumstances under the cursor, for the eclipse-curve hover tip.
   const eclipseTip = useMemo(() => {
@@ -1636,7 +1701,7 @@ export default function App() {
           theme,
         ),
       ),
-      parans: showParans
+      parans: effShowParans
         ? mergeNodeParans(
             filterParans(
               isCyclo
@@ -1706,7 +1771,7 @@ export default function App() {
         ? generateEcliptic(overlayLayer.jd, ovMeridianLng)
         : EMPTY_FC,
     };
-  }, [overlayLayer, visiblePlanets, visibleLineTypes, showParans, lsActive, hideLsInbound, showOverlayZenith, coordSystem, lineSystem, theme]);
+  }, [overlayLayer, visiblePlanets, visibleLineTypes, effShowParans, lsActive, hideLsInbound, showOverlayZenith, coordSystem, lineSystem, theme]);
 
   // Overlay planets in ecliptic coords for the bi-wheel. (For solar-arc the
   // speed/retrograde sampling is meaningless, but the wheel only reads `lon`.)
@@ -1751,6 +1816,9 @@ export default function App() {
   // grid, aspect lines, and cross-aspect lists.
   const [aspectOrbs, setAspectOrbs] = useState(loadAspectOrbs);
   useEffect(() => saveAspectOrbs(aspectOrbs), [aspectOrbs]);
+  // Reset to the default orbs while Advanced is off (the wheel's aspect chords +
+  // grid read these); the raw value is preserved for restore.
+  const effAspectOrbs = advancedWheel ? aspectOrbs : DEFAULT_ASPECT_ORBS;
 
   // The promoted dataset: the overlay's bodies run through the SAME generators and
   // filters as the natal chart, so the map's natal rendering path draws them solid and
@@ -1806,7 +1874,7 @@ export default function App() {
       : EMPTY_FC;
     return {
       lines: pLines,
-      parans: showParans
+      parans: effShowParans
         ? mergeNodeParans(
             filterParans(
               isCyclo
@@ -1850,7 +1918,7 @@ export default function App() {
     overlayLayer,
     visiblePlanets,
     visibleLineTypes,
-    showParans,
+    effShowParans,
     lsActive,
     hideLsInbound,
     showOverlayZenith,
@@ -1867,11 +1935,11 @@ export default function App() {
   );
 
   const orbBands = useMemo(() => {
-    if (!showOrbZones) return null;
+    if (!effShowOrbZones) return null;
     const bandLines = hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines;
     const bandParans = hideNatalLinework ? EMPTY_FC : promoted ? promoted.parans : parans;
     return generateOrbBands(bandLines, bandParans, orbZoneKm, paranOrbDeg);
-  }, [showOrbZones, hideNatalLinework, promoted, lines, parans, orbZoneKm, paranOrbDeg]);
+  }, [effShowOrbZones, hideNatalLinework, promoted, lines, parans, orbZoneKm, paranOrbDeg]);
 
   const activePoint = pinned ?? hover;
   const isNatalPin =
@@ -1951,16 +2019,16 @@ export default function App() {
   const birthAngles = useMemo(
     () =>
       current
-        ? relocate(jd, current.birthplace.lat, current.birthplace.lng, houseSystem)
+        ? relocate(jd, current.birthplace.lat, current.birthplace.lng, effHouseSystem)
         : null,
-    [jd, current, houseSystem],
+    [jd, current, effHouseSystem],
   );
   const angles = useMemo(
     () =>
       activePoint && current
-        ? relocate(jd, activePoint.lat, activePoint.lng, houseSystem)
+        ? relocate(jd, activePoint.lat, activePoint.lng, effHouseSystem)
         : birthAngles,
-    [jd, activePoint, current, birthAngles, houseSystem],
+    [jd, activePoint, current, birthAngles, effHouseSystem],
   );
   // Where the eclipse degree strikes the natal chart (conj/square/opp, 3°),
   // for the Sidebar's contacts list. Targets are the user's visible bodies
@@ -1986,14 +2054,14 @@ export default function App() {
     if (!overlayLayer || !current) return null;
     const lat = activePoint?.lat ?? current.birthplace.lat;
     const lng = activePoint?.lng ?? current.birthplace.lng;
-    const base = relocate(overlayLayer.angleJd ?? overlayLayer.jd, lat, lng, houseSystem);
+    const base = relocate(overlayLayer.angleJd ?? overlayLayer.jd, lat, lng, effHouseSystem);
     const direct = overlayLayer.directAngle;
     if (!direct) return base; // transits / synastry / natal-frame progressed
     const wrap = (x: number) => ((x % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
     const asc = direct(base.asc);
     const mc = direct(base.mc);
     return { ...base, asc, mc, dsc: wrap(asc + Math.PI), ic: wrap(mc + Math.PI) };
-  }, [overlayLayer, activePoint, current, houseSystem]);
+  }, [overlayLayer, activePoint, current, effHouseSystem]);
 
   // Per-body RA + azimuth/altitude for the Advanced planet table, computed for
   // the same observer location as the relocated angles (active point, else natal).
@@ -2034,10 +2102,10 @@ export default function App() {
   // tables (advancedCoords/angleCoords) and the eclipse-contact math keep
   // consuming the tropical `ecliptic`/`angles` above: their values are
   // frame-independent physics, and shifted input would corrupt them.
-  const natalAyan = useMemo(() => ayanamsaRad(jd, zodiacMode), [jd, zodiacMode]);
+  const natalAyan = useMemo(() => ayanamsaRad(jd, effZodiacMode), [jd, effZodiacMode]);
   const overlayAyan = useMemo(
-    () => (overlayLayer ? ayanamsaRad(overlayLayer.jd, zodiacMode) : 0),
-    [overlayLayer, zodiacMode],
+    () => (overlayLayer ? ayanamsaRad(overlayLayer.jd, effZodiacMode) : 0),
+    [overlayLayer, effZodiacMode],
   );
   const displayEcliptic = useMemo(
     () => shiftEclipticPositions(ecliptic, natalAyan),
@@ -2045,8 +2113,8 @@ export default function App() {
   );
   const displayAngles = useMemo(
     () =>
-      angles ? shiftAngles(angles, natalAyan, houseSystem === 'whole') : angles,
-    [angles, natalAyan, houseSystem],
+      angles ? shiftAngles(angles, natalAyan, effHouseSystem === 'whole') : angles,
+    [angles, natalAyan, effHouseSystem],
   );
   const displayOverlayEcliptic = useMemo(() => {
     if (!overlayEcliptic) return null;
@@ -2054,19 +2122,19 @@ export default function App() {
     // body shifts by ITS epoch's ayanamsa, so its sidereal readout matches
     // the dedicated Progressed overlay's exactly.
     const byBody = overlayLayer?.bodyJd;
-    if (byBody && zodiacMode !== 'tropical') {
+    if (byBody && effZodiacMode !== 'tropical') {
       return shiftEclipticPositionsPerBody(overlayEcliptic, (name) =>
-        ayanamsaRad(byBody[name] ?? overlayLayer!.jd, zodiacMode),
+        ayanamsaRad(byBody[name] ?? overlayLayer!.jd, effZodiacMode),
       );
     }
     return shiftEclipticPositions(overlayEcliptic, overlayAyan);
-  }, [overlayEcliptic, overlayAyan, overlayLayer, zodiacMode]);
+  }, [overlayEcliptic, overlayAyan, overlayLayer, effZodiacMode]);
   const displayOverlayAngles = useMemo(
     () =>
       overlayAngles
-        ? shiftAngles(overlayAngles, overlayAyan, houseSystem === 'whole')
+        ? shiftAngles(overlayAngles, overlayAyan, effHouseSystem === 'whole')
         : null,
-    [overlayAngles, overlayAyan, houseSystem],
+    [overlayAngles, overlayAyan, effHouseSystem],
   );
 
   // While promoting the overlay (Natal off), the wheel + coordinate readout read the
@@ -2390,7 +2458,7 @@ export default function App() {
   // rows; the conventional reading is a per-location list). Follows the star-lines
   // toggle/set and, in Mundane mode, the same ecliptic projection.
   const starParans = useMemo(() => {
-    if (!showStarLines || !current) return EMPTY_FC;
+    if (!effShowStarLines || !current) return EMPTY_FC;
     const stars = starsOfDate(jd, starSet).map((s) => {
       if (lineSystem !== 'geodetic') return s;
       const lon = raDecToEclipticLon(s.ra, s.dec, eps);
@@ -2402,7 +2470,7 @@ export default function App() {
       meridianLng,
       STAR_LINE_COLORS[theme],
     );
-  }, [showStarLines, current, jd, starSet, lineSystem, eps, linePositions, visiblePlanets, meridianLng, theme]);
+  }, [effShowStarLines, current, jd, starSet, lineSystem, eps, linePositions, visiblePlanets, meridianLng, theme]);
 
   // ── Map-HUD extensions ────────────────────────────────────────────────────
   // Features registered via registerMapExtension() (e.g. add-ons in a downstream
@@ -2618,19 +2686,27 @@ export default function App() {
         onDetailZoomChange={setDetailZoom}
       />
       <div className="map-edge-glow" data-state={coordSource} aria-hidden="true" />
-      {!wheelExpanded && showCoords && (
-        <header className="app-header">
-          {current?.tzUncertain && (
-            <p className="tz-warning">{t('common.tzWarning')}</p>
-          )}
-          <CoordReadout
-            point={activePoint ?? (current ? current.birthplace : null)}
-            angles={wheelAngles}
-            source={coordSource}
-            location={coordLocation}
-            fadeLocation={fadeLocation}
+      {!wheelExpanded && (
+        <div className="top-left-stack">
+          <ProfileWindow
+            advancedWheel={advancedWheel}
+            setAdvancedWheel={setAdvancedMode}
           />
-        </header>
+          {showCoords && (
+            <header className="app-header">
+              {current?.tzUncertain && (
+                <p className="tz-warning">{t('common.tzWarning')}</p>
+              )}
+              <CoordReadout
+                point={activePoint ?? (current ? current.birthplace : null)}
+                angles={wheelAngles}
+                source={coordSource}
+                location={coordLocation}
+                fadeLocation={fadeLocation}
+              />
+            </header>
+          )}
+        </div>
       )}
       {showSettings && (
         <Sidebar
@@ -2671,8 +2747,6 @@ export default function App() {
           setHouseSystem={setHouseSystem}
           zodiacMode={zodiacMode}
           setZodiacMode={setZodiacMode}
-          dualWheels={dualWheels}
-          setDualWheels={setDualWheels}
           nodeType={nodeType}
           setNodeType={setNodeType}
           angleProgression={angleProgression}
@@ -2726,8 +2800,11 @@ export default function App() {
         setShowSettings={setShowSettings}
         showInfo={showInfo}
         setShowInfo={setShowInfo}
-        showLocation={showLocation}
-        setShowLocation={setShowLocation}
+        showTeleport={showTeleport}
+        setShowTeleport={setShowTeleport}
+        showLocalSpace={showLocalSpace}
+        setShowLocalSpace={setShowLocalSpace}
+        planTier={planTier}
         showGuides={showGuides}
         setShowGuides={toggleGuides}
         openExtensions={openExtensions}
@@ -2816,8 +2893,8 @@ export default function App() {
           setIsoStep={setEclipseIsoStep}
         />
       )}
-      {showLocation && (
-        <LocationHud
+      {showTeleport && (
+        <TeleportHud
           onFlyTo={(lat, lng, zoom) => {
             const target = mapRef.current?.teleportTo(lat, lng, zoom);
             if (target) {
@@ -2834,9 +2911,21 @@ export default function App() {
           }}
           backState={locationReturn}
           teleportTarget={teleportTarget}
-          onClose={() => setShowLocation(false)}
-          showLocalSpace={showLocalSpace}
-          setShowLocalSpace={setShowLocalSpace}
+          onClose={() => setShowTeleport(false)}
+        />
+      )}
+      {showLocalSpace && (
+        <LocalSpaceHud
+          // Fly-to-origin reuses the teleport hop (camera + the back/forward stash),
+          // so a jump to the origin can be undone from the Teleport window / Backspace.
+          onFlyTo={(lat, lng, zoom) => {
+            const target = mapRef.current?.teleportTo(lat, lng, zoom);
+            if (target) {
+              setLocationReturn('back');
+              setTeleportTarget(target);
+            }
+          }}
+          onClose={() => setShowLocalSpace(false)}
           lsOrigin={lsOrigin}
           setLsOrigin={setLsOrigin}
           hideLsInbound={hideLsInbound}
@@ -2921,10 +3010,11 @@ export default function App() {
           visibleLineTypes={visibleLineTypes}
           advancedCoords={advancedCoords}
           angleCoords={angleCoords}
-          aspectOrbs={aspectOrbs}
+          aspectOrbs={effAspectOrbs}
           advanced={advancedWheel}
-          setAdvanced={setAdvancedWheel}
+          setAdvanced={setAdvancedMode}
           dualWheels={dualWheels}
+          setDualWheels={setDualWheels}
           onClose={() => setWheelExpanded(false)}
           onResizingChange={onResizing}
           onSelectChart={selectChart}
@@ -2948,8 +3038,24 @@ export default function App() {
       {(creating || editingId != null || pickingPartner) && (
         <ChartManager
           charts={charts}
-          // The synastry picker reuses this browser to choose a comparison chart.
-          title={pickingPartner ? t('chartManager.comparisonTitle') : undefined}
+          // The synastry picker reuses this browser to choose a comparison chart;
+          // name the active chart it's being compared with ("Synastry with X").
+          title={
+            pickingPartner
+              ? t('chartManager.comparisonTitle', {
+                  name: displayName(current?.name ?? ''),
+                })
+              : undefined
+          }
+          // …shown visually as a synastry icon + the name, in place of the words.
+          heading={
+            pickingPartner ? (
+              <span className="cm-comparison-title">
+                <SynastryIcon />
+                {displayName(current?.name ?? '')}
+              </span>
+            ) : undefined
+          }
           // In partner-pick mode highlight the chosen partner (not the active chart)
           // and drop the active chart from the list — it can't be its own partner.
           currentId={

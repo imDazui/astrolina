@@ -8,8 +8,9 @@ export const chartManager = {
   // Dialog aria-label and heading for the chart manager modal.
   dialogLabel: 'Charts',
   title: 'My Charts',
-  // Header/label when the synastry overlay opens this browser to pick a partner.
-  comparisonTitle: 'Choose comparison',
+  // Header/label when the synastry overlay opens this browser to pick a partner;
+  // {name} is the active chart being compared with.
+  comparisonTitle: 'Synastry with {name}',
   // Search box placeholder, aria-label, and the clear-search button label.
   searchPlaceholder: 'Search names or places…',
   searchLabel: 'Search charts',

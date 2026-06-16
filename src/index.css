@@ -82,6 +82,16 @@ span.astro-glyph {
   --cool: #5ec2e0;
   --cool-rgb: 94, 194, 224;
   --danger: #e85a4f;
+  --danger-rgb: 232, 90, 79;
+  /* Semantic alias for the "advanced mode" accent (the ADV tag + the Advanced
+     settings tab). Reuses the danger red but resolves per-theme via --danger. */
+  --advanced: var(--danger);
+  --advanced-rgb: var(--danger-rgb);
+  /* The gated (downstream) plan tier's accent — a premium purple, distinct from ADV's red
+     and the gold hotkey/brand accent. Applied with the same lighter-top-left gradient as
+     --advanced (see src/lib/plan.ts). Placeholder default; a downstream build retunes it. */
+  --gated: #8b6fd6;
+  --gated-rgb: 139, 111, 214;
   --success: #8de0a3;
   --success-rgb: 141, 224, 163;
   --neutral: #d8d8d8;
@@ -141,6 +151,7 @@ span.astro-glyph {
   --cool: #7accdd;
   --cool-rgb: 122, 204, 221;
   --danger: #e87a5a;
+  --danger-rgb: 232, 122, 90;
   --success: #a8d68a;
   --success-rgb: 168, 214, 138;
 
@@ -175,6 +186,7 @@ span.astro-glyph {
   --cool: #3a9ac0;
   --cool-rgb: 58, 154, 192;
   --danger: #d04a3a;
+  --danger-rgb: 208, 74, 58;
   --success: #3aa965;
   --success-rgb: 58, 169, 101;
   /* Keep the natal (neutral) accent a darker gray than the dark themes' lighter
@@ -212,6 +224,7 @@ span.astro-glyph {
 
 /* ── Glass surfaces: frost the floating HUD panels ──────────────── */
 :root[data-theme='glass'] .app-header,
+:root[data-theme='glass'] .profile-window,
 :root[data-theme='glass'] .chart-info-panel,
 :root[data-theme='glass'] .timeline-hud,
 :root[data-theme='glass'] .thud-drawer,
@@ -246,7 +259,7 @@ span.astro-glyph {
 :root[data-theme='glass'] .thud-step-btn,
 :root[data-theme='glass'] .thud-date,
 :root[data-theme='glass'] .wheel-expand-btn,
-:root[data-theme='glass'] .sidebar-header,
+:root[data-theme='glass'] .sidebar-header:not(.sidebar-header-accent),
 :root[data-theme='glass'] .thud-play:not(.on),
 :root[data-theme='glass'] .theme-option:not(.active),
 :root[data-theme='glass'] .tech-toggle:not(.on),
@@ -261,6 +274,7 @@ span.astro-glyph {
    dark-parchment UI keeps its legibility over a busy map while gaining a hint of the
    glassy depth. Inset highlight is warm (parchment) rather than white. */
 :root[data-theme='vintage'] .app-header,
+:root[data-theme='vintage'] .profile-window,
 :root[data-theme='vintage'] .chart-info-panel,
 :root[data-theme='vintage'] .timeline-hud,
 :root[data-theme='vintage'] .thud-drawer,
@@ -287,28 +301,42 @@ span.astro-glyph {
   box-shadow: inset 0 1px 0 rgba(240, 226, 192, 0.1);
 }
 
-/* The small map controls (zoom group) and the two bottom-center HUD bars (the
-   timeline nub + its fillets, and the synastry bar) hardcode a heavier 0.94–0.96
-   panel fill. On Earth's dark-parchment --bg-panel that reads much darker than the
-   rest of the (0.72 + blur) Earth chrome, so bring them in line. Glass is near-
-   white and Dark is already dark, so the difference is invisible there — hence
-   this is Earth-only. */
+/* The small map controls (zoom group) and the two bottom-center HUD BAR BODIES (the
+   timeline + synastry bars) hardcode a heavier 0.94–0.96 panel fill. On Earth's dark-
+   parchment --bg-panel that reads much darker than the rest of the (0.72 + blur) Earth
+   chrome, so bring the bar bodies in line. Glass is near-white and Dark is already
+   dark, so the difference is invisible there — hence this is Earth-only. The protruding
+   NUBS are unified just below (they stay denser than their bars, on purpose). */
 :root[data-theme='vintage'] .maplibregl-ctrl-group {
   background: rgba(var(--bg-panel), 0.72) !important;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
-:root[data-theme='vintage'] .thud-measure {
-  background: rgba(var(--bg-panel), 0.72);
-}
-:root[data-theme='vintage'] .thud-measure::before {
-  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), 0.72) 9.5px);
-}
-:root[data-theme='vintage'] .thud-measure::after {
-  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), 0.72) 9.5px);
-}
 :root[data-theme='vintage'] .synastry-hud {
   background: rgba(var(--bg-panel), 0.72);
+}
+
+/* Every overlay-label NUB (timeline / synastry / eclipse) shares ONE fill on Earth: a
+   notch lighter than their bundled 0.94–0.96 default so the warm parchment panel doesn't
+   read as a heavy dark block, yet opaque enough to keep the muted in-nub readout (e.g.
+   "Age 32") legible over a busy map. The side fillets carry the same fill so each nub
+   stays one seamless piece; the bar bodies sit lighter (0.72 above), so the denser nub
+   still pops from its bar — the synastry nub's prior look, dialled back a notch and
+   applied to all three. */
+:root[data-theme='vintage'] .thud-measure,
+:root[data-theme='vintage'] .synastry-hud-nub,
+:root[data-theme='vintage'] .eclipse-hud-nub {
+  background: rgba(var(--bg-panel), 0.9);
+}
+:root[data-theme='vintage'] .thud-measure::before,
+:root[data-theme='vintage'] .synastry-hud-nub::before,
+:root[data-theme='vintage'] .eclipse-hud-nub::before {
+  background: radial-gradient(circle at top left, transparent 9px, rgba(var(--bg-panel), 0.9) 9.5px);
+}
+:root[data-theme='vintage'] .thud-measure::after,
+:root[data-theme='vintage'] .synastry-hud-nub::after,
+:root[data-theme='vintage'] .eclipse-hud-nub::after {
+  background: radial-gradient(circle at top right, transparent 9px, rgba(var(--bg-panel), 0.9) 9.5px);
 }
 
 /* Chart-tag glyphs (TagIcon): colour is intrinsic to the tag (gold star, slate
@@ -392,6 +420,32 @@ body,
   }
 }
 
+/* The permanent top-left column: the profile strip, then the coordinates
+   readout beneath it when shown. The wrapper owns the screen position, so the
+   two panels stack with a gap and the column collapses when coordinates are off.
+   pointer-events:none on the wrapper keeps the gap from swallowing map drags;
+   each panel opts back in. */
+.top-left-stack {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+.top-left-stack > * {
+  pointer-events: auto;
+}
+/* Inside the stack the readout is a flow child, not its own pinned panel. */
+.top-left-stack .app-header {
+  position: static;
+  top: auto;
+  left: auto;
+  z-index: auto;
+}
+
 .app-header {
   position: absolute;
   top: 16px;
@@ -401,11 +455,21 @@ body,
   background: rgba(var(--bg-panel), 0.94);
   border: 1px solid rgba(var(--tint), 0.08);
   border-radius: 8px;
+  transition: border-color 0.15s;
   pointer-events: auto;
   /* A roomy floor so the window doesn't resize on every hover as the place name /
      coordinate digits change width — it only grows past this for long names. */
   min-width: 188px;
   max-width: 420px;
+}
+
+/* The coordinates window's border follows the pin state like the minimap
+   (.chart-wheel): a subtle tint at rest, the pin-state colour (blue hover / orange
+   pinned / green natal-pinned) when active. */
+html[data-mapstate='hover'] .app-header,
+html[data-mapstate='pinned'] .app-header,
+html[data-mapstate='natal-pinned'] .app-header {
+  border-color: rgba(var(--map-accent-rgb), 0.55);
 }
 
 .tz-warning {

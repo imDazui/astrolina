@@ -84,7 +84,10 @@
 }
 
 .switcher-trigger .uncertain {
-  color: var(--accent);
+  /* --accent-brand (not --accent): the switcher is a dropdown-menu control, so it
+     keeps the steady brand gold even though the nav bar wears .timeline-hud chrome,
+     which aliases --accent to the pin-state --map-accent. */
+  color: var(--accent-brand);
   font-size: 11px;
 }
 
@@ -117,7 +120,7 @@
 }
 
 .switcher-menu li.active .chart-row {
-  background: rgba(var(--accent-rgb), 0.12);
+  background: rgba(var(--accent-brand-rgb), 0.12);
 }
 
 .switcher-menu li.empty {
@@ -187,7 +190,7 @@
   background: transparent;
   border: none;
   border-top: 1px solid rgba(var(--tint), 0.08);
-  color: var(--accent);
+  color: var(--accent-brand);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -199,5 +202,5 @@
 }
 
 .new-chart:hover {
-  background: rgba(var(--accent-rgb), 0.1);
+  background: rgba(var(--accent-brand-rgb), 0.1);
 }
