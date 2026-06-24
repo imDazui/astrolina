@@ -15,6 +15,7 @@ import {
   type MissionSet,
   type MissionTrigger,
 } from './missions';
+import { isTouchLayout } from './touch';
 
 const EMPTY: ReadonlySet<string> = new Set();
 
@@ -98,6 +99,7 @@ export function useMissions(): MissionsApi {
   const recordEvent = useCallback((event: MissionEvent) => {
     const curProgress = progressRef.current;
     const curCompleted = completedRef.current;
+    const touch = isTouchLayout();
     // Accumulate changes into fresh local objects, then merge in one setState each.
     const progressPatch: Record<string, ReadonlySet<string>> = {};
     const completedPatch: Record<string, boolean> = {};
@@ -105,7 +107,10 @@ export function useMissions(): MissionsApi {
       if (curCompleted[set.id]) continue;
       const done = curProgress[set.id] ?? EMPTY;
       const newly = set.missions
-        .filter((m) => m.event === event && !done.has(m.id))
+        .filter(
+          (m) =>
+            (m.event === event || (touch && m.touchEvent === event)) && !done.has(m.id),
+        )
         .map((m) => m.id);
       if (newly.length === 0) continue;
       const updatedDone = new Set([...done, ...newly]);

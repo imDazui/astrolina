@@ -14,7 +14,7 @@
    are simple static islands. */
 .topnav-stack {
   position: absolute;
-  top: 10px;
+  top: max(10px, env(safe-area-inset-top));
   left: calc(50% + var(--es-width, 0px) / 4);
   transform: translateX(-50%);
   /* Sit above the movable HUD windows (Location / Local Space at z-index 22, Eclipse /
@@ -97,6 +97,43 @@
 .topnav-measure-dist {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* Snap toggle in the measure toolbar — a persistent, touch-reachable alternative to
+   holding Shift. Lights up with the accent when on. */
+.topnav-snap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding: 3px 9px;
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-radius: 999px;
+  background: rgba(var(--tint), 0.04);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.topnav-snap:hover {
+  border-color: rgba(var(--accent-rgb), 0.5);
+  color: var(--text-strong);
+}
+.topnav-snap.on {
+  background: rgba(var(--accent-rgb), 0.16);
+  border-color: rgba(var(--accent-rgb), 0.6);
+  color: var(--accent);
+}
+.topnav-snap-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+}
+.topnav-snap.on .topnav-snap-dot {
+  opacity: 1;
 }
 
 /* Birth location shown in the secondary bar when no tool is active — same island

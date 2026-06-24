@@ -31,6 +31,7 @@ import {
   SIDEREAL_DEG_PER_HOUR,
 } from './components/Map/Map';
 import { Sidebar, type SidebarSection } from './components/Sidebar/Sidebar';
+import { SettingsNub } from './components/Sidebar/SettingsNub';
 import { TimelineHud } from './components/TimelineHud/TimelineHud';
 import { SynastryHud } from './components/SynastryHud/SynastryHud';
 import { EclipseHud } from './components/EclipseHud/EclipseHud';
@@ -47,6 +48,7 @@ import { ChartManager } from './components/ChartManager/ChartManager';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
 import { MissionGuide } from './components/MissionGuide/MissionGuide';
 import { useMissions } from './lib/useMissions';
+import { isTouchLayout } from './lib/touch';
 // Type-only: erased at compile time, so the eclipses module itself still
 // loads lazily (the value import lives in the dynamic-import effect below).
 import type { EclipseCatalogRow, EclipseContact } from './lib/astro/eclipses';
@@ -671,6 +673,7 @@ export default function App() {
   // Mapping tools (top bar). Transient — not persisted across reloads.
   const [mapTool, setMapTool] = useState<MapTool>('off');
   const [measure, setMeasure] = useState<MeasureInfo | null>(null);
+  const [measureSnap, setMeasureSnap] = useState(false);
   // Whether the Slide tool can run right now (kept in a ref so the early-declared
   // toggleSlide can read it; the value is derived far below, once promoted/eclipse
   // state exists, and synced into this ref).
@@ -2377,7 +2380,12 @@ export default function App() {
     if (mapTool === 'measure' && !wasMeasure && canSnapLines) {
       triggerMission('measure-tool', true);
     }
-  }, [mapTool, canSnapLines, triggerMission]);
+    // Touch has no right-click to cancel the tool — exiting it (tapping Measure again)
+    // is the touch equivalent, so tick off the cancel mission on the measure→off edge.
+    if (wasMeasure && mapTool !== 'measure' && isTouchLayout()) {
+      recordMission('measure-cancel');
+    }
+  }, [mapTool, canSnapLines, triggerMission, recordMission]);
 
   // Surface the zoom/perspective guide the first time the user zooms past the detail
   // threshold (the "Zoom out" button appears → detailZoom true). `replace` shows it even
@@ -2715,6 +2723,7 @@ export default function App() {
         showRivers={showRivers}
         showLabels={showLabels}
         measureActive={mapTool === 'measure'}
+        measureSnap={measureSnap}
         measureColor={measureColor}
         onMeasure={setMeasure}
         onMeasureCancel={stopMeasure}
@@ -2815,7 +2824,11 @@ export default function App() {
           setShowLabels={setShowLabels}
           openSection={sidebarSection}
           setOpenSection={setSidebarSection}
+          onClose={() => setShowSettings(false)}
         />
+      )}
+      {!showSettings && (
+        <SettingsNub onOpen={() => setShowSettings(true)} />
       )}
       <TopNav
         mapState={coordSource}
@@ -2833,6 +2846,8 @@ export default function App() {
         tool={mapTool}
         setTool={setMapTool}
         measure={measure}
+        measureSnap={measureSnap}
+        setMeasureSnap={setMeasureSnap}
         slide={slide}
         onToggleSlide={toggleSlide}
         slideEnabled={slideAvailable}

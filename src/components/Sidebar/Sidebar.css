@@ -33,6 +33,90 @@ html[data-mapstate='natal-pinned'] .sidebar {
   border-color: rgba(var(--map-accent-rgb), 0.55);
 }
 
+/* Touch: the 200px floating window becomes a full-height takeover docked to the right
+   edge. position:fixed so top/right anchor to the viewport; height:100dvh so the
+   mobile URL bar can't clip it. The map stays usable to its left. Every override is
+   inside @media (pointer: coarse), so the desktop window is untouched. */
+@media (pointer: coarse) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 200px; /* match the desktop settings window's width (it was designed for this) */
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    border-top: none;
+    border-bottom: none;
+    border-right: none;
+    z-index: 40;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-right: env(safe-area-inset-right);
+  }
+  /* Touch-only close affordance (no `S` hotkey on a phone): a 44px tap target,
+     right-aligned at the top of the dock, above the accordion headers. */
+  .sidebar-close {
+    flex: 0 0 auto;
+    align-self: flex-end;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin: 4px 4px 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .sidebar-close:hover,
+  .sidebar-close:focus-visible {
+    background: rgba(var(--tint), 0.08);
+    color: var(--text-strong);
+  }
+  .sidebar-close svg {
+    display: block;
+  }
+}
+
+/* Touch-only quick-open tab on the right edge (rendered by the app only while the dock
+   is closed) — a one-tap alternative to View ▸ Settings. Sits just under the dock's
+   z-index so it slides "behind" the panel as it opens. */
+.settings-nub {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 39;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 64px;
+  padding: 0;
+  border: 1px solid rgba(var(--tint), 0.12);
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+  background: rgba(var(--bg-panel), 0.94);
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-right: env(safe-area-inset-right);
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.2);
+  transition: color 0.14s, background 0.14s;
+}
+.settings-nub:hover,
+.settings-nub:focus-visible {
+  color: var(--text-strong);
+  background: rgb(var(--bg-menu));
+  outline: none;
+}
+.settings-nub svg {
+  display: block;
+}
+
 .sidebar-header {
   display: flex;
   align-items: center;

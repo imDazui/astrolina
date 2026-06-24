@@ -9,7 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 import {
@@ -679,7 +679,7 @@ export function ExpandedChartSidebar({
   });
 
   useEffect(() => {
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
       if (!draggingRef.current) return;
       const maxWidth = maxSidebarWidth();
       const newWidth = Math.max(
@@ -696,11 +696,16 @@ export function ExpandedChartSidebar({
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    // Pointer Events cover mouse + touch + pen in one path (mirrors useMovableHud);
+    // pointercancel ends a drag the OS interrupts. The handle takes pointer capture on
+    // down, so moves keep arriving even after the finger/cursor leaves it.
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
   }, []);
 
@@ -724,13 +729,18 @@ export function ExpandedChartSidebar({
     Math.max(MIN_WHEEL, Math.min(MAX_WHEEL, paneWidth)),
   );
 
-  const beginDrag = (e: ReactMouseEvent) => {
+  const beginDrag = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return; // primary button / single touch contact only
     draggingRef.current = true;
     setDragging(true);
     onResizingChange?.(true);
     dragOffsetRef.current = width - e.clientX;
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
+    // Capture the pointer so moves route here (then bubble to the window listeners)
+    // even when it slides off the thin handle; with touch-action:none this also stops
+    // the browser turning the drag into a scroll/zoom.
+    e.currentTarget.setPointerCapture(e.pointerId);
   };
 
   const {
@@ -1418,7 +1428,7 @@ export function ExpandedChartSidebar({
       <div
         ref={resizeTipRef}
         className="es-drag-handle"
-        onMouseDown={beginDrag}
+        onPointerDown={beginDrag}
         onMouseEnter={showResizeTip}
         onMouseLeave={hideResizeTip}
         role="separator"

@@ -11,6 +11,10 @@ import { useMovableHud } from '../../lib/useMovableHud';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { ClickIcon } from '../ui/ClickIcon';
+import { TapIcon } from '../ui/TapIcon';
+import { DragIcon } from '../ui/DragIcon';
+import { PinchIcon } from '../ui/PinchIcon';
+import { useTouchLayout } from '../../lib/touch';
 import { useT } from '../../i18n';
 import './MissionGuide.css';
 
@@ -130,6 +134,15 @@ const GESTURES: Record<
     icon: true,
     afterKey: 'missions.gesture.drag',
   },
+  // Touch variants — same shape; the icon renders as the finger TapIcon (chosen at
+  // render time by `touch`). e.g. "Double-tap 👆", "Long-press 👆", "Tap 👆 Snap".
+  'double-tap': { beforeKey: 'missions.gesture.doubleTap', icon: true },
+  'long-press': { beforeKey: 'missions.gesture.longPress', icon: true },
+  'touch-drag': { beforeKey: 'missions.gesture.touchDrag', icon: true },
+  'two-finger': { beforeKey: 'missions.gesture.twoFinger', icon: true },
+  tap: { beforeKey: 'missions.gesture.tap', icon: true },
+  pinch: { beforeKey: 'missions.gesture.pinch', icon: true },
+  'snap-toggle': { beforeKey: 'missions.gesture.tap', icon: true, afterKey: 'missions.gesture.snap' },
 };
 
 interface MissionGuideProps {
@@ -169,6 +182,7 @@ export function MissionGuide({
   pager,
 }: MissionGuideProps) {
   const { t } = useT();
+  const touch = useTouchLayout();
   const ref = useRef<HTMLDivElement>(null);
   // Not persisted: the guide always opens at the top-right home (drag is an in-session
   // convenience only). This keeps its placement consistent — a stale saved position
@@ -218,20 +232,24 @@ export function MissionGuide({
           <span className="hud-grip" aria-hidden="true" />
           <span className="mg-title">{t(set.titleKey)}</span>
         </div>
-        <HoverTip
-          pos={dragging ? null : dragTipPos}
-          placement="top"
-          title={t('common.hud.dragToMove')}
-          hint={
-            <span className="hud-dock-line">
-              <span className="ui-tip-hotkey hud-dock-key">
-                {t('common.hud.dockKey')}
-                <ClickIcon className="hud-dock-icon" />
+        {/* The drag-to-recentre hint is hover-driven and uses a cursor + double-click
+            affordance that don't exist on touch — hide it there. */}
+        {!touch && (
+          <HoverTip
+            pos={dragging ? null : dragTipPos}
+            placement="top"
+            title={t('common.hud.dragToMove')}
+            hint={
+              <span className="hud-dock-line">
+                <span className="ui-tip-hotkey hud-dock-key">
+                  {t('common.hud.dockKey')}
+                  <ClickIcon className="hud-dock-icon" />
+                </span>
+                {t('common.hud.recentreHint')}
               </span>
-              {t('common.hud.recentreHint')}
-            </span>
-          }
-        />
+            }
+          />
+        )}
         <TipButton
           type="button"
           className="mg-close"
@@ -264,7 +282,18 @@ export function MissionGuide({
           // but in a neutral state (not the coloured "done") so the set can still finish.
           const na = !!m.only3d && !is3d;
           const done = !na && completed.has(m.id);
-          const g = GESTURES[m.gesture];
+          // On touch, swap in the finger-friendly gesture pill + instruction text.
+          const gesture = touch ? m.touchGesture ?? m.gesture : m.gesture;
+          const labelKey = touch && m.touchLabelKey ? m.touchLabelKey : m.labelKey;
+          const g = GESTURES[gesture];
+          // Distinct touch icons per gesture family: a pinch glyph, a drag glyph, else
+          // the finger tap glyph. (Desktop always uses the cursor ClickIcon below.)
+          const TouchIcon =
+            gesture === 'pinch'
+              ? PinchIcon
+              : gesture === 'touch-drag' || gesture === 'two-finger'
+                ? DragIcon
+                : TapIcon;
           const state = na ? 'na' : done ? 'done' : '';
           return (
             <li key={m.id} className={`mg-item ${state}`}>
@@ -276,10 +305,15 @@ export function MissionGuide({
                   {/* Each word is its own span so the flex gap spaces them even when
                       there's no icon between (e.g. "Hold Shift"). */}
                   {g.beforeKey && <span>{t(g.beforeKey)}</span>}
-                  {g.icon && <ClickIcon className="mg-click-icon" />}
+                  {g.icon &&
+                    (touch ? (
+                      <TouchIcon className="mg-click-icon" />
+                    ) : (
+                      <ClickIcon className="mg-click-icon" />
+                    ))}
                   {g.afterKey && <span>{t(g.afterKey)}</span>}
                 </span>{' '}
-                {t(m.labelKey)}
+                {t(labelKey)}
               </span>
             </li>
           );

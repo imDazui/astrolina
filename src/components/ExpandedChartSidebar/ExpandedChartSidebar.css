@@ -859,6 +859,15 @@
   background: rgba(var(--tint), 0.04);
   border-left: 1px solid rgba(var(--tint), 0.06);
   transition: background 0.12s;
+  /* Let the resize drag own the gesture so the browser doesn't scroll/zoom instead. */
+  touch-action: none;
+}
+
+/* Touch: widen the grab strip so a finger can catch the thin handle. */
+@media (pointer: coarse) {
+  .es-drag-handle {
+    width: 20px;
+  }
 }
 
 .es-drag-handle:hover,

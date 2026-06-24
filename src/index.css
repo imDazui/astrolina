@@ -428,8 +428,8 @@ body,
    each panel opts back in. */
 .top-left-stack {
   position: absolute;
-  top: 16px;
-  left: 16px;
+  top: max(16px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
   z-index: 20;
   display: flex;
   flex-direction: column;
@@ -445,6 +445,17 @@ body,
   top: auto;
   left: auto;
   z-index: auto;
+}
+
+/* Phones (touch + narrow): the centered top nav widens until it reaches the top-left
+   stack, so move the profile (+ coords, which are hidden on touch anyway) down to the
+   bottom-left. Gated on touch so a narrow DESKTOP — where the minimap occupies the
+   bottom-left — is left alone; tablets (>880px) keep the top-left placement. */
+@media (pointer: coarse) and (max-width: 880px) {
+  .top-left-stack {
+    top: auto;
+    bottom: max(16px, env(safe-area-inset-bottom));
+  }
 }
 
 .app-header {
@@ -471,6 +482,16 @@ html[data-mapstate='hover'] .app-header,
 html[data-mapstate='pinned'] .app-header,
 html[data-mapstate='natal-pinned'] .app-header {
   border-color: rgba(var(--map-accent-rgb), 0.55);
+}
+
+/* Touch: hide the coordinates readout. It updates on map HOVER, and there is no
+   cursor to hover with on a touch screen, so it can't do its job — drop it rather
+   than show a panel that never updates. Hide only the readout, not the
+   .top-left-stack wrapper (which also holds the profile window). Desktop unchanged. */
+@media (pointer: coarse) {
+  .app-header {
+    display: none;
+  }
 }
 
 .tz-warning {

@@ -46,6 +46,7 @@ import { useHoverTip } from '../ui/useHoverTip';
 import { glyphify } from '../ui/glyphify';
 import { useT, LANGUAGES } from '../../i18n';
 import type { Locale } from '../../i18n';
+import { useTouchLayout } from '../../lib/touch';
 import './Sidebar.css';
 
 // The "Planets" filter group: the ten bodies + the two lunar nodes. Asteroids get
@@ -54,6 +55,8 @@ import './Sidebar.css';
 const PLANET_FILTERS: PlanetName[] = [...TRADITIONAL_PLANETS, ...NODE_NAMES];
 
 interface SidebarProps {
+  /** Touch only: dismiss the settings takeover (there's no `S` hotkey on a touch screen). */
+  onClose?: () => void;
   visiblePlanets: Set<PlanetName>;
   togglePlanet: (p: PlanetName) => void;
   setAllPlanets: (bodies: PlanetName[], visible: boolean) => void;
@@ -759,8 +762,10 @@ export function Sidebar({
   setShowLabels,
   openSection,
   setOpenSection,
+  onClose,
 }: SidebarProps) {
   const { t, labels, locale, setLocale } = useT();
+  const touch = useTouchLayout();
   // Which orb the Advanced ▸ Aspect orbs editor currently shows: one dropdown
   // pick + one stepper, instead of seven stacked rows.
   const [orbPick, setOrbPick] = useState<AspectName | 'luminaries' | 'declination'>(
@@ -795,6 +800,13 @@ export function Sidebar({
 
   return (
     <aside className="sidebar">
+      {touch && (
+        <button type="button" className="sidebar-close" onClick={() => onClose?.()} aria-label="Close settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      )}
       <button
         type="button"
         className="sidebar-header"

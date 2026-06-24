@@ -1033,6 +1033,8 @@ interface MapProps {
   /** When true, click-drag on the map measures great-circle distance (and map
    *  panning is suspended for the duration). */
   measureActive?: boolean;
+  /** Persistent "snap to chart lines" toggle for the measure tool (touch-reachable Shift). */
+  measureSnap?: boolean;
   /** Color of the measure line/points — the current map-pin-state accent. */
   measureColor: string;
   onMeasure?: (m: MeasureInfo | null) => void;
@@ -2073,6 +2075,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   showRivers = true,
   showLabels = true,
   measureActive,
+  measureSnap,
   measureColor,
   onMeasure,
   onMeasureCancel,
@@ -3044,9 +3047,44 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (zenithAtPoint(map, e.point)) return;
       onPlacePin?.(e.lngLat.lat, e.lngLat.lng);
     };
+    // Touch long-press = the right-click action (remove pin / drop natal). MapLibre
+    // doesn't reliably emit `contextmenu` on a touch hold, so we time it ourselves: a
+    // stationary single-finger hold fires onRightClick; a >10px move or a 2nd finger
+    // cancels it, so panning/pinching are unaffected (listeners are passive).
+    const lpCanvas = map.getCanvas();
+    let lpTimer: ReturnType<typeof setTimeout> | null = null;
+    let lpStart: { x: number; y: number } | null = null;
+    let lpFiredAt = 0;
+    const clearLp = () => {
+      if (lpTimer != null) clearTimeout(lpTimer);
+      lpTimer = null;
+      lpStart = null;
+    };
+    const onLpStart = (e: TouchEvent) => {
+      clearLp();
+      if (measureActive || slideActive) return; // those tools own their gestures
+      if (e.touches.length !== 1) return; // 2nd finger = pan/zoom, not a hold
+      const t0 = e.touches[0];
+      lpStart = { x: t0.clientX, y: t0.clientY };
+      lpTimer = setTimeout(() => {
+        lpTimer = null;
+        lpStart = null;
+        lpFiredAt = Date.now();
+        onRightClick?.();
+      }, 450);
+    };
+    const onLpMove = (e: TouchEvent) => {
+      const t0 = e.touches[0];
+      if (!lpStart || !t0) return;
+      if (Math.abs(t0.clientX - lpStart.x) > 10 || Math.abs(t0.clientY - lpStart.y) > 10) clearLp();
+    };
+    const onLpEnd = () => clearLp();
     const handleContext = (e: maplibregl.MapMouseEvent) => {
       e.preventDefault();
       if (measureActive || slideActive) return;
+      // A touch long-press already fired the action; drop the synthesized contextmenu
+      // some platforms emit right after, so it doesn't double-fire (remove → drop-natal).
+      if (Date.now() - lpFiredAt < 700) return;
       // Remove the pin, or — with none placed — drop the natal pin.
       onRightClick?.();
     };
@@ -3055,8 +3093,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     map.on('click', handleClick);
     map.on('dblclick', handleDoubleClick);
     map.on('contextmenu', handleContext);
+    lpCanvas.addEventListener('touchstart', onLpStart, { passive: true });
+    lpCanvas.addEventListener('touchmove', onLpMove, { passive: true });
+    lpCanvas.addEventListener('touchend', onLpEnd);
+    lpCanvas.addEventListener('touchcancel', onLpEnd);
     return () => {
       if (moveRaf) cancelAnimationFrame(moveRaf);
+      clearLp();
+      lpCanvas.removeEventListener('touchstart', onLpStart);
+      lpCanvas.removeEventListener('touchmove', onLpMove);
+      lpCanvas.removeEventListener('touchend', onLpEnd);
+      lpCanvas.removeEventListener('touchcancel', onLpEnd);
       map.off('mousemove', queueMove);
       map.off('mouseout', handleLeave);
       map.off('click', handleClick);
@@ -3083,6 +3130,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   useEffect(() => {
     lineCardPopupRef.current?.remove();
   }, [lineCard]);
+
+  // A persistent "snap to lines" toggle — the touch-reachable equivalent of holding
+  // Shift. Kept in a ref so flipping it doesn't tear down the measure effect (which
+  // would drop an in-progress segment); the live `update` reads the ref.
+  const measureSnapRef = useRef(false);
+  measureSnapRef.current = measureSnap ?? false;
 
   // Measurement tool: press-drag draws a great-circle segment from the origin to
   // the cursor and reports the live distance. Panning is disabled while the tool
@@ -3152,7 +3205,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     ) => {
       if (!origin) return;
       let cur: { lng: number; lat: number };
-      if (shiftKey) {
+      if (shiftKey || measureSnapRef.current) {
         const snapped = constrainToHoveredLine(map, point, origin);
         if (snapped) {
           cur = snapped;
@@ -3526,13 +3579,24 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     const onRotate = (e: { originalEvent?: unknown }) => {
       if (e.originalEvent) onMissionEvent?.('pitch-rotate');
     };
+    // Touch: a pinch is the box-zoom equivalent. The zoom event fires throughout a pinch
+    // with the touchmove as originalEvent (2+ touches); fire pinch-zoom (idempotent). The
+    // touches guard skips the zoom-out button, wheel, and programmatic flyTo (no touches).
+    const onZoom = (e: { originalEvent?: unknown }) => {
+      const oe = e.originalEvent as TouchEvent | undefined;
+      if (oe && 'touches' in oe && oe.touches && oe.touches.length >= 2) {
+        onMissionEvent?.('pinch-zoom');
+      }
+    };
     map.on('boxzoomend', onBoxZoom);
     map.on('rotatestart', onRotate);
     map.on('pitchstart', onRotate);
+    map.on('zoom', onZoom);
     return () => {
       map.off('boxzoomend', onBoxZoom);
       map.off('rotatestart', onRotate);
       map.off('pitchstart', onRotate);
+      map.off('zoom', onZoom);
     };
   }, [onMissionEvent]);
 

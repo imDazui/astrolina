@@ -52,6 +52,15 @@
   border-color: rgba(var(--map-accent-rgb), 0.55);
 }
 
+/* Touch: give the bar a little more width so the scrubber + transport controls have
+   more room for fingers (it's content-sized otherwise). */
+@media (pointer: coarse) {
+  .timeline-hud {
+    min-width: min(520px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+  }
+}
+
 
 /* The overlay label (Transits / Progressed Age / Sun Angle) drawn as a NUB that
    protrudes from the top of the bar and flares into it with a concave fillet on

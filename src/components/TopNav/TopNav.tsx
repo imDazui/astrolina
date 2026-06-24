@@ -28,6 +28,7 @@ import { CycleHotkey } from '../ui/CycleHotkey';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
 import { useT } from '../../i18n';
+import { useTouchLayout } from '../../lib/touch';
 // Reuse the overlay bar's chrome (.timeline-hud + accent/mapstate vars); this bar
 // is the same component language, docked at the top as a curved island.
 import '../TimelineHud/TimelineHud.css';
@@ -63,6 +64,8 @@ interface TopNavProps {
   tool: MapTool;
   setTool: (t: MapTool) => void;
   measure: MeasureInfo | null;
+  measureSnap?: boolean;
+  setMeasureSnap?: (v: boolean) => void;
   /** Slide-tool readout (rotation angle + sidereal time); null until spun. */
   slide: SlideInfo | null;
   /** Toggle the Slide tool — switches the geodetic line frame to celestial first if needed. */
@@ -469,6 +472,8 @@ export function TopNav({
   tool,
   setTool,
   measure,
+  measureSnap,
+  setMeasureSnap,
   slide,
   onToggleSlide,
   slideEnabled,
@@ -507,6 +512,7 @@ export function TopNav({
   // option (e.g. an add-on shipped without a shortcut) collects at the bottom. The
   // partition is stable, so each group keeps its declared order (e.g. Guides stays
   // above Info).
+  const touch = useTouchLayout();
   const viewItems: {
     id: string;
     label: string;
@@ -537,7 +543,12 @@ export function TopNav({
   const orderedViewItems = [
     ...viewItems.filter((i) => i.hotkey),
     ...viewItems.filter((i) => !i.hotkey),
-  ].filter((i) => tierMet(planTier, i.tier ?? 'new') || shouldShowNudge(i.tier ?? 'new'));
+  ]
+    // On touch the coordinates + minimap are hidden (they track the mouse-hover
+    // point, which a finger can't produce), so drop their View-menu rows too —
+    // toggling them would be a confusing no-op.
+    .filter((i) => !(touch && (i.id === 'coordinates' || i.id === 'minimap')))
+    .filter((i) => tierMet(planTier, i.tier ?? 'new') || shouldShowNudge(i.tier ?? 'new'));
 
   const measuring = tool === 'measure';
   const sliding = tool === 'slide';
@@ -861,21 +872,35 @@ export function TopNav({
       {(measuring || sliding || (locationLabel && !showCoords)) && (
         <div className="timeline-hud topnav-toolbar" data-mapstate={mapState}>
           {measuring ? (
-            measure ? (
-              <div className="topnav-measure">
-                <span className="topnav-measure-endpoints">
-                  <span className="topnav-dot" />
-                  {fmtLatLng(measure.start)}
-                  <span className="topnav-measure-arrow">→</span>
-                  {fmtLatLng(measure.end)}
+            <>
+              {measure ? (
+                <div className="topnav-measure">
+                  <span className="topnav-measure-endpoints">
+                    <span className="topnav-dot" />
+                    {fmtLatLng(measure.start)}
+                    <span className="topnav-measure-arrow">→</span>
+                    {fmtLatLng(measure.end)}
+                  </span>
+                  <span className="topnav-measure-dist">{fmtMeasure(measure)}</span>
+                </div>
+              ) : (
+                <span className="topnav-toolbar-hint">
+                  {t('topNav.tools.toolbarHint')}
                 </span>
-                <span className="topnav-measure-dist">{fmtMeasure(measure)}</span>
-              </div>
-            ) : (
-              <span className="topnav-toolbar-hint">
-                {t('topNav.tools.toolbarHint')}
-              </span>
-            )
+              )}
+              {/* Persistent snap toggle — the touch-reachable equivalent of holding
+                  Shift to lock the endpoint onto a chart line. */}
+              <button
+                type="button"
+                className={`topnav-snap${measureSnap ? ' on' : ''}`}
+                onClick={() => setMeasureSnap?.(!measureSnap)}
+                aria-pressed={measureSnap}
+                title="Snap the endpoint to chart lines (or hold Shift)"
+              >
+                <span className="topnav-snap-dot" />
+                Snap
+              </button>
+            </>
           ) : sliding ? (
             slide ? (
               <div className="topnav-measure">

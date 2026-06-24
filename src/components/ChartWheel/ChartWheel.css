@@ -23,6 +23,15 @@
     border-color 0.15s;
 }
 
+/* Touch: hide the minimap. Like the coordinates readout it tracks the map HOVER
+   point, which a touch screen has no way to produce — so drop it on touch devices.
+   Desktop unchanged. */
+@media (pointer: coarse) {
+  .chart-wheel {
+    display: none;
+  }
+}
+
 .chart-wheel.expanded {
   width: 612px;
   padding: 12px 24px 18px;

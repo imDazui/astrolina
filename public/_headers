@@ -21,6 +21,14 @@
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
 
+# Service worker — always revalidate so a new deploy's worker is picked up promptly.
+# The worker lives at the site root so its control scope is the whole origin ("/").
+# (vite-plugin-pwa emits sw.js plus a content-hashed workbox-*.js runtime helper.)
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+/workbox-*.js
+  Cache-Control: public, max-age=0, must-revalidate
+
 # Build output — safe to cache permanently.
 # Vite embeds a content hash in every filename (for example, index-DWxzs4el.js), so
 # the URL changes whenever the file does. The large bundles (Swiss Ephemeris

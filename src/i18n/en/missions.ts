@@ -31,6 +31,14 @@ export const missions = {
     shift: 'Shift',
     drag: 'Drag',
     click: 'Click',
+    // Touch variants — shown with the finger TapIcon instead of the cursor.
+    tap: 'Tap',
+    doubleTap: 'Double-tap',
+    longPress: 'Long-press',
+    touchDrag: 'Touch & drag',
+    twoFinger: 'Two-finger drag',
+    pinch: 'Pinch',
+    snap: 'Snap',
   },
 
   mapBasics: {
@@ -48,6 +56,9 @@ export const missions = {
     holdPoint: 'to create a point',
     shiftSnap: 'over a line to snap to it',
     rightCancel: 'to cancel the tool',
+    // Touch instruction text (the gesture pill changes too — see lib/missions.ts).
+    touchSnap: 'then drag over a line to snap',
+    touchCancel: 'the Measure tool again to exit',
   },
 
   zoomBasics: {
@@ -56,5 +67,6 @@ export const missions = {
     zoomOut: 'the ‘Zoom Out’ button',
     quickZoom: 'to create a zoom window',
     perspective: 'to change perspective (in 3D)',
+    touchQuickZoom: 'to zoom in or out',
   },
 } as const;

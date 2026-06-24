@@ -25,7 +25,8 @@ export type MissionEvent =
   | 'measure-cancel'
   | 'zoom-out-click'
   | 'box-zoom'
-  | 'pitch-rotate';
+  | 'pitch-rotate'
+  | 'pinch-zoom';
 
 // What can bring a set's guide up. App fires these (see useMissions' trigger).
 export type MissionTrigger = 'map-click' | 'measure-tool' | 'zoom-threshold';
@@ -40,7 +41,15 @@ export type MissionGesture =
   | 'shift'
   | 'click'
   | 'shift-drag'
-  | 'right-drag';
+  | 'right-drag'
+  // Touch variants (rendered with the finger TapIcon instead of the cursor ClickIcon):
+  | 'double-tap'
+  | 'long-press'
+  | 'touch-drag'
+  | 'two-finger'
+  | 'tap'
+  | 'pinch'
+  | 'snap-toggle';
 
 export interface Mission {
   /** Stable id, unique within its set (used for progress + React keys). */
@@ -54,6 +63,13 @@ export interface Mission {
   /** Only meaningful in the 3D globe projection. In 2D the guide shows it as already
    *  satisfied (a neutral, non-coloured completed state) so the set can still finish. */
   only3d?: boolean;
+  /** Touch gesture pill (the finger-friendly variant). Falls back to `gesture` if unset. */
+  touchGesture?: MissionGesture;
+  /** Touch instruction text. Falls back to `labelKey` if unset. */
+  touchLabelKey?: MsgKey;
+  /** The action that completes this mission ON TOUCH, when it differs from `event`
+   *  (e.g. a pinch instead of Shift+box-zoom). Falls back to `event`. */
+  touchEvent?: MissionEvent;
 }
 
 export interface MissionSet {
@@ -79,18 +95,21 @@ export const MISSION_SETS: readonly MissionSet[] = [
       {
         id: 'create-pin',
         gesture: 'double',
+        touchGesture: 'double-tap',
         labelKey: 'missions.mapBasics.createPin',
         event: 'create-pin',
       },
       {
         id: 'remove-pin',
         gesture: 'right',
+        touchGesture: 'long-press',
         labelKey: 'missions.mapBasics.removePin',
         event: 'remove-pin',
       },
       {
         id: 'place-natal',
         gesture: 'right',
+        touchGesture: 'long-press',
         labelKey: 'missions.mapBasics.placeNatal',
         event: 'place-natal',
       },
@@ -105,19 +124,24 @@ export const MISSION_SETS: readonly MissionSet[] = [
       {
         id: 'measure-point',
         gesture: 'hold',
+        touchGesture: 'touch-drag',
         labelKey: 'missions.measureBasics.holdPoint',
         event: 'measure-point',
       },
       {
         id: 'measure-snap',
         gesture: 'shift',
+        touchGesture: 'snap-toggle',
         labelKey: 'missions.measureBasics.shiftSnap',
+        touchLabelKey: 'missions.measureBasics.touchSnap',
         event: 'measure-snap',
       },
       {
         id: 'measure-cancel',
         gesture: 'right',
+        touchGesture: 'tap',
         labelKey: 'missions.measureBasics.rightCancel',
+        touchLabelKey: 'missions.measureBasics.touchCancel',
         event: 'measure-cancel',
       },
     ],
@@ -131,18 +155,23 @@ export const MISSION_SETS: readonly MissionSet[] = [
       {
         id: 'zoom-out',
         gesture: 'click',
+        touchGesture: 'tap',
         labelKey: 'missions.zoomBasics.zoomOut',
         event: 'zoom-out-click',
       },
       {
         id: 'quick-zoom',
         gesture: 'shift-drag',
+        touchGesture: 'pinch',
         labelKey: 'missions.zoomBasics.quickZoom',
+        touchLabelKey: 'missions.zoomBasics.touchQuickZoom',
         event: 'box-zoom',
+        touchEvent: 'pinch-zoom',
       },
       {
         id: 'perspective',
         gesture: 'right-drag',
+        touchGesture: 'two-finger',
         labelKey: 'missions.zoomBasics.perspective',
         event: 'pitch-rotate',
         only3d: true,

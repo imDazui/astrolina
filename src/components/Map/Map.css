@@ -169,6 +169,16 @@
   background: rgba(var(--bg-panel), 0.92);
   border-color: rgba(var(--tint), 0.3);
 }
+
+/* Touch: drop the zoom-out chip into the bottom gutter (its default 160px-up spot
+   sits awkwardly high on a short landscape phone). It keeps z-7 — below the timeline
+   bar (z-12) — so when an overlay's bar is up the bar owns the bottom-centre and the
+   chip tucks behind it; with no overlay the chip sits at the bottom-centre. */
+@media (pointer: coarse) {
+  .map-zoom-out {
+    bottom: max(16px, env(safe-area-inset-bottom));
+  }
+}
 .map-zoom-out:focus-visible {
   outline: none;
   border-color: rgba(var(--accent-rgb), 0.6);
@@ -586,8 +596,8 @@
 
 /* Top-right nav (+/-) sits flush against the right gutter; sidebar nests to its left. */
 .maplibregl-ctrl-top-right {
-  top: 16px !important;
-  right: 16px !important;
+  top: max(16px, env(safe-area-inset-top)) !important;
+  right: max(16px, env(safe-area-inset-right)) !important;
 }
 
 .maplibregl-ctrl-top-right > .maplibregl-ctrl {
@@ -603,7 +613,7 @@
 
 /* Bottom-right is now just the attribution chip */
 .maplibregl-ctrl-bottom-right > .maplibregl-ctrl {
-  margin: 0 16px 16px 0 !important;
+  margin: 0 max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) 0 !important;
 }
 
 .maplibregl-ctrl-attrib {
@@ -660,6 +670,14 @@
   background-color: transparent !important;
   width: 34px !important;
   height: 34px !important;
+}
+
+/* Touch: bump the zoom +/- buttons to a comfortable finger tap target. */
+@media (pointer: coarse) {
+  .maplibregl-ctrl-group button {
+    width: 40px !important;
+    height: 40px !important;
+  }
 }
 
 .maplibregl-ctrl-group button:hover {
