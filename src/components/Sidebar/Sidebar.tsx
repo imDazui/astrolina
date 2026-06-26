@@ -34,7 +34,7 @@ import type { MapProjectionMode } from '../../lib/projection';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ASPECT_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { ASPECT_NAMES, type AspectName, type AspectOrbs } from '../../lib/aspectPrefs';
-import type { StarSetPref } from '../../lib/overlayPrefs';
+import { orbZoneMax, type StarSetPref, type DistanceUnit } from '../../lib/overlayPrefs';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
 import { EyeIcon } from '../ui/EyeIcon';
 import { CycleHotkey } from '../ui/CycleHotkey';
@@ -76,8 +76,10 @@ interface SidebarProps {
   setShowMidpointLines: (v: boolean) => void;
   showOrbZones: boolean;
   setShowOrbZones: (v: boolean) => void;
-  orbZoneKm: number;
-  setOrbZoneKm: (km: number) => void;
+  orbZoneVal: number;
+  setOrbZoneVal: (v: number) => void;
+  orbZoneUnit: DistanceUnit;
+  setOrbZoneUnit: (u: DistanceUnit) => void;
   paranOrbDeg: number;
   setParanOrbDeg: (deg: number) => void;
   aspectOrbs: AspectOrbs;
@@ -581,10 +583,40 @@ function HintMenuItem({
 // flush right. Free typing with clamping; the display re-formats to `decimals`
 // only when not mid-edit, so typing stays free. Used by the Primary-rate User
 // rate, the Advanced tab's orb rows, and the Filters' orb-zone widths.
+// A compact km / mi switch shown in place of the orb-zone width field's label: two segments,
+// the active unit highlighted. The field's input carries its own aria-label, so this is just a
+// labelled button group.
+function UnitToggle({
+  unit,
+  onChange,
+  label,
+}: {
+  unit: DistanceUnit;
+  onChange: (u: DistanceUnit) => void;
+  label: string;
+}) {
+  return (
+    <span className="orb-unit-toggle" role="group" aria-label={label}>
+      {(['km', 'mi'] as const).map((u) => (
+        <button
+          key={u}
+          type="button"
+          className={`orb-unit-opt${unit === u ? ' on' : ''}`}
+          aria-pressed={unit === u}
+          onClick={() => onChange(u)}
+        >
+          {u}
+        </button>
+      ))}
+    </span>
+  );
+}
+
 export function StepperField({
   id,
   glyph,
   label,
+  labelControl,
   value,
   onChange,
   min = 0,
@@ -595,7 +627,10 @@ export function StepperField({
 }: {
   id: string;
   glyph?: string;
-  label: string;
+  label?: string;
+  /** Custom content rendered in the label slot INSTEAD of `label` (e.g. a unit toggle). It's
+   *  not a <label> (so it can hold a button); the input's name then comes from `ariaLabel`. */
+  labelControl?: ReactNode;
   value: number;
   onChange: (n: number) => void;
   min?: number;
@@ -622,14 +657,18 @@ export function StepperField({
   };
   return (
     <div className="calc-user-rate">
-      <label className="calc-user-rate-label" htmlFor={id}>
-        {glyph && (
-          <span className="astro-glyph orb-field-glyph" aria-hidden="true">
-            {glyph}
-          </span>
-        )}
-        {label}
-      </label>
+      {labelControl !== undefined ? (
+        <div className="calc-user-rate-label calc-user-rate-label-control">{labelControl}</div>
+      ) : (
+        <label className="calc-user-rate-label" htmlFor={id}>
+          {glyph && (
+            <span className="astro-glyph orb-field-glyph" aria-hidden="true">
+              {glyph}
+            </span>
+          )}
+          {label}
+        </label>
+      )}
       <input
         id={id}
         type="text"
@@ -733,8 +772,10 @@ export function Sidebar({
   setShowMidpointLines,
   showOrbZones,
   setShowOrbZones,
-  orbZoneKm,
-  setOrbZoneKm,
+  orbZoneVal,
+  setOrbZoneVal,
+  orbZoneUnit,
+  setOrbZoneUnit,
   paranOrbDeg,
   setParanOrbDeg,
   aspectOrbs,
@@ -966,7 +1007,7 @@ export function Sidebar({
             ))}
           </ul>
 
-          <h2>{t('settings.headings.lines')}</h2>
+          <h2>{t('settings.headings.angles')}</h2>
           <ul className="line-type-grid">
             {LINE_TYPES.map(({ type, label }) => {
               const on = visibleLineTypes.has(type);
@@ -1116,13 +1157,19 @@ export function Sidebar({
             {showOrbZones && (
               <li className="orb-zone-row orb-zone-steppers">
                 <StepperField
-                  id="orb-zone-km"
-                  label={t('settings.orbZones.lineLabel')}
-                  value={orbZoneKm}
-                  onChange={setOrbZoneKm}
-                  min={10}
-                  max={2000}
-                  step={10}
+                  id="orb-zone-width"
+                  labelControl={
+                    <UnitToggle
+                      unit={orbZoneUnit}
+                      onChange={setOrbZoneUnit}
+                      label={t('settings.orbZones.unitAria')}
+                    />
+                  }
+                  value={orbZoneVal}
+                  onChange={setOrbZoneVal}
+                  min={25}
+                  max={orbZoneMax(orbZoneUnit)}
+                  step={25}
                   ariaLabel={t('settings.orbZones.lineAria')}
                 />
                 <StepperField

@@ -16,6 +16,7 @@ import { BirthDataFields } from '../BirthDataForm/BirthDataForm';
 import { TipButton } from '../ui/HoverTip';
 import { TagIcon } from '../ui/TagIcon';
 import { getChartsSection } from '../../lib/extensions/chartsSection';
+import { useTouchLayout } from '../../lib/touch';
 import { useT } from '../../i18n';
 import type { Formatters } from '../../i18n';
 import './ChartManager.css';
@@ -77,6 +78,10 @@ export function ChartManager({
   onClose,
 }: ChartManagerProps) {
   const { t, fmt } = useT();
+  // On touch, don't autofocus the search box: it forces the keyboard up the moment My Charts
+  // opens, but the user is usually tapping an existing name or the "add" button, not searching.
+  // Desktop keeps the autofocus — a focused search box there is quick, non-intrusive access.
+  const touch = useTouchLayout();
   const [query, setQuery] = useState('');
   // Tag filter for the list; 'all' shows everything. Independent of the search box.
   const [tagFilter, setTagFilter] = useState<'all' | ChartTag>('all');
@@ -224,7 +229,7 @@ export function ChartManager({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t('chartManager.searchPlaceholder')}
-                autoFocus
+                autoFocus={!touch}
                 aria-label={t('chartManager.searchLabel')}
               />
               {query && (

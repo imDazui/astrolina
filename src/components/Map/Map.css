@@ -243,20 +243,32 @@
   pointer-events: none;
 }
 
-/* Subtle "Zoom out" escape button — bottom-centre, sitting just above where the
-   docked timeline bar lives (a fixed bottom offset, so it stays the same distance
-   from the bottom on any screen height; if no bar is shown it just floats there).
-   Shown only when deeply zoomed in (LS labels at full radius). Low opacity at rest
-   so it stays out of the way; clears up on hover/focus. Above the map + badges
-   (z 6), below the HUD bars (z 12). */
+/* Subtle "Zoom out" escape button — bottom-centre, resting ~160px up where the docked
+   bottom bar lives. It LIFTS to clear whatever bottom bar is up instead of tucking behind
+   it: each bar (timeline / eclipse / synastry) publishes its LIVE height + a small clearance
+   as --overlay-bar-gap (ResizeObserver-tracked, so the chip follows the bar as it expands /
+   collapses); with no bar up the variable is 0 and the chip floats at its rest spot. Because
+   it ends up ABOVE the bar it never shares space with it, so the bar's own z-index (12–13, and
+   21 on mobile) is moot — no need to outrank it. Shown only when deeply zoomed in (LS labels at
+   full radius). Low opacity at rest; clears up on hover/focus. */
 .map-zoom-out {
   position: absolute;
+  /* Single source of truth for the chip's flat clearance — tweak here, used by both the
+     desktop bottom below and the coarse-pointer rule. It lifts the chip past the bar's drag
+     NUB (which sits above the measured bar height, so --overlay-bar-gap doesn't include it),
+     and with no bar up it doubles as bottom-edge padding. */
+  --zoom-out-clearance: 48px;
   /* Centre on the effective viewport centre — shifted right a quarter of the
      expanded sidebar's width (--es-width), matching the nav + timeline bars (and
      useMovableHud's effectiveCenterX) so the button tracks the same centre when
      the sidebar is open. 0 when it's closed. */
   left: calc(50% + var(--es-width, 0px) / 4);
-  bottom: 160px;
+  /* Rest 160px up, but lift to clear a TALLER bar: max() raises the chip to the bar's top
+     (its --edge bottom offset + the bar's live height/gap) whenever that exceeds 160px. The
+     --zoom-out-clearance is added inside the calc (not outside the max) so desktop's no-bar rest
+     stays at 160px while the lift still kicks in once a tall bar would reach the chip. Mobile
+     drops the 160px floor and rests in the gutter instead (see the coarse-pointer rule below). */
+  bottom: max(160px, calc(var(--edge, 16px) + var(--overlay-bar-gap, 0px) + var(--zoom-out-clearance)));
   transform: translateX(-50%);
   z-index: 7;
   display: inline-flex;
@@ -289,16 +301,14 @@
   border-color: rgba(var(--tint), 0.3);
 }
 
-/* Touch: drop the zoom-out chip into the bottom gutter (its default 160px-up spot
-   sits awkwardly high on a short landscape phone). It keeps z-7 — below the timeline
-   bar (z-12) — so when an overlay's bar is up the bar owns the bottom-centre and the
-   chip tucks behind it; with no overlay the chip sits at the bottom-centre. */
+/* Touch: the 160px-up desktop rest spot sits awkwardly high on a short landscape phone, so
+   mobile drops the floor and rests the chip in the bottom gutter (--edge). It still lifts
+   above a visible overlay bar via the same --overlay-bar-gap — clearing it (plus the shared
+   --zoom-out-clearance nub gap) rather than tucking behind — and falls back to the gutter when no
+   bar is up, where that clearance reads as a comfortable bottom-edge inset. */
 @media (pointer: coarse) {
   .map-zoom-out {
-    /* Bottom gutter, but lifted above a visible overlay bar: each bottom bar (timeline /
-       eclipse / synastry) publishes its height + a small gap as --overlay-bar-gap, so the pill
-       clears it instead of tucking behind. 0 when no bar is up → it drops back to the gutter. */
-    bottom: calc(var(--edge, 16px) + var(--overlay-bar-gap, 0px));
+    bottom: calc(var(--edge, 16px) + var(--overlay-bar-gap, 0px) + var(--zoom-out-clearance));
   }
 }
 .map-zoom-out:focus-visible {

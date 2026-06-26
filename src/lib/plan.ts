@@ -110,6 +110,21 @@ export function shouldShowNudge(tier: PlanTier): boolean {
   return resolveNudge(tier);
 }
 
+// Nudge ACTION — what to run when a user clicks a nudge teaser (a tier-locked row that
+// shouldShowNudge kept visible). The downstream build wires this to its account/upgrade flow;
+// the open core leaves it a no-op (it shows no teasers, so it's never reached).
+let nudgeAct: () => void = () => {};
+
+/** Install the nudge-teaser click action (downstream builds only) — e.g. open the account modal. */
+export function setNudgeAction(fn: () => void): void {
+  nudgeAct = fn;
+}
+
+/** Run the nudge-teaser action (open the upgrade/account flow). No-op until installed. */
+export function nudgeAction(): void {
+  nudgeAct();
+}
+
 /** A registered extension's coarse 'core' | 'gated' entitlement expressed on the plan
  *  ladder: a 'gated' add-on is the gated tier, everything else is the baseline. Reconciles
  *  the two vocabularies in ONE place so a gated extension automatically reads as gated. */

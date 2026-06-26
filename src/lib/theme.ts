@@ -39,6 +39,17 @@ export const BASEMAP_STYLE_URLS: Record<Theme, string> = {
   vintage: `${import.meta.env.BASE_URL}basemaps/maptiler-basic.json`,
 };
 
+// Offline basemap fallback palette (see Map's offlineStyle + installWorldFallback). With no
+// connection the live OpenFreeMap styles/tiles can't load — the glass/dark STYLES are remote too,
+// so offline they wouldn't even reach the background — so the map draws a plain ocean + the bundled
+// coarse world outline instead. These echo each theme's basemap so it reads as a muted version of
+// the real one: `ocean` is the background, `land` the continent fill, `line` the coastlines + borders.
+export const WORLD_FALLBACK_COLORS: Record<Theme, { ocean: string; land: string; line: string }> = {
+  vintage: { ocean: 'hsl(205, 42%, 80%)', land: 'hsl(47, 26%, 86%)', line: 'hsl(34, 16%, 56%)' },
+  glass: { ocean: 'hsl(205, 32%, 86%)', land: 'hsl(0, 0%, 96%)', line: 'hsl(210, 12%, 64%)' },
+  dark: { ocean: 'hsl(210, 26%, 15%)', land: 'hsl(210, 12%, 23%)', line: 'hsl(210, 12%, 44%)' },
+};
+
 // A fixed reference view used when eyeballing basemap-theme tweaks; not rendered
 // at runtime.
 export const THEME_REFERENCE_VIEW = { name: 'Hartsmere', lat: 54.0091, lng: -2.4417 } as const;

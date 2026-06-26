@@ -236,11 +236,12 @@ export function CaptureHud({
   const [canShareFiles] = useState(canShareImageFiles);
   const supportsShare = touchLayout && canShareFiles;
 
-  // Optional downstream gate (e.g. Pro makes export an Advanced-account feature). When export is
-  // locked for this user, the three actions divert to the gate's upsell (the account takeover)
-  // and their tips carry the ADV tag. Read per render — the lock (a plan flag) only changes on a
-  // reload, so this is a stable, synchronous read; ungated builds get null → false, behaving as before.
-  const exportLocked = captureExportGate()?.isLocked() ?? false;
+  // Optional downstream gate (e.g. Pro makes export an Advanced-account feature). While the user is
+  // locked the three actions divert to the gate's upsell (the account takeover, see divertIfLocked).
+  // Whenever a gate is installed AT ALL, their tips carry the ADV tag — so export reads as advanced-
+  // gated even once the user has reached Advanced/Pro, matching the timeline/overlay toggles and the
+  // sync badge. Ungated builds (open core) get null → no tag, export free, behaving as before.
+  const exportGated = captureExportGate() != null;
   // Funnel every export through this first: if locked, run the gate's action and tell the caller
   // to stop. Reads the gate fresh so it can't go stale inside the memoised handlers.
   const divertIfLocked = useCallback(() => {
@@ -424,43 +425,49 @@ export function CaptureHud({
           ))}
         </div>
         {/* Optional groups, meaningful only once a view is chosen ('none' draws nothing). Planets
-            aren't here — they're the always-on baseline of any view; these add on top of them. */}
-        {view !== 'none' &&
-          (['angles', 'balance'] as const).map((k) => (
-            <TipBtn
-              key={k}
-              className={`location-ls-toggle ${extras[k] ? 'on' : 'off'}`}
-              onClick={() => onToggleExtra(k)}
-              ariaPressed={extras[k]}
-              title={t(`captureHud.extras.${k}`)}
-              hint={t(`captureHud.extras.${k}Hint`)}
-            >
-              <EyeIcon open={extras[k]} />
-              <span className="location-ls-name">{t(`captureHud.extras.${k}`)}</span>
-            </TipBtn>
-          ))}
+            aren't here — they're the always-on baseline of any view; these add on top of them.
+            Laid out two-up (see the caption grid below). */}
+        {view !== 'none' && (
+          <div className="capture-hud-toggle-grid">
+            {(['angles', 'balance'] as const).map((k) => (
+              <TipBtn
+                key={k}
+                className={`location-ls-toggle ${extras[k] ? 'on' : 'off'}`}
+                onClick={() => onToggleExtra(k)}
+                ariaPressed={extras[k]}
+                title={t(`captureHud.extras.${k}`)}
+                hint={t(`captureHud.extras.${k}Hint`)}
+              >
+                <EyeIcon open={extras[k]} />
+                <span className="location-ls-name">{t(`captureHud.extras.${k}`)}</span>
+              </TipBtn>
+            ))}
+          </div>
+        )}
 
         <div className="capture-hud-label">{t('captureHud.caption.label')}</div>
-        {CAPTION_KEYS.map((k) => (
-          <TipBtn
-            key={k}
-            className={`location-ls-toggle ${captionFields[k] ? 'on' : 'off'}`}
-            onClick={() => onToggleCaptionField(k)}
-            ariaPressed={captionFields[k]}
-            title={t(`captureHud.caption.${k}`)}
-            hint={t(`captureHud.caption.${k}Hint`)}
-          >
-            <EyeIcon open={captionFields[k]} />
-            <span className="location-ls-name">{t(`captureHud.caption.${k}`)}</span>
-          </TipBtn>
-        ))}
+        <div className="capture-hud-toggle-grid">
+          {CAPTION_KEYS.map((k) => (
+            <TipBtn
+              key={k}
+              className={`location-ls-toggle ${captionFields[k] ? 'on' : 'off'}`}
+              onClick={() => onToggleCaptionField(k)}
+              ariaPressed={captionFields[k]}
+              title={t(`captureHud.caption.${k}`)}
+              hint={t(`captureHud.caption.${k}Hint`)}
+            >
+              <EyeIcon open={captionFields[k]} />
+              <span className="location-ls-name">{t(`captureHud.caption.${k}`)}</span>
+            </TipBtn>
+          ))}
+        </div>
 
         <div className="capture-hud-actions">
           <TipBtn
             className="location-ls-fly capture-hud-btn"
             onClick={onDownload}
             disabled={busy}
-            advanced={exportLocked}
+            advanced={exportGated}
             title={t('captureHud.download.title')}
             hint={t('captureHud.download.hint')}
           >
@@ -471,7 +478,7 @@ export function CaptureHud({
             className="location-ls-fly capture-hud-btn"
             onClick={onCopy}
             disabled={busy}
-            advanced={exportLocked}
+            advanced={exportGated}
             title={t('captureHud.copy.title')}
             hint={t('captureHud.copy.hint')}
           >
@@ -484,7 +491,7 @@ export function CaptureHud({
               className="location-ls-fly capture-hud-btn"
               onClick={onShare}
               disabled={busy}
-              advanced={exportLocked}
+              advanced={exportGated}
               title={t('captureHud.share.title')}
               hint={t('captureHud.share.hint')}
             >

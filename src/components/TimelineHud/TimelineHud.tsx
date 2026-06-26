@@ -34,6 +34,7 @@ import {
 import { useMovableHud } from '../../lib/useMovableHud';
 import { useTouchLayout } from '../../lib/touch';
 import { useOverlayBarGap } from '../../lib/useOverlayBarGap';
+import { shouldShowNudge, nudgeAction } from '../../lib/plan';
 import { TipButton, TipSpan } from '../ui/HoverTip';
 import { EyeIcon } from '../ui/EyeIcon';
 import { ClickIcon } from '../ui/ClickIcon';
@@ -449,6 +450,12 @@ export function TimelineHud({
     } ${t('settings.overlayZenith.title')}`
   ).trim();
 
+  // A guest/basic user (Advanced off) whom the build nudges sees the advanced overlay-bar toggles
+  // as CLICKABLE teasers: rendered with their ADV tag, but a click opens the account flow
+  // (nudgeAction) instead of changing any advanced state. Advanced users get the real toggles;
+  // everyone else (Advanced off, not nudged) sees them hidden, exactly as before.
+  const advNudge = !advanced && shouldShowNudge('adv');
+
   // ── Draggable bar ──────────────────────────────────────────────────────
   // The nub is the move handle. Position is shared with the synastry bar (same
   // bottom slot) via useMovableHud, so flipping overlay modes keeps the bar
@@ -540,9 +547,10 @@ export function TimelineHud({
         <EyeIcon open={showNatal} />
         <span className="thud-drawer-toggle-name">{t('settings.natal.title')}</span>
       </TipButton>
-      {/* ADVANCED-ONLY: the overlay Zenith toggle is hidden when Advanced is off; its value
+      {/* ADVANCED: the overlay Zenith toggle. Shown when Advanced is on (works), OR as a clickable
+          teaser for a nudged guest (advNudge) whose click opens the account flow; its value
           defaults via effShowOverlayZenith. The Natal toggle above is always available. */}
-      {advanced && (
+      {(advanced || advNudge) && (
         <TipButton
           type="button"
           className={`thud-drawer-toggle ${showOverlayZenith ? 'on' : 'off'}`}
@@ -552,7 +560,13 @@ export function TimelineHud({
           hint={t('settings.overlayZenith.hint')}
           aria-label={zenithLabel}
           aria-pressed={showOverlayZenith}
-          onClick={() => setShowOverlayZenith(!showOverlayZenith)}
+          onClick={() => {
+            if (advNudge) {
+              nudgeAction(); // teaser → open the account/upgrade flow
+              return;
+            }
+            setShowOverlayZenith(!showOverlayZenith);
+          }}
           onPointerDown={(e) => e.stopPropagation()}
         >
           <EyeIcon open={showOverlayZenith} />
@@ -808,23 +822,24 @@ export function TimelineHud({
           astrocartography — which the tips disclose. */}
       {overlayMode === 'transits' && (
         <div
-          className={`thud-row thud-returns-row${advanced ? '' : ' thud-returns-row--solo'}`}
+          className={`thud-row thud-returns-row${advanced || advNudge ? '' : ' thud-returns-row--solo'}`}
         >
           <div className="thud-returns">
             {returnGroup('solar')}
             <span className="thud-mode-label">{t('timeline.returns.label')}</span>
             {returnGroup('lunar')}
           </div>
-          {/* ADVANCED-ONLY: the positioning frame + its separator. Hidden when Advanced is
-              off (the returns then centre alone via thud-returns-row--solo); ADV-tagged on. */}
-          {advanced && <span className="thud-returns-divider" aria-hidden="true" />}
+          {/* ADVANCED: the positioning frame + its separator. Shown when Advanced is on (works) OR
+              as a nudged-guest teaser (advNudge → click opens the account flow); otherwise hidden
+              (the returns then centre alone via thud-returns-row--solo). ADV-tagged on. */}
+          {(advanced || advNudge) && <span className="thud-returns-divider" aria-hidden="true" />}
           {/* Positioning, relocated from Settings: a flip-switch (Relative ↔ Absolute).
               Framing only affects Celestial lines — Mundane/Geodetic key off zodiacal
               longitude — so on those it's shown DISABLED, reading "—" (not the stored
               frame, which would be meaningless here) with a tip explaining why, rather
               than hidden. The button is floored to one width (see .thud-positioning-btn)
               so toggling Relative↔Absolute can't nudge the bar wider. */}
-          {advanced && (() => {
+          {(advanced || advNudge) && (() => {
             const posEnabled = lineSystem === 'celestial';
             return (
               <div className="thud-positioning">
@@ -857,6 +872,10 @@ export function TimelineHud({
                       : t('settings.headings.positioning')
                   }
                   onClick={() => {
+                    if (advNudge) {
+                      nudgeAction(); // teaser → open the account/upgrade flow
+                      return;
+                    }
                     if (posEnabled)
                       setTransitFrame(
                         transitFrame === 'relative-to-natal'

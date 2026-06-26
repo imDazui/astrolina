@@ -196,14 +196,33 @@ export function saveEclipseNatalLines(show: boolean) {
 }
 
 // ── Orb-of-influence zones ───────────────────────────────────────────────────
-// The translucent bands around planet angle lines (a ground distance, km) and
-// parans (degrees of latitude, the conventional paran orb). On by default, but
-// gated by Advanced mode (App's `advancedWheel && showOrbZones`), so a fresh
-// account first sees them when it switches to ADV — the same pattern as the
+// The translucent bands around planet angle lines (a ground distance — entered in km
+// or mi, the user's pick) and parans (degrees of latitude, the conventional paran orb).
+// On by default, but gated by Advanced mode (App's `advancedWheel && showOrbZones`), so a
+// fresh account first sees them when it switches to ADV — the same pattern as the
 // zenith/nadir stamps (astro:show-zenith:v1, also `!== '0'`).
 const ORB_ZONES_KEY = 'astro:orb-zones:v1';
-const ORB_ZONE_KM_KEY = 'astro:orb-zone-km:v1';
+const ORB_ZONE_VAL_KEY = 'astro:orb-zone-val:v1';
+const ORB_ZONE_UNIT_KEY = 'astro:orb-zone-unit:v1';
 const PARAN_ORB_DEG_KEY = 'astro:paran-orb-deg:v1';
+
+// The line-orb band width is stored in the user's chosen unit; the map converts it to km
+// (generateOrbBands) at render. Round per-unit defaults + a 25-unit step — 325 km ≈ 200 mi
+// (each snaps to the other on the 25 grid), so toggling units reads as the same width.
+export type DistanceUnit = 'km' | 'mi';
+export const KM_PER_MI = 1.609344;
+export const ORB_ZONE_STEP = 25;
+export const ORB_ZONE_MIN = 25;
+const ORB_ZONE_MAX: Record<DistanceUnit, number> = { km: 2000, mi: 1250 };
+const ORB_ZONE_DEFAULT: Record<DistanceUnit, number> = { km: 325, mi: 200 };
+
+/** The max line-orb width in the given unit (the floor is the shared ORB_ZONE_MIN). */
+export function orbZoneMax(unit: DistanceUnit): number {
+  return ORB_ZONE_MAX[unit];
+}
+function clampOrbZone(v: number, unit: DistanceUnit): number {
+  return Math.min(Math.max(v, ORB_ZONE_MIN), ORB_ZONE_MAX[unit]);
+}
 
 export function loadShowOrbZones(): boolean {
   return localStorage.getItem(ORB_ZONES_KEY) !== '0';
@@ -212,17 +231,36 @@ export function saveShowOrbZones(show: boolean) {
   localStorage.setItem(ORB_ZONES_KEY, show ? '1' : '0');
 }
 
-export function loadOrbZoneKm(): number {
-  const v = Number(localStorage.getItem(ORB_ZONE_KM_KEY));
-  return Number.isFinite(v) && v >= 10 && v <= 2000 ? v : 150;
+export function loadOrbZoneUnit(): DistanceUnit {
+  return localStorage.getItem(ORB_ZONE_UNIT_KEY) === 'mi' ? 'mi' : 'km';
 }
-export function saveOrbZoneKm(km: number) {
-  localStorage.setItem(ORB_ZONE_KM_KEY, String(km));
+export function saveOrbZoneUnit(unit: DistanceUnit) {
+  localStorage.setItem(ORB_ZONE_UNIT_KEY, unit);
+}
+
+/** The line-orb width stored in `unit`; defaults to the round per-unit value, range-checked. */
+export function loadOrbZoneVal(unit: DistanceUnit): number {
+  const v = Number(localStorage.getItem(ORB_ZONE_VAL_KEY));
+  return Number.isFinite(v) && v >= ORB_ZONE_MIN && v <= ORB_ZONE_MAX[unit]
+    ? v
+    : ORB_ZONE_DEFAULT[unit];
+}
+export function saveOrbZoneVal(val: number) {
+  localStorage.setItem(ORB_ZONE_VAL_KEY, String(val));
+}
+
+/** Re-express a width when the unit switches: convert through km, snap to the 25 grid, clamp.
+ *  So 325 km ↔ 200 mi, and any custom width carries across to the nearest round value. */
+export function convertOrbZoneVal(val: number, from: DistanceUnit, to: DistanceUnit): number {
+  if (from === to) return val;
+  const km = from === 'mi' ? val * KM_PER_MI : val;
+  const inTarget = to === 'mi' ? km / KM_PER_MI : km;
+  return clampOrbZone(Math.round(inTarget / ORB_ZONE_STEP) * ORB_ZONE_STEP, to);
 }
 
 export function loadParanOrbDeg(): number {
   const v = Number(localStorage.getItem(PARAN_ORB_DEG_KEY));
-  return Number.isFinite(v) && v >= 0.25 && v <= 5 ? v : 1.5;
+  return Number.isFinite(v) && v >= 0.25 && v <= 5 ? v : 1;
 }
 export function saveParanOrbDeg(deg: number) {
   localStorage.setItem(PARAN_ORB_DEG_KEY, String(deg));

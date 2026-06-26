@@ -22,6 +22,7 @@ export const settings = {
     language: 'Language',
     planets: 'Planets',
     asteroids: 'Asteroids',
+    angles: 'Angles',
     lines: 'Lines',
     lineSystem: 'Line system',
     lineProjection: 'Line projection',
@@ -119,8 +120,8 @@ export const settings = {
   orbZones: {
     title: 'Orb Zones',
     hint: 'Shaded influence zones: a band of ground distance around each planet angle line, and a band of latitude around each paran. Influence fades with distance; the edge is a convention, not a cliff.',
-    lineLabel: 'Lines (km)',
-    lineAria: 'Line orb zone width, in kilometres each side',
+    unitAria: 'Line orb zone distance unit (km or mi)',
+    lineAria: 'Line orb zone width, each side',
     paranLabel: 'Parans (°)',
     paranAria: 'Paran orb, in degrees of latitude each side',
   },

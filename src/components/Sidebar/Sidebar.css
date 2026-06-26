@@ -57,8 +57,9 @@ html[data-mapstate='natal-pinned'] .sidebar {
        the notch — an accepted trade, matching the edge-hugging corner HUD.) */
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
-    /* Slide in from the right edge on open. Pairs with the .settings-nub `right` transition
-       (same 0.18s ease), so the nub really does ride the panel's edge in. */
+    /* Slide in from the right edge on open. Pairs with the .settings-nub `transform` transition
+       (same 200px distance, duration + ease) — both are transform-driven (compositor), so the
+       nub really does ride the panel's edge in, locked to it on mobile. */
     animation: sb-dock-slide-in 0.18s ease;
   }
   /* Slide back out while closing. The app keeps the dock mounted until this animation ends
@@ -140,14 +141,20 @@ html[data-mapstate='natal-pinned'] .sidebar {
   background: rgba(var(--bg-panel), 0.94);
   color: var(--text-muted);
   cursor: pointer;
+  /* Kill the browser's blue/grey tap-flash on this touch-only control — it doesn't need one. */
+  -webkit-tap-highlight-color: transparent;
   box-shadow: -2px 0 10px rgba(0, 0, 0, 0.2);
-  transition: color 0.14s, background 0.14s, right 0.18s ease;
+  /* Slide via TRANSFORM (not `right`) so the nub rides on the compositor exactly like the panel's
+     translateX slide. Animating `right` runs on the MAIN thread, which janks behind the panel
+     while the dock's controls mount — making the two look detached on mobile. */
+  transition: color 0.14s, background 0.14s, transform 0.18s ease;
 }
-/* While the dock is open, ride to its left edge (the dock is 200px wide, flush right) so the
-   nub stays reachable as a close affordance instead of hiding behind the panel. The short
-   `right` transition reads as the handle being pushed out by the opening panel. */
+/* While the dock is open, ride to its left edge (the dock is 200px wide, flush right) so the nub
+   stays reachable as a close affordance instead of hiding behind the panel. translateX(-200px)
+   matches the panel's slide distance; -50% keeps it vertically centred. Reads as the handle being
+   pushed out by the opening panel, in lockstep with it. */
 .settings-nub.is-open {
-  right: 200px;
+  transform: translate(-200px, -50%);
 }
 .settings-nub:hover,
 .settings-nub:focus-visible {
@@ -416,6 +423,49 @@ html[data-mapstate='natal-pinned'] .sidebar {
 /* The glyph slot in a StepperField label (aspect symbol, ☉/☽, ∥). */
 .orb-field-glyph {
   font-size: 13px;
+  color: var(--text-strong);
+}
+
+/* km / mi switch shown in the orb-zone width field's label slot (replaces the old "Lines (km)"
+   text). A compact two-segment pill; the active unit is highlighted with the accent tint. */
+/* The label slot normally clips (ellipsis for long text labels); the toggle is fixed-width and
+   gets OUTDENTED to align its "km" text with the other fields' plain labels, so let it show. The
+   double class outranks the base `.calc-user-rate-label { overflow: hidden }` (which is defined
+   later in this file), so the outdented left edge isn't clipped. */
+.calc-user-rate-label.calc-user-rate-label-control {
+  overflow: visible;
+}
+.orb-unit-toggle {
+  display: inline-flex;
+  flex: none;
+  /* Pull left by the toggle's own left inset (1px border + 8px first-segment padding) so the
+     "km" text lines up with the plain text labels of the sibling fields (e.g. "Parans (°)"). */
+  margin-left: -6px;
+  border: 1px solid rgba(var(--tint), 0.16);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.orb-unit-opt {
+  padding: 3px 8px;
+  border: none;
+  background: rgba(var(--tint), 0.05);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.orb-unit-opt + .orb-unit-opt {
+  border-left: 1px solid rgba(var(--tint), 0.16);
+}
+.orb-unit-opt.on {
+  background: rgba(var(--accent-rgb), 0.18);
+  color: var(--text-strong);
+}
+.orb-unit-opt:not(.on):hover {
   color: var(--text-strong);
 }
 

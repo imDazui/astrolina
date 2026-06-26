@@ -14,7 +14,10 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import maplibregl, { type ExpressionSpecification } from 'maplibre-gl';
+import maplibregl, {
+  type ExpressionSpecification,
+  type StyleSpecification,
+} from 'maplibre-gl';
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson';
 import type { LineProps, ZenithProps } from '../../lib/astro/lines';
 import { getCaptureBrand } from '../../lib/captureBrand';
@@ -33,6 +36,7 @@ import type { CrossingProps } from '../../lib/astro/localSpaceCrossings';
 import type { EclipseMapData } from '../../lib/astro/eclipses';
 import {
   BASEMAP_STYLE_URLS,
+  WORLD_FALLBACK_COLORS,
   LABEL_HALO_COLORS,
   ECLIPSE_LABEL_HALO,
   ZENITH_DISC_COLORS,
@@ -1294,6 +1298,67 @@ const lsDir = (d: 'out' | 'in'): ExpressionSpecification =>
   ['==', ['get', 'direction'], d] as unknown as ExpressionSpecification;
 const lineTypeIs = (t: 'ASC' | 'DSC'): ExpressionSpecification =>
   ['==', ['get', 'lineType'], t] as unknown as ExpressionSpecification;
+
+// ── Offline basemap fallback ─────────────────────────────────────────────────────────────────
+// The live basemap (styles + vector tiles) streams from OpenFreeMap — and the glass/dark STYLES
+// themselves are remote, so offline a fresh load wouldn't even reach the background. So with no
+// connection the map opens on a self-contained style (a plain ocean) and draws the bundled coarse
+// world outline (Natural Earth 1:110m — the same data the offline country lookup already ships and
+// precaches) on top, so continents + borders still show beneath the chart lines.
+const WF_SOURCE = 'world-fallback';
+const WF_FILL = 'world-fallback-fill';
+const WF_LINE = 'world-fallback-line';
+
+// A style with NO external sources/sprite, so it loads with zero network. It keeps the live glyphs
+// URL only so chart-line TEXT can reuse the SW-cached font PBFs when present; the outline's
+// fills/lines need no glyphs, so even a cold cache still shows continents + borders.
+function offlineStyle(theme: Theme): StyleSpecification {
+  return {
+    version: 8,
+    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+    sources: {},
+    layers: [
+      {
+        id: 'background',
+        type: 'background',
+        paint: { 'background-color': WORLD_FALLBACK_COLORS[theme].ocean },
+      },
+    ],
+  };
+}
+
+// Draw the world outline into the current (offline) style, just above the background so it sits
+// BENEATH the chart lines (added by setupCustomLayers before this async load resolves). The GeoJSON
+// is dynamic-imported, so online users never download it; the chunk is precached for offline use.
+async function installWorldFallback(map: maplibregl.Map, theme: Theme): Promise<void> {
+  if (!map.getStyle() || map.getLayer(WF_FILL)) return;
+  let worldOutline: () => GeoJSON.FeatureCollection;
+  try {
+    ({ worldOutline } = await import('../../lib/worldFallback'));
+  } catch {
+    return; // chunk unavailable — leave the plain ocean background
+  }
+  // The style may have swapped (theme / connectivity change) during the await.
+  if (!map.getStyle() || map.getLayer(WF_FILL)) return;
+  if (!map.getSource(WF_SOURCE)) {
+    map.addSource(WF_SOURCE, { type: 'geojson', data: worldOutline() });
+  }
+  const c = WORLD_FALLBACK_COLORS[theme];
+  const beforeId = (map.getStyle().layers ?? []).find((l) => l.id !== 'background')?.id;
+  map.addLayer(
+    { id: WF_FILL, type: 'fill', source: WF_SOURCE, paint: { 'fill-color': c.land } },
+    beforeId,
+  );
+  map.addLayer(
+    {
+      id: WF_LINE,
+      type: 'line',
+      source: WF_SOURCE,
+      paint: { 'line-color': c.line, 'line-width': 0.8 },
+    },
+    beforeId,
+  );
+}
 
 function setupCustomLayers(
   map: maplibregl.Map,
@@ -3086,7 +3151,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     try {
       map = new maplibregl.Map({
         container: containerRef.current,
-        style: BASEMAP_STYLE_URLS[themeRef.current],
+        // Offline: the live OpenFreeMap styles/tiles need the network (the glass/dark STYLES are
+        // remote too), so open on the self-contained offline style instead of a blank map.
+        style: navigator.onLine
+          ? BASEMAP_STYLE_URLS[themeRef.current]
+          : offlineStyle(themeRef.current),
         // Open framed on a continental box centred on the active chart's birthplace
         // rather than the whole globe (see firstLoadBounds / DEFAULT_BOUNDS). Read
         // once at mount; fitBoundsOptions keeps the continent off the very edges and
@@ -3214,6 +3283,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         ECLIPSE_LABEL_HALO[themeRef.current],
       );
       pushData(map, dataRef.current, true);
+      // Offline → draw the bundled world outline beneath the chart lines (the offline style has no
+      // basemap of its own). A no-op online.
+      if (!navigator.onLine) void installWorldFallback(map, themeRef.current);
       computeBadgesRef.current();
     });
 
@@ -3297,13 +3369,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     if (!map) return;
     if (themeRef.current === theme) return;
     themeRef.current = theme;
-    map.setStyle(BASEMAP_STYLE_URLS[theme]);
+    map.setStyle(navigator.onLine ? BASEMAP_STYLE_URLS[theme] : offlineStyle(theme));
     map.once('style.load', async () => {
       applyProjection(map, projectionRef.current); // setStyle reset it; re-apply first
       await ensureGlyphImages(map, theme === 'dark' ? '' : LABEL_HALO_COLORS[theme], ZENITH_DISC_COLORS[theme], theme);
       applyDetailToggles(map, detailRef.current);
       setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current, ZENITH_DISC_COLORS[theme], ECLIPSE_LABEL_HALO[theme]);
       pushData(map, dataRef.current, true);
+      if (!navigator.onLine) void installWorldFallback(map, theme);
       computeBadges();
     });
   }, [theme, computeBadges]);

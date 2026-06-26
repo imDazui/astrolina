@@ -127,7 +127,7 @@ export const expandedSidebar = {
   // essential dignities (Advanced) over the bodies the map filter shows.
   balanceHeading: 'Balance',
   balanceTip: 'Chart balance',
-  balanceHint: 'How the shown bodies spread across the four elements and three modalities, plus any in essential dignity (rulership, exaltation) or debility (detriment, fall).',
+  balanceHint: 'How the shown bodies spread across the four elements (fire, earth, air, water) and three modalities (cardinal, fixed, mutable) — a quick read of where the chart’s emphasis lies.',
   element: { fire: 'Fire', earth: 'Earth', air: 'Air', water: 'Water' },
   modality: { cardinal: 'Cardinal', fixed: 'Fixed', mutable: 'Mutable' },
   // Blurbs shown beneath the name in each balance category's hover tip: the

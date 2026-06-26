@@ -166,7 +166,8 @@ import {
   loadLsHideInbound,
   loadLsHideCompass,
   loadOverlayStep,
-  loadOrbZoneKm,
+  loadOrbZoneUnit,
+  loadOrbZoneVal,
   loadParanOrbDeg,
   loadPrimaryRate,
   loadShowNightShade,
@@ -192,7 +193,10 @@ import {
   saveLsHideInbound,
   saveLsHideCompass,
   saveOverlayStep,
-  saveOrbZoneKm,
+  saveOrbZoneUnit,
+  saveOrbZoneVal,
+  convertOrbZoneVal,
+  KM_PER_MI,
   saveParanOrbDeg,
   savePrimaryRate,
   saveShowNightShade,
@@ -201,6 +205,7 @@ import {
   saveStarSet,
   saveTransitFrame,
   saveUserPrimaryRate,
+  type DistanceUnit,
   type EclipseIsoStep,
 } from './lib/overlayPrefs';
 import {
@@ -2106,10 +2111,20 @@ export default function App() {
   // the map is actually drawing (natal, or the promoted overlay standing in for
   // it), so the zones always shadow the visible lines. The showOrbZones toggle is
   // declared up top with the other hotkey-driven settings; its widths live here.
-  const [orbZoneKm, setOrbZoneKm] = useState(loadOrbZoneKm);
+  // The line-orb width is entered in the user's chosen unit (km or mi); the map needs km, so
+  // `orbZoneKm` below converts. Switching the unit re-expresses the width (convert + snap to the
+  // 25 grid), so 325 km ↔ 200 mi reads as the same band.
+  const [orbZoneUnit, setOrbZoneUnit] = useState<DistanceUnit>(loadOrbZoneUnit);
+  const [orbZoneVal, setOrbZoneVal] = useState(() => loadOrbZoneVal(loadOrbZoneUnit()));
+  const orbZoneKm = orbZoneUnit === 'mi' ? orbZoneVal * KM_PER_MI : orbZoneVal;
+  const changeOrbZoneUnit = useCallback((next: DistanceUnit) => {
+    setOrbZoneVal((v) => convertOrbZoneVal(v, orbZoneUnit, next));
+    setOrbZoneUnit(next);
+  }, [orbZoneUnit]);
   const [paranOrbDeg, setParanOrbDeg] = useState(loadParanOrbDeg);
   useEffect(() => saveShowOrbZones(showOrbZones), [showOrbZones]);
-  useEffect(() => saveOrbZoneKm(orbZoneKm), [orbZoneKm]);
+  useEffect(() => saveOrbZoneUnit(orbZoneUnit), [orbZoneUnit]);
+  useEffect(() => saveOrbZoneVal(orbZoneVal), [orbZoneVal]);
   useEffect(() => saveParanOrbDeg(paranOrbDeg), [paranOrbDeg]);
 
   // Per-aspect orb limits (Advanced ▸ Aspect orbs) for the wheel's aspect
@@ -2274,11 +2289,10 @@ export default function App() {
   //  • NATAL (gray) → nothing here; the "NATAL" status pill already shows it.
   //  • HOVER → the offline nearest CITY (no network), falling back to the offline
   //    country when no city is in range, then "Ocean" over open water; real-time.
-  //  Suppressed while measuring.
-  const pinnedLabel = useReverseGeocode(
-    mapTool === 'measure' || isNatalPin ? null : pinned,
-    detailZoom,
-  );
+  //  The top-nav readout is suppressed while a map tool is active (see `locationLabel`),
+  //  but the pin's own reverse-geocode keeps resolving so the Coordinates window can
+  //  still name a placed pin mid-measure.
+  const pinnedLabel = useReverseGeocode(isNatalPin ? null : pinned, detailZoom);
   const hoverCity = useNearestCityLabel(mapTool === 'measure' ? null : hover);
   const hoverCountry = useCountryOf(hover);
   // Once pinned, hover stays frozen on the clicked point (onHover/onLeave are gated
@@ -2305,13 +2319,18 @@ export default function App() {
   // the pin lands on the same text the cursor was already showing, nothing changes,
   // so we skip the fade and let it stay put.
   const fadeLocation =
-    !!pinned && !isNatalPin && pinnedLabel != null && pinnedLabel !== hoverLabel;
-  // The Coordinates window names the active point. In the plain natal state (no
-  // pin/hover) the top readout shows nothing, but the window should still name the
-  // birthplace it's displaying — so fall back to it there.
-  const coordLocation =
-    locationLabel ??
-    (coordSource === 'natal' ? (current?.birthplace.label ?? null) : null);
+    !inToolMode && !!pinned && !isNatalPin && pinnedLabel != null && pinnedLabel !== hoverLabel;
+  // The Coordinates window names the active POINT — and unlike the top-nav readout it must
+  // keep naming a placed PIN even while a map tool (measure / slide) is active: the window
+  // names the fixed pin, not the cursor, so tool mode doesn't make it meaningless. A natal
+  // pin uses the birthplace; a custom pin its reverse-geocoded label (frozen hover label as a
+  // load-time placeholder). With no pin it follows the tool-suppressed hover readout, falling
+  // back to the birthplace in the plain natal state.
+  const coordLocation = isNatalPin
+    ? (current?.birthplace.label ?? null)
+    : pinned
+      ? (pinnedLabel ?? hoverLabel)
+      : (locationLabel ?? (coordSource === 'natal' ? (current?.birthplace.label ?? null) : null));
 
   // Publish the pin state to <html> so the single --map-accent source (index.css)
   // recolors the map chrome, and resolve that accent to a concrete color for the
@@ -3154,7 +3173,12 @@ export default function App() {
           )}
         </div>
       )}
-      {settingsMounted && (
+      {/* Mount on `showSettings` DIRECTLY (not just settingsMounted) so the dock mounts in the
+          SAME commit the nub flips to .is-open. settingsMounted is set in an effect — a render
+          cycle LATER — so gating solely on it mounts the panel a frame after the nub starts
+          gliding, and the two visibly desync (the nub detaches from the panel's edge mid-slide).
+          settingsMounted still holds the panel mounted through the close slide-out. */}
+      {(showSettings || settingsMounted) && (
         <Sidebar
           closing={!showSettings}
           onSlideOutEnd={() => setSettingsMounted(false)}
@@ -3172,8 +3196,10 @@ export default function App() {
           setShowMidpointLines={setShowMidpointLines}
           showOrbZones={showOrbZones}
           setShowOrbZones={setShowOrbZones}
-          orbZoneKm={orbZoneKm}
-          setOrbZoneKm={setOrbZoneKm}
+          orbZoneVal={orbZoneVal}
+          setOrbZoneVal={setOrbZoneVal}
+          orbZoneUnit={orbZoneUnit}
+          setOrbZoneUnit={changeOrbZoneUnit}
           paranOrbDeg={paranOrbDeg}
           setParanOrbDeg={setParanOrbDeg}
           aspectOrbs={aspectOrbs}

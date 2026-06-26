@@ -29,6 +29,26 @@
   margin-top: 6px;
 }
 
+/* Toggle groups (extras: Angles/Balance; caption: Name/Date/Time/Location/Calculations) laid out
+   two-up instead of a single tall column — the window is wide enough (248px) and it halves the
+   list's height. An odd count just leaves the last cell empty. */
+.capture-hud-toggle-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 5px;
+}
+/* Half-width cells are tighter than the old full-width rows, so trim the toggle's gap + padding
+   and ellipsize the label as a safety net, keeping the longest one ("Calculations") on one line. */
+.capture-hud-toggle-grid .location-ls-toggle {
+  gap: 6px;
+  padding: 6px 6px;
+}
+.capture-hud-toggle-grid .location-ls-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Aspect presets: three equal columns (the shared .location-ls-seg is sized for two). */
 .capture-hud-seg {
   display: grid;

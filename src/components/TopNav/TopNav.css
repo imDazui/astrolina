@@ -23,6 +23,11 @@
      and swallow its clicks — e.g. the Tools ▸ Slide row under an open Local Space window.
      Stays below the expanded sidebar (30), modals (100), and hover tips (1000). */
   z-index: 25;
+  /* The stack is content-sized to the WIDEST bar (the main bar), so the narrower, centred tool
+     readout below it leaves transparent stack area on either side. At z-25 that empty area sits
+     ABOVE the movable HUDs and would swallow drags that don't even visually touch the readout. So
+     the wrapper is click-through; the bars + their interactive bits re-enable themselves below. */
+  pointer-events: none;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -57,6 +62,9 @@
      OVER this bar's open dropdown panels (which can't escape this bar's context),
      making the Overlay/View options unclickable where they overlap the readout. */
   z-index: 2;
+  /* Re-enable hit-testing on the main bar (the stack wrapper is click-through). The readout below
+     stays click-through except its own buttons, so drags pass through to HUDs beneath it. */
+  pointer-events: auto;
 }
 
 /* Secondary tool bar below the main bar — compact, its own little island. */
@@ -102,6 +110,9 @@
 /* Snap toggle in the measure toolbar — a persistent, touch-reachable alternative to
    holding Shift. Lights up with the accent when on. */
 .topnav-snap {
+  /* The readout island is click-through (its stack wrapper is pointer-events:none); this button
+     re-enables itself so it stays tappable. */
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -166,6 +177,9 @@
 /* When a pin is set, the location pill is a button that recenters the map
    (same as the top-nav status pill). */
 .topnav-location-btn {
+  /* The readout island is click-through (stack wrapper is pointer-events:none); the recenter
+     pill re-enables itself so it stays clickable. */
+  pointer-events: auto;
   padding: 0;
   background: none;
   border: none;
@@ -534,6 +548,9 @@ button.topnav-status:hover {
 .navmenu-item.disabled:hover {
   background: transparent;
 }
+/* A tier-locked teaser is NOT greyed (it's a clickable upgrade prompt, distinguished only by its
+   ADV/PRO badge): it never gets the .disabled class, so it keeps the normal .navmenu-item look,
+   pointer, and hover. Clicking it opens the account/upgrade flow (see the row components). */
 /* Checkmark toggles (the View menu) keep normal text color when on — only the
    ✓ marker signals the state, not an accent tint. */
 .navmenu-item.navmenu-check.on {

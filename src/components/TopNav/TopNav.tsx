@@ -22,7 +22,7 @@ import {
 import { getMapExtensions } from '../../lib/extensions/mapExtensions';
 import { getToolExtensions } from '../../lib/extensions/toolExtensions';
 import { getOverlayExtensions } from '../../lib/extensions/overlayExtensions';
-import { type PlanTier, tierMet, tierLabel, tierOfEntitlement, shouldShowNudge } from '../../lib/plan';
+import { type PlanTier, tierMet, tierLabel, tierOfEntitlement, shouldShowNudge, nudgeAction } from '../../lib/plan';
 import type { StoredChart } from '../../lib/chartLibrary';
 import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
 import { CycleHotkey } from '../ui/CycleHotkey';
@@ -293,9 +293,10 @@ function RadioItem({
   tier?: PlanTier;
   /** Greyed + click no-op'd (kept in the DOM so it's still a hoverable teaser). */
   disabled?: boolean;
-  /** Tier-locked teaser (the user hasn't reached `tier`): suppress the shortcut, since the
-   *  key does nothing until they upgrade. Distinct from `disabled`, which also covers a
-   *  reached-but-temporarily-unavailable row whose shortcut still applies. */
+  /** Tier-locked teaser (the user hasn't reached `tier`): suppress the shortcut (the key does
+   *  nothing until they upgrade) AND route a click to the nudge action (open the account/upgrade
+   *  flow) rather than the real handler. Distinct from `disabled`, which also covers a reached-
+   *  but-temporarily-unavailable row whose shortcut still applies and whose click stays a no-op. */
   locked?: boolean;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>('left');
@@ -304,11 +305,15 @@ function RadioItem({
       <button
         ref={ref}
         type="button"
-        className={`navmenu-item ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`}
+        className={`navmenu-item ${checked ? 'on' : ''} ${disabled && !locked ? 'disabled' : ''} ${locked ? 'locked' : ''}`}
         role="menuitemradio"
         aria-checked={checked}
-        aria-disabled={disabled || undefined}
+        aria-disabled={(disabled && !locked) || undefined}
         onClick={() => {
+          if (locked) {
+            nudgeAction(); // tier-locked teaser → open the account/upgrade flow
+            return;
+          }
           if (!disabled) onSelect();
         }}
         onMouseEnter={show}
@@ -352,8 +357,9 @@ function CheckItem({
   tier?: PlanTier;
   /** Greyed + click no-op'd (kept in the DOM so it's still a hoverable teaser). */
   disabled?: boolean;
-  /** Tier-locked teaser (the user hasn't reached `tier`): hide the shortcut badge — the key
-   *  does nothing until they upgrade, so "L" on a greyed Local Space row only misleads. */
+  /** Tier-locked teaser (the user hasn't reached `tier`): hide the shortcut badge (the key does
+   *  nothing until they upgrade — an "L" on the Local Space teaser would only mislead) AND route
+   *  a click to the nudge action (open the account/upgrade flow). */
   locked?: boolean;
   /** Optional explainer. View rows normally have none, so they show NO tip; but if a row IS
    *  given a hint it surfaces on hover/focus like the other menus (with the ADV marker). */
@@ -366,11 +372,15 @@ function CheckItem({
       <button
         ref={ref}
         type="button"
-        className={`navmenu-item navmenu-check ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`}
+        className={`navmenu-item navmenu-check ${checked ? 'on' : ''} ${disabled && !locked ? 'disabled' : ''} ${locked ? 'locked' : ''}`}
         role="menuitemcheckbox"
         aria-checked={checked}
-        aria-disabled={disabled || undefined}
+        aria-disabled={(disabled && !locked) || undefined}
         onClick={() => {
+          if (locked) {
+            nudgeAction(); // tier-locked teaser → open the account/upgrade flow
+            return;
+          }
           if (!disabled) onToggle();
         }}
         onMouseEnter={hasTip ? show : undefined}
@@ -412,10 +422,10 @@ function ToolItem({
   hotkey?: string;
   checked: boolean;
   disabled?: boolean;
-  /** Tier-locked teaser (the user hasn't reached `tier`): suppress the shortcut, since the
-   *  key does nothing until they upgrade. Distinct from `disabled`, which a reached tool also
-   *  sets when temporarily unavailable (e.g. Slide with no natal linework) — its key still
-   *  applies, so we keep it. */
+  /** Tier-locked teaser (the user hasn't reached `tier`): suppress the shortcut (the key does
+   *  nothing until they upgrade) AND route a click to the nudge action (open the account/upgrade
+   *  flow). Distinct from `disabled`, which a reached tool also sets when temporarily unavailable
+   *  (e.g. Slide with no natal linework) — its key still applies and its click stays a no-op. */
   locked?: boolean;
   hint?: string;
   onToggle: () => void;
@@ -434,11 +444,15 @@ function ToolItem({
       <button
         ref={ref}
         type="button"
-        className={`navmenu-item ${checked ? 'on' : ''} ${disabled ? 'disabled' : ''}`}
+        className={`navmenu-item ${checked ? 'on' : ''} ${disabled && !locked ? 'disabled' : ''} ${locked ? 'locked' : ''}`}
         role="menuitemcheckbox"
         aria-checked={checked}
-        aria-disabled={disabled || undefined}
+        aria-disabled={(disabled && !locked) || undefined}
         onClick={() => {
+          if (locked) {
+            nudgeAction(); // tier-locked teaser → open the account/upgrade flow
+            return;
+          }
           if (!disabled) onToggle();
         }}
         onMouseEnter={show}
