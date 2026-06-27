@@ -691,9 +691,18 @@ button.topnav-status:hover {
     left: var(--edge, 8px);
     right: var(--edge, 8px);
     transform: none;
+    /* Anchor the bar's top edge at the very top of the screen (the notch offset moves to .topnav's
+       padding below). This pulls the notch strip INSIDE the bar's bounding box, so the map's edge
+       labels dodge BELOW the bar instead of landing in the notch above it. */
+    top: 0;
   }
   .topnav {
     width: 100%;
+    /* Pad the controls down clear of the notch while the bar's BACKGROUND extends up to the screen
+       top. The notch inset reserves more height than the controls need for clearance, so sit them
+       ~20% higher than the full inset (×0.8) — closer to the notch, reclaiming the dead gap — while
+       the bar's background still covers the whole notch strip above them. */
+    padding-top: max(var(--edge, 3px), calc(env(safe-area-inset-top) * 0.8));
   }
   /* Consistent spread: name (left) · status pill (centre) · icon menus (right), at content-
      independent positions so the bar's parts always sit in the same place in portrait. Extra RIGHT

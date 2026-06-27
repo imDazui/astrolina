@@ -308,9 +308,18 @@ function lsBadgeRadius(zoom: number): number {
   );
   return LS_BADGE_RADIUS_PX * (1 + (LS_RADIUS_MAX_SCALE - 1) * t);
 }
-// Rough half-extents of an LS pill, used to keep the ring's labels from colliding.
+// Nominal half-extents of an LS pill — a FLOOR for the de-overlap (the measured DOM box, when
+// available, can only widen it). The 'in' pill is just "LS + glyph"; the 'out' pill ALSO prints a
+// bearing, so it runs roughly 2.5× as wide — give it its own, much larger floor so the de-overlap
+// pushes the long 'out' pills fully clear of each other (they crowd the ring at close azimuths,
+// and a capture still can't be panned to disambiguate them).
 const LS_BADGE_HALF_W = 34;
+const LS_BADGE_OUT_HALF_W = 78;
 const LS_BADGE_HALF_H = 11;
+// Breathing room added to EVERY pill's half-extents before the de-overlap, so crowded labels end up
+// with a visible GAP between them rather than just touching edge-to-edge (which still reads as
+// cramped/overlapping and is what "no breathing room" meant). 2× this is the min gap between any two.
+const LS_BADGE_GAP = 11;
 interface LocalSpaceBadge {
   key: string;
   x: number;
@@ -327,11 +336,11 @@ interface LocalSpaceBadge {
 
 // Spread overlapping badges apart — a few passes of AABB separation along the axis
 // of least overlap — so the LS labels stay readable/clickable when their azimuths
-// crowd. Mutates x/y in place.
+// crowd. Each item carries its OWN half-extents (hw/hh) so wide pills (e.g. an LS
+// 'out' label with a bearing) separate by their real box, not a single nominal size.
+// Mutates x/y in place.
 function deOverlapBadges(
-  items: { x: number; y: number }[],
-  halfW: number,
-  halfH: number,
+  items: { x: number; y: number; hw: number; hh: number }[],
   iterations: number,
 ): void {
   for (let iter = 0; iter < iterations; iter++) {
@@ -342,8 +351,8 @@ function deOverlapBadges(
         const b = items[j];
         const dx = b.x - a.x;
         const dy = b.y - a.y;
-        const ox = 2 * halfW - Math.abs(dx);
-        const oy = 2 * halfH - Math.abs(dy);
+        const ox = a.hw + b.hw - Math.abs(dx);
+        const oy = a.hh + b.hh - Math.abs(dy);
         if (ox <= 0 || oy <= 0) continue;
         moved = true;
         if (ox < oy) {
@@ -3079,13 +3088,46 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           azLabel,
         });
       }
-      deOverlapBadges(lsbadges, LS_BADGE_HALF_W, LS_BADGE_HALF_H, 16);
-      // deOverlapBadges has no viewport clamp of its own, and edge-hugged labels sit
-      // right at the inset — so clamp every pill fully back on screen afterward
-      // (accounting for its half-extents), matching the ACG badges' final clamp.
-      for (const b of lsbadges) {
-        b.x = Math.min(Math.max(b.x, BADGE_INSET + LS_BADGE_HALF_W), w - BADGE_INSET - LS_BADGE_HALF_W);
-        b.y = Math.min(Math.max(b.y, BADGE_INSET + LS_BADGE_HALF_H), h - BADGE_INSET - LS_BADGE_HALF_H);
+      // Per-badge half-extents for separation: in a capture STILL the export can't be panned to
+      // disambiguate overlapping labels, so measure each pill's REAL box from the live DOM (keyed
+      // by data-lskey) — the wide 'out' pills carry a bearing and would crowd at the nominal width
+      // (exactly what the ACG edge badges do in capture). Live, the nominal pill size is fine; sizes
+      // are intrinsic, so measuring stays a fixed point (no measure→resize loop).
+      const lsSizes = new globalThis.Map<string, { hw: number; hh: number }>();
+      if (frameActiveRef.current) {
+        frameRef.current
+          ?.querySelectorAll<HTMLElement>('.acg-badge[data-lskey]')
+          .forEach((el) => {
+            lsSizes.set(el.dataset.lskey as string, {
+              hw: el.offsetWidth / 2,
+              hh: el.offsetHeight / 2,
+            });
+          });
+      }
+      const lsItems = lsbadges.map((b) => {
+        const s = lsSizes.get(b.key);
+        // Per-direction floor: the 'out' pill carries a bearing and runs much wider than the 'in'
+        // pill. The measured box (capture) can only WIDEN it — so the long 'out' pills separate
+        // properly even if the measurement is unavailable or under-reports.
+        const nominalHw = b.out ? LS_BADGE_OUT_HALF_W : LS_BADGE_HALF_W;
+        // + LS_BADGE_GAP on each extent so neighbours settle with a clear gap, not just touching.
+        return {
+          x: b.x,
+          y: b.y,
+          hw: Math.max(s?.hw ?? 0, nominalHw) + LS_BADGE_GAP,
+          hh: (s?.hh ?? LS_BADGE_HALF_H) + LS_BADGE_GAP,
+          ref: b,
+        };
+      });
+      // More passes than the ACG badges: the LS pills start crowded on a small ring, so a tight
+      // cluster needs extra iterations to fully migrate apart.
+      deOverlapBadges(lsItems, 40);
+      // Write the spread positions back, clamped fully on screen by each pill's OWN half-extents
+      // (deOverlapBadges has no viewport clamp; edge-hugged labels sit right at the inset). Matches
+      // the ACG badges' final clamp.
+      for (const it of lsItems) {
+        it.ref.x = Math.min(Math.max(it.x, BADGE_INSET + it.hw), w - BADGE_INSET - it.hw);
+        it.ref.y = Math.min(Math.max(it.y, BADGE_INSET + it.hh), h - BADGE_INSET - it.hh);
       }
     } else {
       setOriginScreen(null);
@@ -4803,6 +4845,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             <TipButton
               type="button"
               key={b.key}
+              data-lskey={b.key}
               tabIndex={-1}
               className="acg-badge acg-badge-btn"
               style={{ translate: badgePos(b.x, b.y), background: b.color, color: text }}

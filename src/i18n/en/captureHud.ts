@@ -56,6 +56,10 @@ export const captureHud = {
   share: {
     title: 'Share',
     hint: 'Open your device’s share sheet to save or send the image (mobile & supported desktops).',
+    // Metadata that rides along with the shared image in the OS share sheet: a title + a line of
+    // accompanying text. The app URL is appended separately, read live from the page's canonical link.
+    sheetTitle: 'AstroLina Cartography',
+    sheetText: 'AstroLina — web-based astrocartography for curious minds',
   },
   download: {
     title: 'Download',

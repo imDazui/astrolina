@@ -378,6 +378,11 @@ body,
   margin: 0;
   padding: 0;
   height: 100%;
+  /* dvh = the dynamic viewport: fills the FULL screen on mobile, including under the iOS home
+     indicator in the installed (standalone) PWA. There, in portrait, the layout viewport that
+     height:100% / inset:0 resolve against can fall short of the screen, leaving an unused band at
+     the bottom. Falls back to 100% where dvh is unsupported. */
+  height: 100dvh;
   width: 100%;
   overflow: hidden;
   /* Disable mobile browsers' automatic text inflation ("font boosting" / text auto-sizing). With
@@ -386,6 +391,14 @@ body,
      px sizes. Pinning it to 100% makes our explicit font sizes authoritative on every device. */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+}
+
+/* The map fills the screen via position:absolute; inset:0. Anchor that to #root — now a full-height
+   dvh box — instead of the layout viewport, which on iOS standalone PORTRAIT can be shorter than the
+   screen (the unused bottom band). position:relative adds NO stacking context (no z-index set), so
+   the position:fixed HUDs still resolve against the viewport and nothing else reflows. */
+#root {
+  position: relative;
 }
 
 /* Touch: screen space is tight, so pull every edge-anchored HUD element in close to the screen

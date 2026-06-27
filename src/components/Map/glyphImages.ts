@@ -52,7 +52,7 @@ const ZENITH_STAMP_PX = 62; // canvas px (≈31px on the map at RATIO 2)
 const ZENITH_DISC_R = 26; // 13px display radius — matches circle-radius at rest
 const ZENITH_RING_W = 3; // 1.5px display ring — matches circle-stroke-width at rest
 const ZENITH_STAMP_GLYPH_PX = 40; // 20px display — same glyph size as the old stamp
-const ZENITH_STAMP_DY = 4; // optical down-nudge so the glyph sits centred in the disc
+// (The glyph is centred by measuring its ink box in drawStampGlyph — no fixed nudge needed.)
 
 // The nadir STAMP: the same canvas + fill/ring as the zenith, but a DIAMOND (a
 // 45°-rotated square) instead of a circle, so the underfoot point reads as a
@@ -163,16 +163,25 @@ function drawStampGlyph(
   cy: number,
   fontPx: number,
 ): void {
+  const ch = PLANET_GLYPHS[planet];
   ctx.font = `${fontPx}px ${FONT_FAMILY}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  // Centre the glyph's ACTUAL INK box at (cx, cy), measured per-glyph. textAlign:center +
+  // textBaseline:middle instead centre the font's EM box, which different engines (notably mobile
+  // Safari/Chrome) place differently for this symbol font — so a fixed nudge that looked centred on
+  // desktop pushed the glyph down-right on mobile (these sprites are baked client-side, so the
+  // device's own text rendering bakes in the offset). Measuring the ink makes it identical everywhere.
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  const m = ctx.measureText(ch);
+  const px = cx - (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2;
+  const py = cy + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
   ctx.lineJoin = 'round';
   ctx.miterLimit = 2;
   ctx.lineWidth = HALO_PX;
   ctx.strokeStyle = discFill;
-  ctx.strokeText(PLANET_GLYPHS[planet], cx, cy);
+  ctx.strokeText(ch, px, py);
   ctx.fillStyle = color;
-  ctx.fillText(PLANET_GLYPHS[planet], cx, cy);
+  ctx.fillText(ch, px, py);
 }
 
 // Bake a zenith STAMP: the disc (theme `discFill`) + the planet-colour ring, with
@@ -197,7 +206,7 @@ function rasterizeZenith(
   ctx.lineWidth = ZENITH_RING_W;
   ctx.strokeStyle = color;
   ctx.stroke();
-  drawStampGlyph(ctx, planet, color, discFill, c, c + ZENITH_STAMP_DY, ZENITH_STAMP_GLYPH_PX);
+  drawStampGlyph(ctx, planet, color, discFill, c, c, ZENITH_STAMP_GLYPH_PX);
   return ctx.getImageData(0, 0, ZENITH_STAMP_PX, ZENITH_STAMP_PX);
 }
 
@@ -229,7 +238,7 @@ function rasterizeNadir(
   ctx.lineWidth = ZENITH_RING_W;
   ctx.strokeStyle = color;
   ctx.stroke();
-  drawStampGlyph(ctx, planet, color, discFill, c, c + ZENITH_STAMP_DY, NADIR_STAMP_GLYPH_PX);
+  drawStampGlyph(ctx, planet, color, discFill, c, c, NADIR_STAMP_GLYPH_PX);
   return ctx.getImageData(0, 0, ZENITH_STAMP_PX, ZENITH_STAMP_PX);
 }
 

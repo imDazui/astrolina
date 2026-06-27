@@ -139,6 +139,7 @@ function TipBtn({
   className,
   onClick,
   ariaPressed,
+  ariaLabel,
   disabled,
   title,
   hint,
@@ -148,6 +149,8 @@ function TipBtn({
   className: string;
   onClick: () => void;
   ariaPressed?: boolean;
+  /** For icon-only buttons whose children carry no text — gives the button an accessible name. */
+  ariaLabel?: string;
   disabled?: boolean;
   title: string;
   hint: string;
@@ -164,6 +167,7 @@ function TipBtn({
         className={className}
         onClick={onClick}
         aria-pressed={ariaPressed}
+        aria-label={ariaLabel}
         disabled={disabled}
         onMouseEnter={show}
         onMouseLeave={hide}
@@ -178,7 +182,6 @@ function TipBtn({
 }
 
 interface CaptureHudProps {
-  onClose: () => void;
   /** Current capture-frame aspect ratio (width / height); drives the map's frame. */
   captureAspect: number;
   /** Pick an aspect preset (persisted by App). */
@@ -201,7 +204,6 @@ interface CaptureHudProps {
 }
 
 export function CaptureHud({
-  onClose,
   captureAspect,
   setCaptureAspect,
   captionFields,
@@ -214,6 +216,9 @@ export function CaptureHud({
   onCapture,
 }: CaptureHudProps) {
   const { t } = useT();
+  // The header eye collapses the window to just its title bar (like the overlay nubs) to clear
+  // screen clutter — WITHOUT exiting Capture (close it from the top nav / Esc). Local UI state.
+  const [collapsed, setCollapsed] = useState(false);
   const hudRef = useRef<HTMLDivElement>(null);
   const { pos, dragging, handleProps } = useMovableHud(hudRef, {
     posKey: POS_KEY,
@@ -330,7 +335,18 @@ export function CaptureHud({
         // Opens the native OS share sheet (Save Image / Messages / Mail / …) — entirely
         // client-side, no upload or server. The blob never leaves the device until the
         // user picks a target.
-        await navigator.share({ files: [file], title: 'AstroLina' });
+        // The accompanying text + app URL ride along with the image in the share sheet. The URL is
+        // read from the page's canonical <link> (so it stays the public app URL even from a preview
+        // build, and brand-neutral for forks), falling back to the current origin.
+        const shareUrl =
+          document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href ||
+          `${location.origin}/`;
+        await navigator.share({
+          files: [file],
+          title: t('captureHud.share.sheetTitle'),
+          text: t('captureHud.share.sheetText'),
+          url: shareUrl,
+        });
       } else {
         downloadBlob(blob, fileName);
       }
@@ -340,12 +356,12 @@ export function CaptureHud({
     } finally {
       setBusy(false);
     }
-  }, [busy, onCapture, fileName, divertIfLocked]);
+  }, [busy, onCapture, fileName, divertIfLocked, t]);
 
   return (
     <div
       ref={hudRef}
-      className={`timeline-hud location-hud capture-hud${dragging ? ' thud-dragging' : ''}`}
+      className={`timeline-hud location-hud capture-hud${dragging ? ' thud-dragging' : ''}${collapsed ? ' is-collapsed' : ''}`}
       style={
         pos
           ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto', transform: 'none' }
@@ -377,16 +393,16 @@ export function CaptureHud({
             </span>
           }
         />
-        <button
-          type="button"
+        <TipBtn
           className="location-close"
-          onClick={onClose}
-          aria-label={t('captureHud.closeAria')}
+          onClick={() => setCollapsed((v) => !v)}
+          ariaPressed={!collapsed}
+          ariaLabel={t(collapsed ? 'common.hud.expand' : 'common.hud.collapse')}
+          title={t(collapsed ? 'common.hud.expand' : 'common.hud.collapse')}
+          hint={t('common.hud.collapseHint')}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-            <path d="M5 5l14 14M19 5L5 19" />
-          </svg>
-        </button>
+          <EyeIcon open={!collapsed} />
+        </TipBtn>
       </div>
 
       <div className="location-ls capture-hud-body">

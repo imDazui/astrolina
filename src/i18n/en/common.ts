@@ -28,5 +28,11 @@ export const common = {
     // Same "Double 🖱" pill, but for the floating windows (Location / Guides) that
     // recentre on double-click instead of docking — they have no dock home.
     recentreHint: 'to recentre',
+    // The eye on a tool window's header collapses its body to just the title bar (like the
+    // overlay nubs), to clear screen clutter without leaving the tool. Aria labels.
+    collapse: 'Collapse panel',
+    expand: 'Expand panel',
+    // Hover-tip hint under the collapse/expand eye (shared by both states).
+    collapseHint: 'Show or hide the controls.',
   },
 } as const;

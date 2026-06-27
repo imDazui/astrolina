@@ -4,7 +4,7 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { LsOriginPref } from '../../lib/overlayPrefs';
 import { useT } from '../../i18n';
@@ -28,7 +28,6 @@ const FLY_TO_ORIGIN_ZOOM = CLOSE_ZOOM;
 interface LocalSpaceHudProps {
   /** Fly the map camera to a coordinate at a given zoom (does not pin/relocate). */
   onFlyTo: (lat: number, lng: number, zoom?: number) => void;
-  onClose: () => void;
   lsOrigin: LsOriginPref;
   setLsOrigin: (o: LsOriginPref) => void;
   hideLsInbound: boolean;
@@ -121,6 +120,7 @@ function LsTipButton({
   className,
   onClick,
   ariaPressed,
+  ariaLabel,
   disabled,
   title,
   hint,
@@ -129,6 +129,8 @@ function LsTipButton({
   className: string;
   onClick: () => void;
   ariaPressed?: boolean;
+  /** For icon-only buttons whose children carry no text — gives the button an accessible name. */
+  ariaLabel?: string;
   disabled?: boolean;
   title: string;
   hint: string;
@@ -143,6 +145,7 @@ function LsTipButton({
         className={className}
         onClick={onClick}
         aria-pressed={ariaPressed}
+        aria-label={ariaLabel}
         disabled={disabled}
         onMouseEnter={show}
         onMouseLeave={hide}
@@ -162,7 +165,6 @@ function LsTipButton({
 // it off — so there's no separate show/hide toggle inside.
 export function LocalSpaceHud({
   onFlyTo,
-  onClose,
   lsOrigin,
   setLsOrigin,
   hideLsInbound,
@@ -172,6 +174,9 @@ export function LocalSpaceHud({
   localSpaceOrigin,
 }: LocalSpaceHudProps) {
   const { t } = useT();
+  // The header eye collapses the window to just its title bar (like the overlay nubs) to clear
+  // screen clutter — WITHOUT closing the tool (close it from the top nav / hotkey). Local UI state.
+  const [collapsed, setCollapsed] = useState(false);
   const hudRef = useRef<HTMLDivElement>(null);
   const { pos, dragging, handleProps } = useMovableHud(hudRef, {
     posKey: POS_KEY,
@@ -192,7 +197,7 @@ export function LocalSpaceHud({
   return (
     <div
       ref={hudRef}
-      className={`timeline-hud location-hud local-space-hud${dragging ? ' thud-dragging' : ''}`}
+      className={`timeline-hud location-hud local-space-hud${dragging ? ' thud-dragging' : ''}${collapsed ? ' is-collapsed' : ''}`}
       style={
         pos
           ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto', transform: 'none' }
@@ -224,16 +229,16 @@ export function LocalSpaceHud({
             </span>
           }
         />
-        <button
-          type="button"
+        <LsTipButton
           className="location-close"
-          onClick={onClose}
-          aria-label={t('localSpaceHud.closeAria')}
+          onClick={() => setCollapsed((v) => !v)}
+          ariaPressed={!collapsed}
+          ariaLabel={t(collapsed ? 'common.hud.expand' : 'common.hud.collapse')}
+          title={t(collapsed ? 'common.hud.expand' : 'common.hud.collapse')}
+          hint={t('common.hud.collapseHint')}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-            <path d="M5 5l14 14M19 5L5 19" />
-          </svg>
-        </button>
+          <EyeIcon open={!collapsed} />
+        </LsTipButton>
       </div>
 
       <div className="location-ls">

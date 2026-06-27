@@ -3414,7 +3414,6 @@ export default function App() {
               setTeleportTarget(target);
             }
           }}
-          onClose={() => setShowLocalSpace(false)}
           lsOrigin={lsOrigin}
           setLsOrigin={setLsOrigin}
           hideLsInbound={hideLsInbound}
@@ -3426,7 +3425,6 @@ export default function App() {
       )}
       {mapTool === 'capture' && (
         <CaptureHud
-          onClose={stopCapture}
           captureAspect={captureAspect}
           setCaptureAspect={setCaptureAspectPersist}
           captionFields={captureCaptionFields}

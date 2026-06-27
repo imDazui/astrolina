@@ -82,6 +82,20 @@
   color: var(--text-strong);
 }
 
+/* Collapsed via the header eye (Local Space + Capture windows): hide the body, drop the header's
+   divider, and shrink the window to just its title bar — a nub, like the overlay bars. The tool
+   stays active (closed from the top nav / hotkey); this only clears screen clutter. */
+.location-hud.is-collapsed {
+  width: max-content;
+  max-width: max-content;
+}
+.location-hud.is-collapsed .location-header {
+  border-bottom: none;
+}
+.location-hud.is-collapsed .location-ls {
+  display: none;
+}
+
 .location-search {
   display: flex;
   align-items: center;
