@@ -49,6 +49,16 @@
     0 0 0 9999px rgba(128, 128, 128, 0.6);
   transition: box-shadow 0.15s ease;
 }
+/* The scrim above dims the map OUTSIDE the frame. The floating HUD panels are frosted
+   (translucent + blurred backdrop), so that dim would otherwise show THROUGH any panel
+   overlapping the frame — a fixed dark rectangle across it. While composing a capture (root
+   flagged by App), make the panels opaque so the backdrop can't bleed through; this is how
+   they "stay bright above the scrim" in practice. */
+:root[data-capturing] .timeline-hud {
+  background: rgb(var(--bg-panel));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 /* Hide the zoom / compass controls (top-right) while composing a capture — they'd just
    clutter the frame. The map attribution / credits (bottom-right) stays: it's a real
    on-map disclosure the user is composing with, so it's part of the exported image. */

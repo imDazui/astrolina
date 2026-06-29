@@ -5,15 +5,24 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // Show/hide eye toggle icon: an open eye when shown, a slashed eye when hidden.
-// Shared by the Sidebar's tech-toggles and the timeline nub's bar toggle (strokes
-// in currentColor, so each host colours it). Keeps the `eye-icon` class for the
-// Sidebar's per-state styling.
-export function EyeIcon({ open }: { open: boolean }) {
+// Shared by the Sidebar's tech-toggles, the timeline nub's bar toggle, and the
+// Capture / Local Space windows (strokes in currentColor, so each host colours it).
+// `className` / `size` default to the Sidebar's `eye-icon` at 15px; the floating
+// windows pass `location-ls-eye` at 14px to match their toggles.
+export function EyeIcon({
+  open,
+  className = 'eye-icon',
+  size = 15,
+}: {
+  open: boolean;
+  className?: string;
+  size?: number;
+}) {
   return (
     <svg
-      className="eye-icon"
-      width="15"
-      height="15"
+      className={className}
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

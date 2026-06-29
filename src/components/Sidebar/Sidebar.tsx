@@ -317,7 +317,7 @@ function HintOption({
 // the rest of the settings use (ChoiceTip: title + hint, popped to the left), so
 // its shape matches every other hover in the panel rather than the shared
 // HoverTip's plainer, title-only box.
-function InfoTip({ title, hint }: { title: string; hint: string }) {
+export function InfoTip({ title, hint }: { title: string; hint: string }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLSpanElement>();
   return (
     <span
@@ -586,7 +586,7 @@ function HintMenuItem({
 // A compact km / mi switch shown in place of the orb-zone width field's label: two segments,
 // the active unit highlighted. The field's input carries its own aria-label, so this is just a
 // labelled button group.
-function UnitToggle({
+export function UnitToggle({
   unit,
   onChange,
   label,

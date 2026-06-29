@@ -314,12 +314,16 @@ function lsBadgeRadius(zoom: number): number {
 // pushes the long 'out' pills fully clear of each other (they crowd the ring at close azimuths,
 // and a capture still can't be panned to disambiguate them).
 const LS_BADGE_HALF_W = 34;
-const LS_BADGE_OUT_HALF_W = 78;
+const LS_BADGE_OUT_HALF_W = 66;
 const LS_BADGE_HALF_H = 11;
-// Breathing room added to EVERY pill's half-extents before the de-overlap, so crowded labels end up
-// with a visible GAP between them rather than just touching edge-to-edge (which still reads as
-// cramped/overlapping and is what "no breathing room" meant). 2× this is the min gap between any two.
-const LS_BADGE_GAP = 11;
+// A SMALL breathing margin added to every pill's half-extents before the de-overlap, so neighbours
+// clear by a hair rather than touching exactly. Kept tiny on purpose: a larger margin pushed crowded
+// labels so far off their lines (esp. with many planets enabled) that it was hard to tell which badge
+// belonged to which line. 2× this is the min gap between any two.
+const LS_BADGE_GAP = 1;
+// Closest a crowded label may slide toward the origin (px) — keeps a clear zone around the centre
+// where all the lines converge, so staggered labels never pile on the origin pin / compass hub.
+const LS_BADGE_MIN_RAD = 26;
 interface LocalSpaceBadge {
   key: string;
   x: number;
@@ -334,39 +338,64 @@ interface LocalSpaceBadge {
   azLabel: string;
 }
 
-// Spread overlapping badges apart — a few passes of AABB separation along the axis
-// of least overlap — so the LS labels stay readable/clickable when their azimuths
-// crowd. Each item carries its OWN half-extents (hw/hh) so wide pills (e.g. an LS
-// 'out' label with a bearing) separate by their real box, not a single nominal size.
-// Mutates x/y in place.
-function deOverlapBadges(
-  items: { x: number; y: number; hw: number; hh: number }[],
+// Resolve crowding among the LS labels by sliding each one ALONG ITS OWN LINE (the ray out from the
+// origin), never off it. A label's direction (dx,dy — a unit vector from the origin) is fixed; only
+// its RADIUS changes, so it always sits ON its line — just nearer to or farther from the centre.
+// Because the lines fan OUT from the origin, a bundle resolves by staggering radii: when two labels
+// overlap, the outer one moves further out and the inner one further in, and since the rays diverge
+// that radial offset clears them — the more labels pile up, the more line they use. A weak pull back
+// toward each label's rest radius (rad0, where its line meets the ring) keeps uncrowded labels on the
+// ring and stops the stagger from drifting. Each radius is bounded to [minRad, maxRad] so a label
+// never piles on the origin nor slides off-screen. Writes the resulting screen x/y back onto each item.
+function spreadLsBadgesRadial(
+  items: {
+    x: number;
+    y: number;
+    dx: number;
+    dy: number;
+    rad: number;
+    rad0: number;
+    minRad: number;
+    maxRad: number;
+    hw: number;
+    hh: number;
+  }[],
+  ocx: number,
+  ocy: number,
   iterations: number,
 ): void {
+  const ATTRACT = 0.15; // fraction of the way back to the rest radius reclaimed each pass
+  const seat = (it: (typeof items)[number]) => {
+    it.rad = Math.min(Math.max(it.rad, it.minRad), it.maxRad);
+    it.x = ocx + it.rad * it.dx;
+    it.y = ocy + it.rad * it.dy;
+  };
+  for (const it of items) seat(it);
   for (let iter = 0; iter < iterations; iter++) {
-    let moved = false;
+    for (const it of items) {
+      it.rad += (it.rad0 - it.rad) * ATTRACT;
+      seat(it);
+    }
     for (let i = 0; i < items.length; i++) {
       for (let j = i + 1; j < items.length; j++) {
         const a = items[i];
         const b = items[j];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const ox = a.hw + b.hw - Math.abs(dx);
-        const oy = a.hh + b.hh - Math.abs(dy);
+        const ox = a.hw + b.hw - Math.abs(b.x - a.x);
+        const oy = a.hh + b.hh - Math.abs(b.y - a.y);
         if (ox <= 0 || oy <= 0) continue;
-        moved = true;
-        if (ox < oy) {
-          const push = (ox / 2 + 0.5) * (dx < 0 ? -1 : 1);
-          a.x -= push;
-          b.x += push;
+        const mag = Math.min(ox, oy) / 2 + 0.5;
+        // Stagger along the rays: the already-outer label goes further out, the inner one further in.
+        if (a.rad >= b.rad) {
+          a.rad += mag;
+          b.rad -= mag;
         } else {
-          const push = (oy / 2 + 0.5) * (dy < 0 ? -1 : 1);
-          a.y -= push;
-          b.y += push;
+          a.rad -= mag;
+          b.rad += mag;
         }
+        seat(a);
+        seat(b);
       }
     }
-    if (!moved) break;
   }
 }
 
@@ -3104,30 +3133,41 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             });
           });
       }
-      const lsItems = lsbadges.map((b) => {
-        const s = lsSizes.get(b.key);
-        // Per-direction floor: the 'out' pill carries a bearing and runs much wider than the 'in'
-        // pill. The measured box (capture) can only WIDEN it — so the long 'out' pills separate
-        // properly even if the measurement is unavailable or under-reports.
-        const nominalHw = b.out ? LS_BADGE_OUT_HALF_W : LS_BADGE_HALF_W;
-        // + LS_BADGE_GAP on each extent so neighbours settle with a clear gap, not just touching.
-        return {
-          x: b.x,
-          y: b.y,
-          hw: Math.max(s?.hw ?? 0, nominalHw) + LS_BADGE_GAP,
-          hh: (s?.hh ?? LS_BADGE_HALF_H) + LS_BADGE_GAP,
-          ref: b,
-        };
-      });
-      // More passes than the ACG badges: the LS pills start crowded on a small ring, so a tight
-      // cluster needs extra iterations to fully migrate apart.
-      deOverlapBadges(lsItems, 40);
-      // Write the spread positions back, clamped fully on screen by each pill's OWN half-extents
-      // (deOverlapBadges has no viewport clamp; edge-hugged labels sit right at the inset). Matches
-      // the ACG badges' final clamp.
-      for (const it of lsItems) {
-        it.ref.x = Math.min(Math.max(it.x, BADGE_INSET + it.hw), w - BADGE_INSET - it.hw);
-        it.ref.y = Math.min(Math.max(it.y, BADGE_INSET + it.hh), h - BADGE_INSET - it.hh);
+      // De-overlap by sliding each label along its OWN line (the ray from the origin oc through its
+      // anchor): we fix the unit direction and let only the radius move, so a crowded fan staggers
+      // in/out along its lines instead of drifting off them. Only when the origin is on-screen — with
+      // it off-screen the rays don't define a sensible centre, so the edge-hugged anchors stand as-is.
+      const ocOnScreen = oc.x >= 0 && oc.x <= w && oc.y >= 0 && oc.y <= h;
+      if (ocOnScreen && lsbadges.length > 1) {
+        const lsItems = lsbadges.map((b) => {
+          const s = lsSizes.get(b.key);
+          // Per-direction floor (the 'out' pill carries a bearing, so it's much wider); the measured
+          // box (capture) can only WIDEN it. + LS_BADGE_GAP so neighbours clear by a hair.
+          const hw = Math.max(s?.hw ?? 0, b.out ? LS_BADGE_OUT_HALF_W : LS_BADGE_HALF_W) + LS_BADGE_GAP;
+          const hh = (s?.hh ?? LS_BADGE_HALF_H) + LS_BADGE_GAP;
+          const vx = b.x - oc.x;
+          const vy = b.y - oc.y;
+          const rad0 = Math.hypot(vx, vy) || 1; // rest radius: where this line meets the ring
+          const dx = vx / rad0;
+          const dy = vy / rad0;
+          // Farthest radius along this ray that keeps the badge box inside the inset viewport, so a
+          // label can slide all the way out to its line's edge but never off-screen (no extra clamp).
+          let tx = Infinity;
+          let ty = Infinity;
+          if (dx > 1e-6) tx = (w - BADGE_INSET - hw - oc.x) / dx;
+          else if (dx < -1e-6) tx = (BADGE_INSET + hw - oc.x) / dx;
+          if (dy > 1e-6) ty = (h - BADGE_INSET - hh - oc.y) / dy;
+          else if (dy < -1e-6) ty = (BADGE_INSET + hh - oc.y) / dy;
+          const maxRad = Math.max(rad0, Math.min(tx, ty));
+          const minRad = Math.min(rad0, LS_BADGE_MIN_RAD);
+          return { x: b.x, y: b.y, dx, dy, rad: rad0, rad0, minRad, maxRad, hw, hh, ref: b };
+        });
+        spreadLsBadgesRadial(lsItems, oc.x, oc.y, 60);
+        // Positions are already on-screen (bounded by maxRad along each ray) — write them straight back.
+        for (const it of lsItems) {
+          it.ref.x = it.x;
+          it.ref.y = it.y;
+        }
       }
     } else {
       setOriginScreen(null);

@@ -281,9 +281,9 @@ export const settings = {
     },
     chartLines: {
       title: 'Eclipse Chart',
-      // NOTE: deliberately describes only the wheel ring — the eclipse-time MAP lines
-      // are a hidden, Shift-click-only feature (see EclipseHud + the hidden-features
-      // log) and must not be hinted at here.
+      // NOTE: describes only the wheel ring — the eclipse-time MAP lines are a separate,
+      // off-by-default opt-in layer (see showEclipseMapLines in App.tsx) and aren't
+      // hinted at here.
       hint: 'The chart of the eclipse maximum — the sky framed at that instant — added to the chart wheel as a second ring beside the natal chart.',
     },
     isoStep: {

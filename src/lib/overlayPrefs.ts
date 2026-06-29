@@ -174,10 +174,9 @@ export function saveEclipseChart(show: boolean) {
   localStorage.setItem(ECLIPSE_CHART_KEY, show ? '1' : '0');
 }
 
-// HIDDEN FEATURE (cheat): the eclipse-time planet/angle lines on the MAP. Reachable
-// only by Shift+clicking the Eclipse-Chart toggle (see EclipseHud) — a plain click
-// shows the chart in the wheel but never draws these lines. Off by default, and not
-// surfaced anywhere in the UI. Catalogued in the project's hidden-features log.
+// The eclipse-time planet/angle lines on the MAP. Off by default and opt-in: a fork can
+// turn them on (e.g. from a dev console via the `astro:cheat` event in App.tsx) or just
+// default them on. A plain click on the Eclipse-Chart toggle only shows the wheel ring.
 export function loadEclipseMapLines(): boolean {
   return localStorage.getItem(ECLIPSE_MAP_LINES_KEY) === '1';
 }

@@ -10,8 +10,9 @@ import type { LsOriginPref } from '../../lib/overlayPrefs';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { HoverTip } from '../ui/HoverTip';
-import { ClickIcon } from '../ui/ClickIcon';
 import { useHoverTip } from '../ui/useHoverTip';
+import { EyeIcon } from '../ui/EyeIcon';
+import { HudHeader } from '../ui/HudHeader';
 import { CLOSE_ZOOM } from '../Map/Map';
 // Reuse the overlay bar's chrome (.timeline-hud) + the shared location-window styles
 // (.location-* classes), so the window frosts/recolors with the theme for free.
@@ -26,6 +27,8 @@ const POS_KEY = 'astro:localspace-pos:v1';
 const FLY_TO_ORIGIN_ZOOM = CLOSE_ZOOM;
 
 interface LocalSpaceHudProps {
+  /** Close the view entirely (turn Local Space off) — wired to the header's X. */
+  onClose: () => void;
   /** Fly the map camera to a coordinate at a given zoom (does not pin/relocate). */
   onFlyTo: (lat: number, lng: number, zoom?: number) => void;
   lsOrigin: LsOriginPref;
@@ -37,37 +40,6 @@ interface LocalSpaceHudProps {
   /** The point the local-space lines radiate from (pin or birthplace); null when
    *  there's nothing to anchor to — disables "Fly to origin". */
   localSpaceOrigin: { lat: number; lng: number } | null;
-}
-
-// Eye (shown) / eye-off (hidden) marker for the local-space toggles — mirrors the
-// sidebar's show/hide affordance; colour is inherited from the button via currentColor.
-function EyeIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      className="location-ls-eye"
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {open ? (
-        <>
-          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-          <circle cx="12" cy="12" r="3" />
-        </>
-      ) : (
-        <>
-          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-          <line x1="1" y1="1" x2="23" y2="23" />
-        </>
-      )}
-    </svg>
-  );
 }
 
 // The map-pin teardrop (same glyph as elsewhere in the UI) — shown in the "From the
@@ -164,6 +136,7 @@ function LsTipButton({
 // window's mere being-open draws the lines — opening it turns Local Space on, closing
 // it off — so there's no separate show/hide toggle inside.
 export function LocalSpaceHud({
+  onClose,
   onFlyTo,
   lsOrigin,
   setLsOrigin,
@@ -185,15 +158,6 @@ export function LocalSpaceHud({
     // offset a touch from the Teleport window so the two don't open exactly stacked.
     initial: () => ({ x: Math.round(effectiveCenterX() - 130), y: 144 }),
   });
-  // The grip's drag hint as the shared .ui-tip (portaled, so it isn't clipped by
-  // the window frame); points up from the header, hidden while dragging.
-  const {
-    ref: gripRef,
-    pos: gripTipPos,
-    show: showGripTip,
-    hide: hideGripTip,
-  } = useHoverTip<HTMLDivElement>('top');
-
   return (
     <div
       ref={hudRef}
@@ -204,42 +168,16 @@ export function LocalSpaceHud({
           : undefined
       }
     >
-      <div className="location-header">
-        <div
-          className="location-grip"
-          {...handleProps}
-          ref={gripRef}
-          onMouseEnter={showGripTip}
-          onMouseLeave={hideGripTip}
-        >
-          <span className="hud-grip" aria-hidden="true" />
-          <span className="location-title">{t('localSpaceHud.title')}</span>
-        </div>
-        <HoverTip
-          pos={dragging ? null : gripTipPos}
-          placement="top"
-          title={t('common.hud.dragToMove')}
-          hint={
-            <span className="hud-dock-line">
-              <span className="ui-tip-hotkey hud-dock-key">
-                {t('common.hud.dockKey')}
-                <ClickIcon className="hud-dock-icon" />
-              </span>
-              {t('common.hud.recentreHint')}
-            </span>
-          }
-        />
-        <LsTipButton
-          className="location-close"
-          onClick={() => setCollapsed((v) => !v)}
-          ariaPressed={!collapsed}
-          ariaLabel={t(collapsed ? 'common.hud.expand' : 'common.hud.collapse')}
-          title={t(collapsed ? 'common.hud.expand' : 'common.hud.collapse')}
-          hint={t('common.hud.collapseHint')}
-        >
-          <EyeIcon open={!collapsed} />
-        </LsTipButton>
-      </div>
+      <HudHeader
+        title={t('localSpaceHud.title')}
+        handleProps={handleProps}
+        dragging={dragging}
+        collapsed={collapsed}
+        onToggleCollapse={() => setCollapsed((v) => !v)}
+        onClose={onClose}
+        closeLabel={t('localSpaceHud.closeAria')}
+        closeHint={t('localSpaceHud.closeHint')}
+      />
 
       <div className="location-ls">
         {/* Origin: where the lines radiate from. Segmented (two options) rather than a
@@ -269,7 +207,7 @@ export function LocalSpaceHud({
           title={t('localSpaceHud.hideInbound.title')}
           hint={t('localSpaceHud.hideInbound.hint')}
         >
-          <EyeIcon open={!hideLsInbound} />
+          <EyeIcon open={!hideLsInbound} className="location-ls-eye" size={14} />
           <span className="location-ls-name">{t('localSpaceHud.hideInbound.title')}</span>
         </LsTipButton>
         <LsTipButton
@@ -279,7 +217,7 @@ export function LocalSpaceHud({
           title={t('localSpaceHud.hideCompass.title')}
           hint={t('localSpaceHud.hideCompass.hint')}
         >
-          <EyeIcon open={!hideLsCompass} />
+          <EyeIcon open={!hideLsCompass} className="location-ls-eye" size={14} />
           <span className="location-ls-name">{t('localSpaceHud.hideCompass.title')}</span>
         </LsTipButton>
         <LsTipButton

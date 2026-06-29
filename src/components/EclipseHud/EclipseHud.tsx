@@ -82,10 +82,9 @@ interface EclipseHudProps {
    *  the toggle flips this. */
   showChart: boolean;
   setShowChart: (v: boolean) => void;
-  /** HIDDEN FEATURE (cheat): the eclipse-time planet/angle LINES on the map. Reachable
-   *  only by Shift+clicking the same toggle — never surfaced in the UI. See the toggle's
-   *  onClick below and the project's hidden-features log. */
-  showMapLines: boolean;
+  /** The eclipse-time planet/angle LINES on the map (off by default, opt-in elsewhere —
+   *  see App.tsx). Not toggled from this HUD; exposed here only so a plain click that
+   *  turns the chart OFF can also clear the lines. */
   setShowMapLines: (v: boolean) => void;
   isoStep: EclipseIsoStep;
   setIsoStep: (s: EclipseIsoStep) => void;
@@ -113,7 +112,6 @@ export function EclipseHud({
   setShowNatalLines,
   showChart,
   setShowChart,
-  showMapLines,
   setShowMapLines,
   isoStep,
   setIsoStep,
@@ -647,17 +645,11 @@ export function EclipseHud({
                     {t('settings.eclipses.natalLines.title')}
                   </span>
                 </TipButton>
-                {/* The "Eclipse Chart" toggle. A PLAIN click toggles the eclipse chart
+                {/* The "Eclipse Chart" toggle. A plain click toggles the eclipse chart
                     as the overlay ring in the chart wheel (showChart) and never touches
-                    the map. Its eye/aria reflect that chart state — what a normal user
-                    sees and controls.
-
-                    HIDDEN FEATURE (cheat): holding SHIFT while clicking instead toggles
-                    the eclipse-time planet/angle LINES on the map (showMapLines), turning
-                    the chart on as needed to host them. This gesture is deliberately NOT
-                    advertised — the tip only ever describes the chart, never Shift — so
-                    under normal use the lines stay off the map. Catalogued in the
-                    project's hidden-features log; keep the two in sync. */}
+                    the map; its eye/aria reflect that chart state. The separate eclipse-
+                    time map LINES layer isn't toggled here (it's opt-in elsewhere — see
+                    App.tsx); turning the chart off does still clear it. */}
                 <TipButton
                   type="button"
                   className={`eclipse-hud-toggle ${showChart ? 'on' : 'off'}`}
@@ -666,19 +658,12 @@ export function EclipseHud({
                   hint={t('settings.eclipses.chartLines.hint')}
                   aria-label={t('settings.eclipses.chartLines.title')}
                   aria-pressed={showChart}
-                  onClick={(e) => {
-                    if (e.shiftKey) {
-                      // Cheat: reveal/hide the map lines (and ensure the chart is on).
-                      const next = !showMapLines;
-                      setShowMapLines(next);
-                      if (next) setShowChart(true);
-                    } else {
-                      // Normal: toggle the wheel-ring chart; a plain click never draws
-                      // the map lines, so clear them as the chart switches off.
-                      const next = !showChart;
-                      setShowChart(next);
-                      if (!next) setShowMapLines(false);
-                    }
+                  onClick={() => {
+                    // Toggle the wheel-ring chart; a plain click never draws the map
+                    // lines, so clear them as the chart switches off (the hide path).
+                    const next = !showChart;
+                    setShowChart(next);
+                    if (!next) setShowMapLines(false);
                   }}
                 >
                   <EyeIcon open={showChart} />

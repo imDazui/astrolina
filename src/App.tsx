@@ -716,10 +716,10 @@ export default function App() {
   const [showEclipseChart, setShowEclipseChart] = useState(() =>
     loadEclipseChart(),
   );
-  // HIDDEN FEATURE (cheat): the eclipse-time planet/angle LINES on the map. Decoupled
-  // from the chart above so a normal click shows the wheel ring WITHOUT the map lines;
-  // only a Shift+click on the same toggle flips this on (see EclipseHud + the
-  // hidden-features log). Off by default.
+  // The eclipse-time planet/angle LINES on the map. Decoupled from the chart above so a
+  // plain click shows the wheel ring WITHOUT the map lines. Off by default and opt-in —
+  // a fork can enable them (e.g. from a dev console via the `astro:cheat` event handled
+  // below) or default them on. Turning the chart off clears these again.
   const [showEclipseMapLines, setShowEclipseMapLines] = useState(() =>
     loadEclipseMapLines(),
   );
@@ -1129,6 +1129,22 @@ export default function App() {
     // keydown closure reads it lazily (post-commit), so it's intentionally left out of
     // the deps — listing it here would touch its temporal dead zone during render.
   }, [current, pinned, toggleSlide, advancedWheel, lineSystem]);
+
+  // Optional opt-in seam for the eclipse-time map LINES (off by default). A fork can
+  // dispatch `window.dispatchEvent(new CustomEvent('astro:cheat', { detail: { id:
+  // 'eclipse-map-lines' } }))` — e.g. from a dev console — to reveal them. Reveal only;
+  // to hide, a plain click on the Eclipse-Chart toggle (which clears the lines).
+  useEffect(() => {
+    const onCheat = (e: Event) => {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (id === 'eclipse-map-lines') {
+        setShowEclipseChart(true);
+        setShowEclipseMapLines(true);
+      }
+    };
+    window.addEventListener('astro:cheat', onCheat);
+    return () => window.removeEventListener('astro:cheat', onCheat);
+  }, []);
 
   // Turning Advanced OFF deactivates any advanced-only feature that's active (Slide tool,
   // Local Space view, Synastry/Eclipses overlays) so nothing advanced-only lingers without
@@ -1915,8 +1931,8 @@ export default function App() {
       // The eclipse CHART: the sky at the eclipse maximum as a transit overlay pinned
       // to that instant. This layer feeds the bi-wheel's overlay ring; whether its
       // planet/angle lines also reach the MAP is gated separately (mapOverlay, below)
-      // behind the hidden Shift cheat. (resolvedEclipse non-null implies the lazy
-      // eclipses module is in.)
+      // by the opt-in showEclipseMapLines flag. (resolvedEclipse non-null implies the
+      // lazy eclipses module is in.)
       if (!showEclipseChart || !resolvedEclipse || !eclipsesMod) return null;
       return buildOverlay(
         current,
@@ -2072,12 +2088,12 @@ export default function App() {
   }, [overlayLayer, visiblePlanets, visibleLineTypes, effShowParans, lsActive, hideLsInbound, effShowOverlayZenith, coordSystem, lineSystem, theme]);
 
   // The overlay layer as it reaches the MAP (and the plugin context). For every mode
-  // it's just `overlay`, EXCEPT the eclipses mode, where the eclipse-time lines are a
-  // HIDDEN FEATURE (cheat): withheld from the map unless showEclipseMapLines is on
-  // (a Shift+click on the Eclipse-Chart toggle — see EclipseHud + the hidden-features
-  // log). The wheel's overlay ring is unaffected — it reads overlayLayer directly — so
-  // a plain click still shows the eclipse chart in the wheel, just never on the map.
-  // Withheld from the plugin context too, so a plugin can't act on lines no one can see.
+  // it's just `overlay`, EXCEPT the eclipses mode, where the eclipse-time lines are
+  // withheld from the map unless showEclipseMapLines is on (off by default, opt-in —
+  // see the showEclipseMapLines state + the `astro:cheat` seam above). The wheel's
+  // overlay ring is unaffected — it reads overlayLayer directly — so the eclipse chart
+  // still shows in the wheel, just never on the map. Withheld from the plugin context
+  // too, so a plugin can't act on lines no one can see.
   const mapOverlay =
     overlayMode === 'eclipses' && !showEclipseMapLines ? null : overlay;
 
@@ -2347,6 +2363,17 @@ export default function App() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (resolved) setMeasureColor(resolved);
   }, [coordSource, theme]);
+
+  // While the Capture frame is armed, flag the root so the floating HUD panels can go opaque
+  // (see Map.css). Otherwise the frame's viewfinder scrim — a dim OUTSIDE the frame — bleeds
+  // through the panels' frosted backdrop, reading as a fixed dark rectangle wherever a panel
+  // overlaps the frame edge.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (mapTool === 'capture') root.setAttribute('data-capturing', '1');
+    else root.removeAttribute('data-capturing');
+    return () => root.removeAttribute('data-capturing');
+  }, [mapTool]);
 
   // A composite's wheel angles are independent shorter-arc midpoints of the two
   // parents' own angles/cusps (à la Robert Hand) — so BOTH the Ascendant and the
@@ -3376,7 +3403,6 @@ export default function App() {
           setShowNatalLines={setShowEclipseNatalLines}
           showChart={showEclipseChart}
           setShowChart={setShowEclipseChart}
-          showMapLines={showEclipseMapLines}
           setShowMapLines={setShowEclipseMapLines}
           isoStep={eclipseIsoStep}
           setIsoStep={setEclipseIsoStep}
@@ -3405,6 +3431,7 @@ export default function App() {
       )}
       {showLocalSpace && (
         <LocalSpaceHud
+          onClose={() => setShowLocalSpaceSafe(false)}
           // Fly-to-origin reuses the teleport hop (camera + the back/forward stash),
           // so a jump to the origin can be undone from the Teleport window / Backspace.
           onFlyTo={(lat, lng, zoom) => {
@@ -3425,6 +3452,7 @@ export default function App() {
       )}
       {mapTool === 'capture' && (
         <CaptureHud
+          onClose={() => setMapTool('off')}
           captureAspect={captureAspect}
           setCaptureAspect={setCaptureAspectPersist}
           captionFields={captureCaptionFields}

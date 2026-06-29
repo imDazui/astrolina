@@ -11,6 +11,7 @@
 export const captureHud = {
   title: 'Capture',
   closeAria: 'Close Capture',
+  closeHint: 'Close the Capture tool.',
   aspect: {
     label: 'Frame',
     square: '1:1',

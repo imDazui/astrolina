@@ -11,6 +11,7 @@
 export const localSpaceHud = {
   title: 'Local Space',
   closeAria: 'Close Local Space',
+  closeHint: 'Turn off the local-space view.',
   lsOrigin: {
     pin: 'From the pin',
     pinHint:

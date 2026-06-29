@@ -1,0 +1,27 @@
+/* AstroLina: web-based astrocartography for curious minds.
+   Copyright (C) 2026 AstroLina <https://astrolina.org>
+   SPDX-License-Identifier: AGPL-3.0-only */
+
+/* The Capture / Local Space / City Report / Activations window header (HudHeader). It rides
+   the base .location-header chrome (flex row, padding, divider) and only changes the
+   arrangement: the collapse eye sits right beside the title, then a draggable stretch pushes
+   the close (X) to the far corner. Scoped to .hud-header so the base .location-grip (flex:1)
+   that Teleport's header relies on is left untouched. */
+.hud-header > .location-grip {
+  flex: 0 1 auto;
+}
+/* The empty stretch is a second drag handle (see HudHeader.tsx), so the whole bar drags like
+   Teleport / Guides. align-self: stretch gives the otherwise-empty element a full-height
+   hit area; cursor + touch-action + user-select mirror .location-grip. */
+.hud-header-drag {
+  flex: 1 1 auto;
+  min-width: 8px;
+  align-self: stretch;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.hud-header-drag:active {
+  cursor: grabbing;
+}

@@ -18,7 +18,8 @@ import { captureExportGate } from '../../lib/captureGate';
 import { useTouchLayout } from '../../lib/touch';
 import { useHoverTip } from '../ui/useHoverTip';
 import { HoverTip } from '../ui/HoverTip';
-import { ClickIcon } from '../ui/ClickIcon';
+import { EyeIcon } from '../ui/EyeIcon';
+import { HudHeader } from '../ui/HudHeader';
 // Reuse the overlay bar's chrome (.timeline-hud) + the shared location-window styles,
 // so the window frosts/recolors with the theme for free; CaptureHud.css adds the rest.
 import '../TimelineHud/TimelineHud.css';
@@ -72,36 +73,6 @@ function downloadBlob(blob: Blob, name: string): void {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-// Show / hide eye for the caption-field toggles (mirrors the sidebar / Local Space affordance).
-function EyeIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      className="location-ls-eye"
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {open ? (
-        <>
-          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-          <circle cx="12" cy="12" r="3" />
-        </>
-      ) : (
-        <>
-          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-          <line x1="1" y1="1" x2="23" y2="23" />
-        </>
-      )}
-    </svg>
-  );
 }
 
 function DownloadIcon() {
@@ -182,6 +153,8 @@ function TipBtn({
 }
 
 interface CaptureHudProps {
+  /** Close the tool entirely (exit Capture) — wired to the header's X. */
+  onClose: () => void;
   /** Current capture-frame aspect ratio (width / height); drives the map's frame. */
   captureAspect: number;
   /** Pick an aspect preset (persisted by App). */
@@ -204,6 +177,7 @@ interface CaptureHudProps {
 }
 
 export function CaptureHud({
+  onClose,
   captureAspect,
   setCaptureAspect,
   captionFields,
@@ -225,13 +199,6 @@ export function CaptureHud({
     floating: true,
     initial: () => ({ x: Math.round(effectiveCenterX() - 130), y: 144 }),
   });
-  const {
-    ref: gripRef,
-    pos: gripTipPos,
-    show: showGripTip,
-    hide: hideGripTip,
-  } = useHoverTip<HTMLDivElement>('top');
-
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -368,42 +335,16 @@ export function CaptureHud({
           : undefined
       }
     >
-      <div className="location-header">
-        <div
-          className="location-grip"
-          {...handleProps}
-          ref={gripRef}
-          onMouseEnter={showGripTip}
-          onMouseLeave={hideGripTip}
-        >
-          <span className="hud-grip" aria-hidden="true" />
-          <span className="location-title">{t('captureHud.title')}</span>
-        </div>
-        <HoverTip
-          pos={dragging ? null : gripTipPos}
-          placement="top"
-          title={t('common.hud.dragToMove')}
-          hint={
-            <span className="hud-dock-line">
-              <span className="ui-tip-hotkey hud-dock-key">
-                {t('common.hud.dockKey')}
-                <ClickIcon className="hud-dock-icon" />
-              </span>
-              {t('common.hud.recentreHint')}
-            </span>
-          }
-        />
-        <TipBtn
-          className="location-close"
-          onClick={() => setCollapsed((v) => !v)}
-          ariaPressed={!collapsed}
-          ariaLabel={t(collapsed ? 'common.hud.expand' : 'common.hud.collapse')}
-          title={t(collapsed ? 'common.hud.expand' : 'common.hud.collapse')}
-          hint={t('common.hud.collapseHint')}
-        >
-          <EyeIcon open={!collapsed} />
-        </TipBtn>
-      </div>
+      <HudHeader
+        title={t('captureHud.title')}
+        handleProps={handleProps}
+        dragging={dragging}
+        collapsed={collapsed}
+        onToggleCollapse={() => setCollapsed((v) => !v)}
+        onClose={onClose}
+        closeLabel={t('captureHud.closeAria')}
+        closeHint={t('captureHud.closeHint')}
+      />
 
       <div className="location-ls capture-hud-body">
         <div className="capture-hud-label">{t('captureHud.aspect.label')}</div>
@@ -454,7 +395,7 @@ export function CaptureHud({
                 title={t(`captureHud.extras.${k}`)}
                 hint={t(`captureHud.extras.${k}Hint`)}
               >
-                <EyeIcon open={extras[k]} />
+                <EyeIcon open={extras[k]} className="location-ls-eye" size={14} />
                 <span className="location-ls-name">{t(`captureHud.extras.${k}`)}</span>
               </TipBtn>
             ))}
@@ -472,7 +413,7 @@ export function CaptureHud({
               title={t(`captureHud.caption.${k}`)}
               hint={t(`captureHud.caption.${k}Hint`)}
             >
-              <EyeIcon open={captionFields[k]} />
+              <EyeIcon open={captionFields[k]} className="location-ls-eye" size={14} />
               <span className="location-ls-name">{t(`captureHud.caption.${k}`)}</span>
             </TipBtn>
           ))}
