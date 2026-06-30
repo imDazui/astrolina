@@ -2978,6 +2978,18 @@ export default function App() {
       return next;
     });
   }, []);
+  // Force a registered extension OPEN (vs. the toggle above) — handed to extensions via the
+  // context as openExtension, e.g. a map overlay opening its companion HUD on a marker click.
+  const openExtensionById = useCallback((id: string) => {
+    setOpenExtensions((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      const ext = getMapExtensions().find((e) => e.id === id);
+      if (ext?.storageKey) localStorage.setItem(ext.storageKey, '1');
+      return next;
+    });
+  }, []);
 
   // ── Tools-menu extensions ─────────────────────────────────────────────────
   // Same machinery as the Map-HUD extensions above, surfaced in the Tools dropdown
@@ -3039,7 +3051,9 @@ export default function App() {
   const extensionCtx = useMemo<MapExtensionContext>(
     () => ({
       current,
+      partner,
       jd,
+      targetDate,
       pinned,
       pinnedLabel,
       visiblePlanets,
@@ -3059,10 +3073,13 @@ export default function App() {
       // drives a core overlay mode also clears any active extension overlay — preserving
       // the Overlay menu's single-select invariant.
       setOverlayMode: selectOverlay,
+      openExtension: openExtensionById,
     }),
     [
       current,
+      partner,
       jd,
+      targetDate,
       pinned,
       pinnedLabel,
       visiblePlanets,
@@ -3079,6 +3096,7 @@ export default function App() {
       hideNatalLinework,
       extFlyTo,
       selectOverlay,
+      openExtensionById,
     ],
   );
 
@@ -3086,6 +3104,7 @@ export default function App() {
     <>
       <Map
         ref={mapRef}
+        overlayCtx={extensionCtx}
         lines={hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines}
         // Natal-only by design; when the overlay is promoted the natal chart is
         // hidden, so its derived aspect/midpoint lines hide with it.

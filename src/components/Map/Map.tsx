@@ -53,6 +53,9 @@ import {
 } from '../../lib/mapProjection';
 import { ensureGlyphImages, STAR_MARK_IMAGE, ZENITH_GLYPH_PREFIX, NADIR_GLYPH_PREFIX } from './glyphImages';
 import { applyDetailToggles } from './basemapStyle';
+import { MapOverlayHost } from './MapOverlayHost';
+import { MAP_CLICK_EVENT, type MapClickDetail } from '../../lib/extensions/mapOverlays';
+import type { MapExtensionContext } from '../../lib/extensions/mapExtensions';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { bindTouchTip, tipPosFor, type TipPos } from '../ui/useHoverTip';
 import {
@@ -1209,6 +1212,9 @@ interface MapProps {
    *  used while the zoom onboarding guide is open, so its click mission stays doable
    *  after the user zooms back out. */
   keepZoomOutVisible?: boolean;
+  /** The read-only map/chart snapshot handed to registered map overlays (registerMapOverlay),
+   *  rendered as positioned DOM inside the frame by MapOverlayHost. Omit to draw no overlays. */
+  overlayCtx?: MapExtensionContext;
 }
 
 interface MapData {
@@ -2343,6 +2349,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   onRightClick,
   onMapClick,
   onDetailZoomChange,
+  overlayCtx,
 }: MapProps, ref) {
   const { t, labels } = useT();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2817,6 +2824,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // out while moving — anchored to the screen edges, they read as detached from their
   // lines in motion — and fade back in, repositioned, once it settles.
   const [mapMoving, setMapMoving] = useState(false);
+  // Flips true once the map style has loaded — re-renders so MapOverlayHost (which reads
+  // the internal map ref, set in an effect that doesn't itself re-render) gets a live instance.
+  const [mapReady, setMapReady] = useState(false);
   // Current map zoom — gates the local-horizon compass and drives its scale + fade.
   const [zoom, setZoom] = useState(0);
   // Screen position of the local-space origin — the centre of the horizon compass.
@@ -3371,6 +3381,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // basemap of its own). A no-op online.
       if (!navigator.onLine) void installWorldFallback(map, themeRef.current);
       computeBadgesRef.current();
+      // The internal map ref is live now — let MapOverlayHost subscribe to a real instance.
+      setMapReady(true);
     });
 
     // Edge labels fade out while the camera animates and fade back in once it settles
@@ -3703,6 +3715,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // Any map click can surface onboarding missions (the handler itself decides
       // whether anything is due).
       onMapClick?.();
+      // Neutral broadcast of the clicked coordinate for any feature that wants tap-to-act
+      // (e.g. an overlay's tap-to-tag). Fired for every plain click; listeners that don't
+      // care ignore it. Pin placement stays a double-tap, so this never competes with it.
+      window.dispatchEvent(
+        new CustomEvent<MapClickDetail>(MAP_CLICK_EVENT, {
+          detail: { lat: e.lngLat.lat, lng: e.lngLat.lng },
+        }),
+      );
       // A click on (or near) a zenith stamp flies to it — and clicking the stamp
       // again flies back (the same toggle the label badge uses, sharing one key per
       // zenith). Natal stamps key off '' ; overlay stamps key off the overlay tag, so
@@ -4903,6 +4923,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           );
         })}
       </div>
+      {/* Registered map overlays (registerMapOverlay) — positioned DOM drawn inside the
+          frame and re-projected on every camera move. Add-ons attach here with no edits to
+          this file; rendered only when an overlay context is supplied. */}
+      {overlayCtx && (
+        <MapOverlayHost mapRef={mapRef} ready={mapReady} moving={mapMoving} ctx={overlayCtx} />
+      )}
       {!hideCompass && compassP !== null && originScreen && (
         <LocalHorizonWheel
           cx={originScreen.x}

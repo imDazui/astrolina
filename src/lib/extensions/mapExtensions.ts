@@ -30,7 +30,12 @@ import type { ZodiacMode } from '../astro/ayanamsa';
  */
 export interface MapExtensionContext {
   current: StoredChart | null;
+  /** The active synastry partner chart, if a relationship overlay is in play; else null. */
+  partner: StoredChart | null;
   jd: number;
+  /** The current timeline instant (epoch ms) the overlay is set to (the value behind
+   *  `setTargetDate`), so a HUD/overlay can capture or display "the moment on screen". */
+  targetDate: number;
   pinned: { lat: number; lng: number } | null;
   pinnedLabel: string | null;
   visiblePlanets: ReadonlySet<PlanetName>;
@@ -57,6 +62,9 @@ export interface MapExtensionContext {
   setTargetDate: (epochMs: number) => void;
   /** Switch the active time-overlay mode (e.g. start a transits overlay). */
   setOverlayMode: (mode: OverlayMode) => void;
+  /** Open a registered map-HUD extension by id (no-op if unknown / already open). Lets a
+   *  map overlay surface its companion HUD — e.g. clicking a marker opens its window. */
+  openExtension: (id: string) => void;
 }
 
 /** 'core' is always available; 'gated' is subject to the entitlement resolver. */
