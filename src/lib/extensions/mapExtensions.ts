@@ -22,6 +22,35 @@ import type { OverlayMode } from '../astro/timeline';
 import type { PlanetName, NodeType, HouseSystem } from '../ephemeris';
 import type { ZodiacMode } from '../astro/ayanamsa';
 
+/** The COMPLETE line set — every planet, line type, and family (natal angular + aspects +
+ *  midpoints + parans + star lines + local space, and the active overlay's equivalents) — with the
+ *  current visibility filters and Advanced toggles IGNORED. Built on demand by
+ *  {@link MapExtensionContext.collectAllLines}. Families are generic FeatureCollections like the
+ *  rest of the ctx linework (narrow at the boundary). Overlay families are null when no overlay. */
+export interface AllLines {
+  lines: FeatureCollection;
+  angleLines: FeatureCollection;
+  parans: FeatureCollection;
+  starLines: FeatureCollection;
+  localSpace: FeatureCollection;
+  overlayLines: FeatureCollection | null;
+  overlayParans: FeatureCollection | null;
+  overlayLocalSpace: FeatureCollection | null;
+}
+
+/** A point-and-radius "spotlight" on the linework — a neutral view treatment, not tied to any
+ *  one feature: it dims the basemap and shows only the line features within `radiusKm` of
+ *  `center`. A null `center` means "aiming" — dim + hide ALL lines; passing the whole object as
+ *  null clears the spotlight (the normal map). Applied via {@link MapExtensionContext.setLineSpotlight}. */
+export interface LineSpotlight {
+  center: { lat: number; lng: number } | null;
+  radiusKm: number;
+  /** The full line set to reveal within the radius (from {@link MapExtensionContext.collectAllLines}),
+   *  so the reveal shows EVERY line near the point regardless of the user's filters. When absent, the
+   *  reveal falls back to the effective (currently-drawn) linework. Null/absent while aiming. */
+  lines?: AllLines | null;
+}
+
 /**
  * A read-only snapshot of map/chart state plus action callbacks, handed to each
  * open HUD extension on render. Read state from here; change the app only through
@@ -56,6 +85,14 @@ export interface MapExtensionContext {
   starParans: FeatureCollection;
   overlayLines: FeatureCollection | null;
   overlayParans: FeatureCollection | null;
+  /** Effective drawn local-space lines (great circles from the chart's origin), with any active
+   *  line spotlight already applied. Empty unless the Local Space view is on. */
+  localSpace: FeatureCollection;
+  /** Effective drawn fixed-star lines (star MC/IC/ASC/DSC) — distinct from the report-only
+   *  `starParans` above, which never draw as map lines. Empty unless the Fixed Stars layer is on. */
+  starLines: FeatureCollection;
+  /** The active overlay's local-space lines, if any (null when no overlay, or none drawn). */
+  overlayLocalSpace: FeatureCollection | null;
   /** Fly the map camera to a point. */
   flyTo: (lat: number, lng: number, zoom?: number) => void;
   /** Set the timeline to an instant (epoch milliseconds). */
@@ -65,6 +102,21 @@ export interface MapExtensionContext {
   /** Open a registered map-HUD extension by id (no-op if unknown / already open). Lets a
    *  map overlay surface its companion HUD — e.g. clicking a marker opens its window. */
   openExtension: (id: string) => void;
+  /** Force-open a registered Tools-menu extension by id (single-select — closes any other open
+   *  tool and disarms any built-in; no-op if it's already the only open tool). The Tools twin of
+   *  {@link openExtension}: lets one HUD launch a companion tool — e.g. a HUD opening a map tool
+   *  already positioned at a chosen point. */
+  openTool: (id: string) => void;
+  /** Focus the linework to a radius around a point: dims the basemap and reveals only the lines
+   *  passing within `radiusKm` of the spotlight's `center` (a null center dims + hides all lines;
+   *  passing null clears it). Everything else on the map is untouched — purely a view treatment. */
+  setLineSpotlight: (spotlight: LineSpotlight | null) => void;
+  /** Generate the COMPLETE line set (all planets, line types, and families — aspects, midpoints,
+   *  parans, star lines, local space, and the active overlay's equivalents), IGNORING the current
+   *  visibility filters and Advanced toggles. Expensive (midpoints are quadratic) — call on demand
+   *  (e.g. once per point query), never per frame. Pair with `setLineSpotlight({ ..., lines })` to
+   *  reveal the full set on the map, and read it for a "which lines are near here" list. */
+  collectAllLines: () => AllLines;
 }
 
 /** 'core' is always available; 'gated' is subject to the entitlement resolver. */

@@ -6,7 +6,7 @@
 
 // The Capture watermark seam. The open core stamps a neutral text credit
 // ("astrolina.org", in the app's system font) on every exported image — this doubles
-// as the AGPL 7(b) attribution. A downstream build (e.g. the Pro edition) can replace
+// as the AGPL 7(b) attribution. A downstream build can replace
 // it with its own wordmark + display font by calling setCaptureBrand() at startup, the
 // same way it installs the entitlement / plan resolvers — touching no core file.
 import type { ReactNode } from 'react';

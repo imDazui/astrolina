@@ -133,7 +133,7 @@
 }
 /* The export watermark. The open core stamps a plain "astrolina.org" credit in the
    inherited system font — deliberately NO font-family / text-transform / letter-spacing
-   here, so a downstream build (Pro) can layer those on for its wordmark without a
+   here, so a downstream build can layer those on for its wordmark without a
    specificity fight. White letters for legibility over the map. */
 .capture-watermark {
   position: absolute;

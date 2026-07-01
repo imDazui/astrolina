@@ -894,8 +894,8 @@
    above on touch. */
 @media (pointer: coarse) {
   /* ONLY the actual bottom overlay bar. MANY surfaces reuse the .timeline-hud chrome class — the
-     top-nav bar + its tool readout, and the movable windows (Local Space, Teleport, City Report,
-     Hit List). Width-forcing all of them stretched the measure readout AND blew the movable
+     top-nav bar + its tool readout, and the movable windows (Local Space, Teleport, and any
+     downstream add-on windows). Width-forcing all of them stretched the measure readout AND blew the movable
      windows out to the bar's min-width (~600px). The positive .thud-bar marker (set ONLY on the
      TimelineHud root) scopes this to the real overlay bar, robust to any new .timeline-hud reuser. */
   /* Lift above the profile box (z-20) — including the collapsed nub — so it's never hidden behind

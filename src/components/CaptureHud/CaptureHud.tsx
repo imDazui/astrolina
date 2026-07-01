@@ -208,10 +208,10 @@ export function CaptureHud({
   const [canShareFiles] = useState(canShareImageFiles);
   const supportsShare = touchLayout && canShareFiles;
 
-  // Optional downstream gate (e.g. Pro makes export an Advanced-account feature). While the user is
+  // Optional downstream gate (e.g. a build makes export an account-only feature). While the user is
   // locked the three actions divert to the gate's upsell (the account takeover, see divertIfLocked).
   // Whenever a gate is installed AT ALL, their tips carry the ADV tag — so export reads as advanced-
-  // gated even once the user has reached Advanced/Pro, matching the timeline/overlay toggles and the
+  // gated even once the user is entitled, matching the timeline/overlay toggles and the
   // sync badge. Ungated builds (open core) get null → no tag, export free, behaving as before.
   const exportGated = captureExportGate() != null;
   // Funnel every export through this first: if locked, run the gate's action and tell the caller

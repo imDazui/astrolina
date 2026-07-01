@@ -8,8 +8,11 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import {
   getMapExtensions,
   isEntitled,
+  type AllLines,
+  type LineSpotlight,
   type MapExtensionContext,
 } from './lib/extensions/mapExtensions';
+import { filterWithinKm } from './lib/lineProximity';
 import { getToolExtensions } from './lib/extensions/toolExtensions';
 import { getOverlayExtensions } from './lib/extensions/overlayExtensions';
 // Shared entitlement for the Tools + Overlay seams (see lib/extensions/entitlement).
@@ -1117,17 +1120,27 @@ export default function App() {
           const ext = getMapExtensions().find(
             (x) => x.hotkey?.toLowerCase() === e.key.toLowerCase() && isEntitled(x),
           );
-          if (!ext) return;
-          toggleExtension(ext.id);
+          if (ext) {
+            toggleExtension(ext.id);
+            break;
+          }
+          // Likewise a registered TOOL extension (Tools menu) may claim a hotkey — toggle it,
+          // gated by the shared addon resolver. (Tools are mutually exclusive; toggleTool disarms
+          // the others.)
+          const tool = getToolExtensions().find(
+            (x) => x.hotkey?.toLowerCase() === e.key.toLowerCase() && isAddonEntitled(x),
+          );
+          if (!tool) return;
+          toggleTool(tool.id);
         }
       }
       e.preventDefault();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-    // toggleExtension is a stable useCallback declared later in this component; the
-    // keydown closure reads it lazily (post-commit), so it's intentionally left out of
-    // the deps — listing it here would touch its temporal dead zone during render.
+    // toggleExtension / toggleTool are stable useCallbacks declared later in this component; the
+    // keydown closure reads them lazily (post-commit), so they're intentionally left out of the
+    // deps — listing them here would touch their temporal dead zone during render.
   }, [current, pinned, toggleSlide, advancedWheel, lineSystem]);
 
   // Optional opt-in seam for the eclipse-time map LINES (off by default). A fork can
@@ -3003,17 +3016,62 @@ export default function App() {
     }
     return open;
   });
+  // Mirror openTools into a ref so toggleTool can stay STABLE — the once-bound global keydown handler
+  // reads it lazily, and a tool's hotkey needs the CURRENT open-state to toggle right.
+  const openToolsRef = useRef(openTools);
+  useEffect(() => {
+    openToolsRef.current = openTools;
+  }, [openTools]);
+  // Tools are mutually exclusive — one at a time, like the built-in Measure/Slide/Capture. Opening a
+  // tool extension single-selects it (closes any other open extension) AND disarms any armed built-in
+  // tool; the reverse (arming a built-in closes open extensions) is the effect below. Generic — works
+  // for any registered tool, no per-tool wiring.
   const toggleTool = useCallback((id: string) => {
+    const cur = openToolsRef.current;
+    const nowOpen = !cur.has(id);
+    if (nowOpen) setMapTool('off'); // opening a tool disarms any armed built-in tool
+    const next = nowOpen ? new Set([id]) : new Set([...cur].filter((x) => x !== id));
+    for (const ext of getToolExtensions()) {
+      if (ext.storageKey) localStorage.setItem(ext.storageKey, next.has(ext.id) ? '1' : '0');
+    }
+    setOpenTools(next);
+  }, []);
+
+  // Force a tool extension OPEN (vs. the toggle above) — handed to extensions via the context as
+  // openTool, e.g. one HUD launching a companion tool positioned at a chosen point. Single-select
+  // (closes any other open tool) and disarms any armed built-in, mirroring toggleTool's open path.
+  const openToolById = useCallback((id: string) => {
+    setMapTool('off');
     setOpenTools((prev) => {
-      const next = new Set(prev);
-      const nowOpen = !next.has(id);
-      if (nowOpen) next.add(id);
-      else next.delete(id);
-      const ext = getToolExtensions().find((e) => e.id === id);
-      if (ext?.storageKey) localStorage.setItem(ext.storageKey, nowOpen ? '1' : '0');
+      if (prev.size === 1 && prev.has(id)) return prev; // already the only open tool
+      const next = new Set([id]);
+      for (const ext of getToolExtensions()) {
+        if (ext.storageKey) localStorage.setItem(ext.storageKey, next.has(ext.id) ? '1' : '0');
+      }
       return next;
     });
   }, []);
+
+  // Arming a built-in tool closes any open tool extension, so only ONE tool is ever active. One-way
+  // (clearing extensions can't re-arm a built-in), so it can't loop with toggleTool's disarm above.
+  useEffect(() => {
+    if (mapTool === 'off') return;
+    setOpenTools((prev) => {
+      if (prev.size === 0) return prev;
+      for (const ext of getToolExtensions()) {
+        if (prev.has(ext.id) && ext.storageKey) localStorage.setItem(ext.storageKey, '0');
+      }
+      return new Set<string>();
+    });
+  }, [mapTool]);
+
+  // While ANY map tool is active (a built-in armed tool OR an open tool extension), tag the document
+  // so click-catching map overlays can opt out — e.g. the journal markers stop opening their window
+  // on click, letting the tool own the gesture (the click falls through to that spot). Neutral signal.
+  useEffect(() => {
+    const active = mapTool !== 'off' || getToolExtensions().some((ext) => openTools.has(ext.id));
+    document.documentElement.toggleAttribute('data-map-tool-active', active);
+  }, [mapTool, openTools]);
 
   // ── Overlay-menu extensions ───────────────────────────────────────────────
   // Single-select, mutually exclusive with the core overlayMode. selectOverlay is the
@@ -3047,6 +3105,200 @@ export default function App() {
     (lat: number, lng: number, zoom?: number) => mapRef.current?.flyTo(lat, lng, zoom),
     [],
   );
+
+  // Generate the COMPLETE, UNFILTERED line set — ignores visiblePlanets / visibleLineTypes AND the
+  // Advanced family toggles (aspects/midpoints/parans/stars/local-space), so it's EVERYTHING the
+  // chart (+ any active overlay) could draw. Reuses the same generators + framing as the drawn
+  // linework, minus every filter/gate. Expensive (midpoints are quadratic), so it's a callback the
+  // caller runs on demand (once per point query), never a per-render memo.
+  const collectAllLines = useCallback((): AllLines => {
+    if (!current) {
+      return {
+        lines: EMPTY_FC,
+        angleLines: EMPTY_FC,
+        parans: EMPTY_FC,
+        starLines: EMPTY_FC,
+        localSpace: EMPTY_FC,
+        overlayLines: null,
+        overlayParans: null,
+        overlayLocalSpace: null,
+      };
+    }
+    const effCoordSystem: CoordSystem = lineSystem === 'geodetic' ? 'zodiaco' : coordSystem;
+    // Natal: allLines / allParans / allLocalSpace are ALREADY unfiltered; aspects + midpoints are
+    // regenerated here from the FULL body set (not the visible subset), all line types; star lines
+    // are generated regardless of the Fixed Stars toggle.
+    const natalLines = withDarkMoon(allLines, theme);
+    const angleFeatures: Feature<LineString, AngleOverlayLineProps>[] = [
+      ...generateAspectLines(linePositions, meridianLng, effCoordSystem, eps).features,
+      ...generateMidpointLines(linePositions, meridianLng, effCoordSystem, eps).features,
+    ];
+    const natalAngleLines = withDarkMoon(
+      { type: 'FeatureCollection', features: angleFeatures },
+      theme,
+    );
+    const natalStarLines = generateStarLines(
+      starsOfDate(jd, starSet),
+      meridianLng,
+      lineSystem === 'geodetic' ? eps : null,
+      STAR_LINE_COLORS[theme],
+    );
+    // Overlay (transits / progressions / synastry / …), if one is active — the same generators on
+    // the overlay's positions/frame, tagged, unfiltered. Mirrors the `overlay` memo below sans filters.
+    let overlayLines: FeatureCollection | null = null;
+    let overlayParans: FeatureCollection | null = null;
+    let overlayLocalSpace: FeatureCollection | null = null;
+    if (overlayLayer) {
+      const prefix = OVERLAY_LABEL_PREFIX[overlayLayer.kind];
+      const isCyclo = overlayLayer.kind === 'cyclo';
+      const paranCycloTag = (p: ParanProps) => {
+        const a = cycloBodyTag(p.planetA);
+        return a === cycloBodyTag(p.planetB) ? a : 'Cy';
+      };
+      const ovPositions =
+        lineSystem === 'geodetic' || coordSystem === 'zodiaco'
+          ? projectOntoEcliptic(overlayLayer.positions, overlayLayer.jd)
+          : overlayLayer.positions;
+      const ovMeridianLng: MeridianLng =
+        lineSystem === 'geodetic'
+          ? (raM) => (eclipticLonOfRA(raM, obliquity(overlayLayer.jd)) * 180) / Math.PI
+          : (raM) => ((raM - overlayLayer.gmst) * 180) / Math.PI;
+      overlayLines = withDarkMoon(
+        isCyclo
+          ? tagLabelsBy(generateLines(ovPositions, ovMeridianLng), (p) => cycloBodyTag(p.planet))
+          : tagLabels(generateLines(ovPositions, ovMeridianLng), prefix),
+        theme,
+      );
+      overlayParans = isCyclo
+        ? tagLabelsBy(generateParans(ovPositions, ovMeridianLng), paranCycloTag)
+        : tagLabels(generateParans(ovPositions, ovMeridianLng), prefix);
+      overlayLocalSpace = withDarkMoon(
+        generateLocalSpace(
+          overlayLayer.positions,
+          overlayLayer.gmst,
+          overlayLayer.originLat,
+          overlayLayer.originLng,
+        ),
+        theme,
+      );
+    }
+    return {
+      lines: natalLines,
+      angleLines: natalAngleLines,
+      parans: allParans,
+      starLines: natalStarLines,
+      localSpace: allLocalSpace,
+      overlayLines,
+      overlayParans,
+      overlayLocalSpace,
+    };
+  }, [
+    current,
+    lineSystem,
+    coordSystem,
+    allLines,
+    theme,
+    linePositions,
+    meridianLng,
+    eps,
+    jd,
+    starSet,
+    overlayLayer,
+    allParans,
+    allLocalSpace,
+  ]);
+
+  // The line "spotlight": when set, the <Map> dims and draws only the lines
+  // within radiusKm of `center` (a null center = aiming: dim + hide all lines); null = the normal
+  // map. The plugin drives it through setLineSpotlight on the extension ctx below.
+  const [lineSpotlight, setLineSpotlight] = useState<LineSpotlight | null>(null);
+  const spotlightActive = lineSpotlight != null;
+  // Aiming = a spotlight is up but has no centre yet (the tool is picking a point). Gates the map's
+  // single-click card/zenith suppression: while aiming a click PLACES the centre; once placed a
+  // click on a revealed line pops its card as usual.
+  const spotlightAiming = lineSpotlight != null && lineSpotlight.center == null;
+  // Narrow one line family to the spotlight: passthrough when off, empty while aiming (null
+  // centre), else only the features passing within radiusKm of the centre. Per-feature, so a
+  // whole-line single feature reveals whole.
+  // Narrow one line family to the spotlight. Off → passthrough (the effective linework). Aiming (a
+  // null centre) → empty. Reveal → filter to the radius, preferring the FULL set the caller passes
+  // (EVERYTHING, ignoring the user's filters + Advanced toggles) and falling back to the effective
+  // linework when none was provided.
+  const applySpot = useCallback(
+    <P,>(
+      eff: FeatureCollection<LineString, P>,
+      full?: FeatureCollection | null,
+    ): FeatureCollection<LineString, P> => {
+      if (!lineSpotlight) return eff;
+      const c = lineSpotlight.center;
+      if (!c) return EMPTY_FC as FeatureCollection<LineString, P>;
+      const source = (lineSpotlight.lines && full ? full : eff) as FeatureCollection<LineString, P>;
+      return filterWithinKm(source, c.lat, c.lng, lineSpotlight.radiusKm);
+    },
+    [lineSpotlight],
+  );
+
+  // ── Effective linework actually drawn, resolved once (the eclipse "hide natal lines" toggle +
+  // the promoted-overlay swap) and shared by the <Map> props and the extension ctx. The ctx
+  // exposes this FULL set so a consumer can measure every visible line and decide
+  // proximity itself; the <Map> narrows each line family through the spotlight (applySpot) and
+  // drops the non-line families while a spotlight is active, for a lines-only reveal on a dim map.
+  const effLines = hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines;
+  const effAngleLines = promoted || hideNatalLinework ? EMPTY_FC : angleLines;
+  const effParans = hideNatalLinework ? EMPTY_FC : promoted ? promoted.parans : parans;
+  const effStarLines = promoted || hideNatalLinework ? EMPTY_FC : starLines;
+  const effLocalSpace = hideNatalLinework ? EMPTY_FC : promoted ? promoted.localSpace : localSpace;
+  const effLocalSpaceCross = hideNatalLinework
+    ? EMPTY_FC
+    : promoted
+      ? promoted.localSpaceCross
+      : localSpaceCross;
+  const effLocalSpaceOrigin =
+    lsActive && !hideNatalLinework ? (promoted ? promoted.origin : localSpaceOrigin) : null;
+  const effZenith =
+    hideNatalLinework || !effShowZenith ? EMPTY_FC : promoted ? promoted.zenith : zenith;
+  const effNadir = hideNatalLinework || !effShowZenith ? EMPTY_FC : mapNadir;
+  const effEcliptic =
+    hideNatalLinework || !effShowZenith ? null : promoted ? promoted.eclipticLine : eclipticLine;
+  const effOverlayLines = promoted ? null : (mapOverlay?.lines ?? null);
+  const effOverlayParans = promoted ? null : (mapOverlay?.parans ?? null);
+  const effOverlayLocalSpace = promoted ? null : (mapOverlay?.localSpace ?? null);
+  const effMapOverlay = promoted ? null : mapOverlay;
+
+  // The spotlight-narrowed line FCs for the <Map>, MEMOIZED so their references stay stable when the
+  // inputs (the spotlight + the effective linework) don't change. Without this, applySpot rebuilds a
+  // fresh filtered FeatureCollection every render — which re-pushes to the map each render AND, on
+  // tool EXIT, leaves the sources mid-update across the two-render teardown (openTools clears first,
+  // then the spotlight), stranding the filtered subset instead of restoring the full set. `applySpot`
+  // is stable per spotlight; each eff* is a stable ref per line memo.
+  // Each family passes its EFFECTIVE FC plus the matching FULL family from the spotlight (when the
+  // caller supplied one); applySpot reveals the full set within the radius, else the effective.
+  const fullSet = lineSpotlight?.lines ?? null;
+  const spotLines = useMemo(() => applySpot(effLines, fullSet?.lines), [applySpot, effLines, fullSet]);
+  const spotAngleLines = useMemo(() => applySpot(effAngleLines, fullSet?.angleLines), [applySpot, effAngleLines, fullSet]);
+  const spotParans = useMemo(() => applySpot(effParans, fullSet?.parans), [applySpot, effParans, fullSet]);
+  const spotStarLines = useMemo(() => applySpot(effStarLines, fullSet?.starLines), [applySpot, effStarLines, fullSet]);
+  const spotLocalSpace = useMemo(() => applySpot(effLocalSpace, fullSet?.localSpace), [applySpot, effLocalSpace, fullSet]);
+  // The overlay bundle for the <Map>: off → the effective overlay; aiming → hidden; reveal → the
+  // overlay's FULL lines within the radius (or the effective overlay as a fallback), non-line
+  // families dropped.
+  const spotMapOverlay = useMemo<OverlayData | null>(() => {
+    if (!lineSpotlight) return effMapOverlay;
+    if (!lineSpotlight.center) return null;
+    if (!fullSet?.overlayLines && !effMapOverlay) return null;
+    return {
+      lines: applySpot(effMapOverlay?.lines ?? (EMPTY_FC as OverlayData['lines']), fullSet?.overlayLines),
+      parans: applySpot(effMapOverlay?.parans ?? (EMPTY_FC as OverlayData['parans']), fullSet?.overlayParans),
+      localSpace: applySpot(
+        effMapOverlay?.localSpace ?? (EMPTY_FC as OverlayData['localSpace']),
+        fullSet?.overlayLocalSpace,
+      ),
+      zenith: EMPTY_FC as OverlayData['zenith'],
+      nadir: EMPTY_FC as OverlayData['nadir'],
+      ecliptic: EMPTY_FC as OverlayData['ecliptic'],
+    };
+  }, [lineSpotlight, effMapOverlay, fullSet, applySpot]);
+
   // The read-only snapshot + actions handed to each open HUD extension.
   const extensionCtx = useMemo<MapExtensionContext>(
     () => ({
@@ -3061,12 +3313,17 @@ export default function App() {
       houseSystem,
       zodiacMode: effZodiacMode,
       overlayMode,
-      lines: hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines,
-      angleLines: promoted || hideNatalLinework ? EMPTY_FC : angleLines,
-      parans: hideNatalLinework ? EMPTY_FC : promoted ? promoted.parans : parans,
+      // The FULL effective linework (NOT spotlight-narrowed): a consumer measures every
+      // visible line and decides proximity itself; the spotlight only narrows the <Map> draw.
+      lines: effLines,
+      angleLines: effAngleLines,
+      parans: effParans,
       starParans,
-      overlayLines: promoted ? null : (mapOverlay?.lines ?? null),
-      overlayParans: promoted ? null : (mapOverlay?.parans ?? null),
+      overlayLines: effOverlayLines,
+      overlayParans: effOverlayParans,
+      localSpace: effLocalSpace,
+      starLines: effStarLines,
+      overlayLocalSpace: effOverlayLocalSpace,
       flyTo: extFlyTo,
       setTargetDate,
       // The exclusion-aware setter (not the raw setOverlayMode) so an extension HUD that
@@ -3074,6 +3331,9 @@ export default function App() {
       // the Overlay menu's single-select invariant.
       setOverlayMode: selectOverlay,
       openExtension: openExtensionById,
+      openTool: openToolById,
+      setLineSpotlight,
+      collectAllLines,
     }),
     [
       current,
@@ -3090,6 +3350,8 @@ export default function App() {
       lines,
       angleLines,
       parans,
+      starLines,
+      localSpace,
       starParans,
       mapOverlay,
       promoted,
@@ -3097,6 +3359,8 @@ export default function App() {
       extFlyTo,
       selectOverlay,
       openExtensionById,
+      openToolById,
+      collectAllLines,
     ],
   );
 
@@ -3105,52 +3369,27 @@ export default function App() {
       <Map
         ref={mapRef}
         overlayCtx={extensionCtx}
-        lines={hideNatalLinework ? EMPTY_FC : promoted ? promoted.lines : lines}
-        // Natal-only by design; when the overlay is promoted the natal chart is
-        // hidden, so its derived aspect/midpoint lines hide with it.
-        angleLines={promoted || hideNatalLinework ? EMPTY_FC : angleLines}
-        parans={hideNatalLinework ? EMPTY_FC : promoted ? promoted.parans : parans}
-        orbBands={orbBands}
-        // Natal-frame geometry: hides with the natal linework AND under a
-        // promoted overlay (whose lines live in a different sidereal frame —
-        // mixing the two would fake star↔planet crossings).
-        starLines={promoted || hideNatalLinework ? EMPTY_FC : starLines}
-        // Environment layer, not natal linework — stays on in every mode (in
-        // eclipses mode with natal lines hidden it's at its most useful).
-        nightShade={nightShade}
-        localSpace={
-          hideNatalLinework ? EMPTY_FC : promoted ? promoted.localSpace : localSpace
-        }
-        localSpaceCross={
-          hideNatalLinework
-            ? EMPTY_FC
-            : promoted
-              ? promoted.localSpaceCross
-              : localSpaceCross
-        }
-        localSpaceOrigin={
-          lsActive && !hideNatalLinework
-            ? (promoted ? promoted.origin : localSpaceOrigin)
-            : null
-        }
+        // Line families are narrowed to the spotlight (applySpot: passthrough when off, all
+        // hidden while aiming, only the in-radius lines once a centre is set). The eff* values
+        // already resolve the eclipse "hide natal" toggle + the promoted-overlay swap.
+        lines={spotLines}
+        angleLines={spotAngleLines}
+        parans={spotParans}
+        starLines={spotStarLines}
+        localSpace={spotLocalSpace}
+        overlay={spotMapOverlay}
+        // While a spotlight is active the reveal is lines-only on a dimmed map, so the non-line
+        // families (orb bands, night shade, LS crossings/compass, zenith/nadir stamps, ecliptic,
+        // eclipse paths) drop out; otherwise they pass through unchanged.
+        orbBands={spotlightActive ? EMPTY_FC : orbBands}
+        nightShade={spotlightActive ? EMPTY_FC : nightShade}
+        localSpaceCross={spotlightActive ? EMPTY_FC : effLocalSpaceCross}
+        localSpaceOrigin={spotlightActive ? null : effLocalSpaceOrigin}
         hideCompass={hideLsCompass}
-        zenith={
-          hideNatalLinework || !effShowZenith
-            ? EMPTY_FC
-            : promoted
-              ? promoted.zenith
-              : zenith
-        }
-        nadir={hideNatalLinework || !effShowZenith ? EMPTY_FC : mapNadir}
-        ecliptic={
-          hideNatalLinework || !effShowZenith
-            ? null
-            : promoted
-              ? promoted.eclipticLine
-              : eclipticLine
-        }
-        overlay={promoted ? null : mapOverlay}
-        eclipse={eclipseMapData}
+        zenith={spotlightActive ? EMPTY_FC : effZenith}
+        nadir={spotlightActive ? EMPTY_FC : effNadir}
+        ecliptic={spotlightActive ? null : effEcliptic}
+        eclipse={spotlightActive ? null : eclipseMapData}
         eclipseTip={eclipseTip}
         eclipseCard={eclipseCard}
         lineCard={lineCard}
@@ -3198,6 +3437,8 @@ export default function App() {
         onRightClick={onRightClick}
         onMapClick={surfaceMissions}
         onDetailZoomChange={setDetailZoom}
+        spotlightActive={spotlightActive}
+        spotlightAiming={spotlightAiming}
       />
       <div className="map-edge-glow" data-state={coordSource} aria-hidden="true" />
       {!wheelExpanded && (

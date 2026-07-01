@@ -54,7 +54,11 @@ import {
 import { ensureGlyphImages, STAR_MARK_IMAGE, ZENITH_GLYPH_PREFIX, NADIR_GLYPH_PREFIX } from './glyphImages';
 import { applyDetailToggles } from './basemapStyle';
 import { MapOverlayHost } from './MapOverlayHost';
-import { MAP_CLICK_EVENT, type MapClickDetail } from '../../lib/extensions/mapOverlays';
+import {
+  MAP_CLICK_EVENT,
+  MAP_DBLCLICK_EVENT,
+  type MapClickDetail,
+} from '../../lib/extensions/mapOverlays';
 import type { MapExtensionContext } from '../../lib/extensions/mapExtensions';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { bindTouchTip, tipPosFor, type TipPos } from '../ui/useHoverTip';
@@ -1215,6 +1219,18 @@ interface MapProps {
   /** The read-only map/chart snapshot handed to registered map overlays (registerMapOverlay),
    *  rendered as positioned DOM inside the frame by MapOverlayHost. Omit to draw no overlays. */
   overlayCtx?: MapExtensionContext;
+  /** When true a line "spotlight" is active: the tool owns the pin gestures, so
+   *  the map suppresses its own double-click pin-drop and right-click pin-remove, and broadcasts
+   *  double-clicks ({@link MAP_DBLCLICK_EVENT}) for the tool to re-place its centre. The line
+   *  FILTERING is done upstream in App — the line props arrive already reduced. The dim itself is a
+   *  DOM "porthole" the tool draws over the map (an in-canvas wash can't carve a screen-space hole),
+   *  so the map only needs the gesture handling here. */
+  spotlightActive?: boolean;
+  /** When true the spotlight has no centre yet (the tool is AIMING — picking a point): a single
+   *  click is for placement, so ALSO suppress the map's single-click side-effects (line/eclipse
+   *  cards, zenith fly-to). Once a centre is placed this is false, so clicking a revealed line pops
+   *  its interpretation card as usual — the tool only owns the click while placing. */
+  spotlightAiming?: boolean;
 }
 
 interface MapData {
@@ -2350,6 +2366,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   onMapClick,
   onDetailZoomChange,
   overlayCtx,
+  spotlightActive,
+  spotlightAiming,
 }: MapProps, ref) {
   const { t, labels } = useT();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2456,7 +2474,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       //    chrome ignored, composited on top. The caption/watermark are real DOM inside
       //    the frame, so they're captured here at their on-screen positions (WYSIWYG).
       try {
-        // If the brand declares custom display faces (Pro: the watermark wordmark and the
+        // If the brand declares custom display faces (a downstream build: the watermark wordmark and the
         // caption face), make sure they're all loaded before rasterising — otherwise
         // html2canvas would capture a fallback font. The core default has no fontSpecs (its
         // watermark + caption use the already-loaded system font).
@@ -2784,6 +2802,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   const eclipseCardRef = useRef(eclipseCard);
   const lineCardRef = useRef(lineCard);
   const distanceRefRef = useRef(distanceRef);
+  // Read inside the (once-bound) click / context / long-press handlers so they can suppress
+  // their own side-effects while a line spotlight owns the gesture. `active` gates the pin
+  // gestures (dbl-click drop, right-click remove) the whole time the spotlight is up; `aiming` gates
+  // the SINGLE-click card/zenith side-effects only while placing (no centre yet), so once placed a
+  // line click still pops its card.
+  const spotlightActiveRef = useRef(false);
+  const spotlightAimingRef = useRef(false);
   // Every clickable line collection, refreshed each commit (below). The click handler scans
   // these to find the clicked line's full geometry and measure its closest approach.
   const lineGeomRef = useRef<ClickableLineFC[]>([]);
@@ -2800,6 +2825,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     onRightClickRef.current = onRightClick;
     dataRef.current = { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse };
     slideActiveRef.current = !!slideActive;
+    spotlightActiveRef.current = !!spotlightActive;
+    spotlightAimingRef.current = !!spotlightAiming;
     measureColorRef.current = measureColor;
     detailRef.current = { showRoads, showRivers, showLabels };
     eclipseTipRef.current = eclipseTip;
@@ -3723,6 +3750,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           detail: { lat: e.lngLat.lat, lng: e.lngLat.lng },
         }),
       );
+      // While the tool is AIMING (picking a centre) it owns the single click (it confirms placement
+      // off the MAP_CLICK_EVENT above) — skip the map's own single-click side-effects (fly-to-zenith,
+      // eclipse / line-interpretation cards). Once a centre is placed this is false, so a click on a
+      // revealed line pops its interpretation card as usual; the tool only owns the click while placing.
+      if (spotlightAimingRef.current) return;
       // A click on (or near) a zenith stamp flies to it — and clicking the stamp
       // again flies back (the same toggle the label badge uses, sharing one key per
       // zenith). Natal stamps key off '' ; overlay stamps key off the overlay tag, so
@@ -3788,6 +3820,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     };
     const handleDoubleClick = (e: maplibregl.MapMouseEvent) => {
       if (measureActive || slideActive) return;
+      // Neutral broadcast of the double-clicked point so a tool can treat a double-click as its own
+      // gesture (e.g. re-placing a point on it). Fired for every dblclick; listeners ignore it if
+      // they don't care. Sent BEFORE the spotlight guard so the tool still receives it.
+      window.dispatchEvent(
+        new CustomEvent<MapClickDetail>(MAP_DBLCLICK_EVENT, {
+          detail: { lat: e.lngLat.lat, lng: e.lngLat.lng },
+        }),
+      );
+      // A line spotlight owns the gesture — don't drop / move the pin underneath it.
+      if (spotlightActiveRef.current) return;
       // Double-tap drops / moves the pin — but not on a zenith stamp, whose single
       // clicks already fly there, so the stamp stays a fly-to target.
       if (zenithAtPoint(map, e.point)) return;
@@ -3812,6 +3854,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // frame does NOT suppress it — a long-press drops/removes the pin as usual (the touch
       // twin of right-click), so you can compose a pin into the shot; Esc exits the tool.
       if (measureActive || slideActive) return;
+      // A line spotlight uses the long-press / right-click to EXIT (its own listener); don't
+      // also drop / remove the pin underneath it.
+      if (spotlightActiveRef.current) return;
       if (e.touches.length !== 1) return; // 2nd finger = pan/zoom, not a hold
       const t0 = e.touches[0];
       lpStart = { x: t0.clientX, y: t0.clientY };
@@ -3833,6 +3878,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // Measure/Slide consume right-click for their own cancel; the Capture frame does not,
       // so right-click drops/removes the pin as usual while composing (Esc exits the tool).
       if (measureActive || slideActive) return;
+      // A line spotlight consumes right-click to exit (its own window listener) — don't
+      // also remove the pin / drop the natal pin underneath it.
+      if (spotlightActiveRef.current) return;
       // A touch long-press already fired the action; drop the synthesized contextmenu
       // some platforms emit right after, so it doesn't double-fire (remove → drop-natal).
       if (Date.now() - lpFiredAt < 700) return;
@@ -4509,7 +4557,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         computeBadges();
       }
     } else {
-      map.once('load', () => {
+      // Style not ready — usually a transient: the sources are mid-update (isStyleLoaded() reads
+      // false while a setData settles), NOT the pre-load case. Defer to the next `idle` (fires once
+      // the map settles) rather than `load` — `load` only ever fires on the FIRST style load, so a
+      // deferred push after that would be dropped, stranding whatever data was last set (e.g. the
+      // filtered subset when a line spotlight clears). `dataRef.current` carries the latest props.
+      map.once('idle', () => {
         pushData(map, dataRef.current);
         computeBadges();
       });
@@ -4965,7 +5018,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             ) : null}
           </div>
           {/* The export watermark. The open core stamps a plain "astrolina.org" credit;
-              a downstream build (Pro) swaps in its wordmark + font via setCaptureBrand. */}
+              a downstream build swaps in its wordmark + font via setCaptureBrand. */}
           <span className="capture-watermark">{getCaptureBrand().render()}</span>
         </div>
       )}

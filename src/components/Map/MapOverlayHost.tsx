@@ -66,10 +66,19 @@ export function MapOverlayHost({ mapRef, ready, moving, ctx }: MapOverlayHostPro
   const map = mapRef.current;
   const api: MapOverlayApi = {
     project: (lat, lng) => (map ? projectVisible(map, lng, lat) : null),
+    unproject: (x, y) => {
+      if (!map) return null;
+      const ll = map.unproject([x, y]);
+      return Number.isFinite(ll.lat) && Number.isFinite(ll.lng)
+        ? { lat: ll.lat, lng: ll.lng }
+        : null;
+    },
+    zoom: map ? map.getZoom() : 0,
     mapVersion: version,
     moving,
     ctx,
   };
+
   return (
     <>
       {overlays.map((o) => (

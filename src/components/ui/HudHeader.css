@@ -2,7 +2,8 @@
    Copyright (C) 2026 AstroLina <https://astrolina.org>
    SPDX-License-Identifier: AGPL-3.0-only */
 
-/* The Capture / Local Space / City Report / Activations window header (HudHeader). It rides
+/* The shared floating-window header (HudHeader) — Capture, Local Space, and any downstream
+   add-on windows. It rides
    the base .location-header chrome (flex row, padding, divider) and only changes the
    arrangement: the collapse eye sits right beside the title, then a draggable stretch pushes
    the close (X) to the far corner. Scoped to .hud-header so the base .location-grip (flex:1)

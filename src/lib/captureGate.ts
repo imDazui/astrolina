@@ -6,7 +6,7 @@
 
 // An optional gate on the Capture EXPORT actions (Download / Copy / Share). The open core
 // ships none — export is always free — so the buttons behave exactly as before. A downstream
-// build (e.g. the Pro edition) can install one to make export an account/paid feature, the
+// build can install one to make export an account/paid feature, the
 // same way it installs the brand + plan resolvers (no core file touched). Kept product-neutral:
 // the core only asks "is export locked right now?" and, when a locked user taps an export,
 // "do the locked thing" (e.g. open an upsell). The policy + any UI live downstream.

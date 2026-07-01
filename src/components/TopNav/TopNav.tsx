@@ -693,6 +693,14 @@ export function TopNav({
     return () => ro.disconnect();
   }, [chartExpanded, narrow]);
 
+  // The single active tool EXTENSION, if any. Tools are mutually exclusive (App enforces it), so at
+  // most one is open — it drives the Tools trigger's pulse AND its icon, so a plugin tool shows its
+  // glyph like a built-in. Generic: no per-tool wiring, auto-covers any future tool extension.
+  const openToolExt = getToolExtensions().find((ext) => openTools.has(ext.id));
+  // A tool extension can also fill the secondary readout bar (below) with a usage hint / live
+  // readout — the same slot the built-in tools use. Null when none is open or it provides none.
+  const extReadout = openToolExt?.readout ?? null;
+
   return (
     <div className={`topnav-stack ${chartExpanded ? 'chart-expanded' : ''}`}>
       <div ref={barRef} className="timeline-hud topnav" data-mapstate={mapState}>
@@ -789,9 +797,18 @@ export function TopNav({
               Slide); the active tool's readout shows in the secondary bar below. */}
           <div className="topnav-right">
             <NavMenu
-              label={<ToolMenuIcon tool={tool} />}
+              // The trigger shows the armed built-in tool's icon, else the open tool extension's own
+              // icon (a registered tool's own), else the neutral wrench — so it swaps to the active tool
+              // like the built-ins do. And it pulses while any tool (built-in or extension) is active.
+              label={
+                tool !== 'off' ? (
+                  <ToolMenuIcon tool={tool} />
+                ) : (
+                  (openToolExt?.icon ?? <ToolMenuIcon tool="off" />)
+                )
+              }
               ariaLabel={t('topNav.tools.menuLabel')}
-              active={tool !== 'off'}
+              active={tool !== 'off' || !!openToolExt}
               className="topnav-tool navmenu-mapstate"
             >
               {(close) => (
@@ -859,6 +876,7 @@ export function TopNav({
                         <ToolItem
                           key={ext.id}
                           label={ext.label}
+                          icon={ext.icon}
                           hint={ext.hint}
                           hotkey={ext.hotkey}
                           tier={req}
@@ -999,7 +1017,7 @@ export function TopNav({
           the chart's birth location. One reused island. The place name is hidden
           here while the Coordinates view is open — it moves into that window
           instead — but the measure readout always shows. */}
-      {(measuring || sliding || framing || (locationLabel && !showCoords)) && (
+      {(measuring || sliding || framing || extReadout || (locationLabel && !showCoords)) && (
         <div className="timeline-hud topnav-toolbar" data-mapstate={mapState}>
           {measuring ? (
             <>
@@ -1051,6 +1069,8 @@ export function TopNav({
             <span className="topnav-toolbar-hint">
               {t('topNav.tools.captureToolbarHint')}
             </span>
+          ) : extReadout ? (
+            <span className="topnav-toolbar-hint">{extReadout}</span>
           ) : pinned ? (
             <TipButton
               type="button"

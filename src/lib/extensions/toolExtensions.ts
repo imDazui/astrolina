@@ -42,6 +42,9 @@ export interface ToolExtension extends GatedExtension {
   id: string;
   /** Tools-menu label, already localized (extensions own their own strings). */
   label: string;
+  /** Optional glyph shown beside the label (and in the hover tip), like the built-in tools.
+   *  A ReactNode — typically an inline `<svg>`; omit to show just the label. */
+  icon?: ReactNode;
   /** localStorage key to persist open/closed; omit for a non-persisted HUD. */
   storageKey?: string;
   /** Single-key shortcut shown as the menu badge. Display-only — like the View
@@ -50,6 +53,11 @@ export interface ToolExtension extends GatedExtension {
   /** Hover-tip body shown on the menu item (explains what the tool does, and — if the
    *  extension wishes — why it might be unavailable). */
   hint?: string;
+  /** Optional content shown in the secondary readout bar (below the top nav) while this tool is
+   *  open — the extension's equivalent of the built-in tools' readout. A plain string works for a
+   *  static usage hint; pass a small component (that subscribes to the tool's own state) for a live
+   *  one. Omit to leave the bar to the usual place-name readout. */
+  readout?: ReactNode;
   /** Whether it starts open the first time (before any persisted state). */
   defaultOpen?: boolean;
   /** Defaults to 'core' (inherited). A 'gated' tool is subject to the entitlement

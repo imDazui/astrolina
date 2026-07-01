@@ -30,7 +30,13 @@ import type { MapExtensionContext } from './mapExtensions';
  *  Neutral nudge channel — a feature (e.g. tap-to-tag) listens only while it cares. */
 export const MAP_CLICK_EVENT = 'astro:map-click';
 
-/** `detail` shape of the {@link MAP_CLICK_EVENT} CustomEvent. */
+/** Window CustomEvent fired on every map double-click: `detail` is the point (same
+ *  {@link MapClickDetail} shape). The twin of {@link MAP_CLICK_EVENT} — a tool that treats a
+ *  double-click as its own gesture (e.g. a tool re-placing a point) listens only while it cares;
+ *  fired for every dblclick regardless, so listeners that don't care ignore it. */
+export const MAP_DBLCLICK_EVENT = 'astro:map-dblclick';
+
+/** `detail` shape of the {@link MAP_CLICK_EVENT} / {@link MAP_DBLCLICK_EVENT} CustomEvents. */
 export interface MapClickDetail {
   lat: number;
   lng: number;
@@ -40,6 +46,11 @@ export interface MapClickDetail {
 export interface MapOverlayApi {
   /** Project a geographic point to container pixels, or null if off-globe / occluded. */
   project: (lat: number, lng: number) => { x: number; y: number } | null;
+  /** Inverse of {@link project}: container pixels → a geographic point (null if unmappable). */
+  unproject: (x: number, y: number) => { lat: number; lng: number } | null;
+  /** The current map zoom (web-mercator z), fresh each frame — lets an overlay size on-screen
+   *  geometry or derive a target zoom for `ctx.flyTo` (there's no separate zoom getter). */
+  zoom: number;
   /** Increments on each camera move — a cheap re-place signal for memoized consumers. */
   mapVersion: number;
   /** True while the camera is animating (pan / zoom) — the same signal the core edge badges
