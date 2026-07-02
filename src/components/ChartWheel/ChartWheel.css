@@ -8,8 +8,10 @@
 
 .chart-wheel {
   position: absolute;
-  /* + the reserved bottom band (the sky band), when one is up. */
-  bottom: calc(16px + var(--sky-band-h, 0px));
+  /* + the reserved bottom band (the sky band), when one is up. max() keeps the wheel
+     clear of the home-indicator inset when the app draws edge-to-edge (installed
+     standalone on a notched device); env() is 0 everywhere else. */
+  bottom: calc(max(16px, env(safe-area-inset-bottom, 0px)) + var(--sky-band-h, 0px));
   left: 16px;
   z-index: 10;
   width: 242px;

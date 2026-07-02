@@ -390,11 +390,14 @@ body,
   margin: 0;
   padding: 0;
   height: 100%;
-  /* dvh = the dynamic viewport: fills the FULL screen on mobile, including under the iOS home
-     indicator in the installed (standalone) PWA. There, in portrait, the layout viewport that
-     height:100% / inset:0 resolve against can fall short of the screen, leaving an unused band at
-     the bottom. Falls back to 100% where dvh is unsupported. */
-  height: 100dvh;
+  /* vh, deliberately NOT dvh: fills the FULL screen on mobile, including under the iOS home
+     indicator in the installed (standalone) PWA. In standalone there is no collapsing browser
+     chrome, so vh and dvh agree once settled — but iOS computes the DYNAMIC viewport (dvh, and
+     window.innerHeight) SHORT of the screen on a cold portrait launch, and it only corrects
+     itself after an orientation change. vh is derived from the initial containing block, which
+     is right from first paint. (In-browser tabs these boxes are background-only — the app lives
+     in the fixed #root below — so vh's usual toolbar overshoot there is harmless.) */
+  height: 100vh;
   width: 100%;
   overflow: hidden;
   /* Disable mobile browsers' automatic text inflation ("font boosting" / text auto-sizing). With
@@ -530,8 +533,11 @@ body,
   .top-left-stack {
     top: auto;
     /* + the reserved bottom band: matters on 600-880px tablets, which get the
-       sky band (phones don't render it, so the var is 0 there). */
-    bottom: calc(var(--edge, 16px) + var(--sky-band-h, 0px));
+       sky band (phones don't render it, so the var is 0 there). The max() keeps the
+       stack clear of the home-indicator inset when the app draws edge-to-edge (the
+       BOTTOM inset is real wherever it's reported, unlike the phantom symmetric
+       LEFT/RIGHT landscape insets the corner note above avoids). */
+    bottom: calc(max(var(--edge, 16px), env(safe-area-inset-bottom, 0px)) + var(--sky-band-h, 0px));
   }
 }
 
@@ -541,8 +547,10 @@ body,
    otherwise hug the bottom). 28px ≈ the ~24px footer chip + a few px, in step with .info-bar. */
 @media (pointer: coarse) and (max-width: 600px) {
   .top-left-stack {
-    /* --sky-band-h is 0 on phones (no band); kept for symmetry with the tablet rule. */
-    bottom: calc(var(--edge, 3px) + 28px + var(--sky-band-h, 0px));
+    /* --sky-band-h is 0 on phones (no band); kept for symmetry with the tablet rule.
+       env() is ADDITIVE here (not max'd): the footer bar below grows downward by the
+       same inset (its own padding-bottom), so the strip rides up with the footer's top. */
+    bottom: calc(var(--edge, 3px) + 28px + env(safe-area-inset-bottom, 0px) + var(--sky-band-h, 0px));
   }
 }
 

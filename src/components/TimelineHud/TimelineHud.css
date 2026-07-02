@@ -12,7 +12,9 @@
    picker for synastry). */
 .timeline-hud {
   position: absolute;
-  bottom: calc(var(--edge, 16px) + var(--sky-band-h, 0px));
+  /* max() lifts the bar clear of the home-indicator inset when the app draws edge-to-edge
+     (installed standalone on a notched phone); env() is 0 everywhere else. */
+  bottom: calc(max(var(--edge, 16px), env(safe-area-inset-bottom, 0px)) + var(--sky-band-h, 0px));
   /* When the expanded chart sidebar is open it publishes its width as --es-width; we
      shift the WHOLE bar right by a quarter of that (not half — full recentering
      over-shot) so it "pops out" from behind the sidebar as a single unit. We
@@ -50,6 +52,15 @@
   --accent-hover: var(--accent-brand);
   /* The edge border keeps the pin-state glow, matching the map edge glow. */
   border-color: rgba(var(--map-accent-rgb), 0.55);
+}
+
+/* The docked overlay bar (transits / progressions / directions) layers ABOVE the top nav (z-25),
+   like the movable windows, so dragging it up never leaves its grip stuck behind the bar. Scoped
+   to .thud-bar (the real overlay bar, a marker set only on the TimelineHud root) so the nav and
+   the movable windows — which also reuse .timeline-hud — keep their own z. Below the windows (27),
+   reports (29), and sidebar (30). */
+.timeline-hud.thud-bar {
+  z-index: 26;
 }
 
 /* Touch: the overlay bar is widened to fill the screen — that rule lives at the END of this
@@ -931,10 +942,10 @@
      downstream add-on windows). Width-forcing all of them stretched the measure readout AND blew the movable
      windows out to the bar's min-width (~600px). The positive .thud-bar marker (set ONLY on the
      TimelineHud root) scopes this to the real overlay bar, robust to any new .timeline-hud reuser. */
-  /* Lift above the profile box (z-20) — including the collapsed nub — so it's never hidden behind
-     the profile where they meet at the bottom of the screen. Matches the eclipse/synastry overlays. */
+  /* Keep the base's elevated z (26) on touch — above the top nav (25) and the profile box (20),
+     including the collapsed nub, so the bar is never stuck behind either. Matches eclipse/synastry. */
   .timeline-hud.thud-bar {
-    z-index: 21;
+    z-index: 26;
   }
   /* Force the full width only while EXPANDED. Collapsed (eye off) the bar is just its nub pill, which
      must keep its natural content size — otherwise the bar's min-width held the lone nub stretched

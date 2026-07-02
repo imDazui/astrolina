@@ -111,15 +111,25 @@ export const topNav = {
 
   view: {
     menuLabel: 'View',
+    // Each row carries a one-line hover description (the .ui-tip shown on hover/focus, matching
+    // the Tools + Overlay menus) as its <id>Hint sibling.
     coordinates: 'Coordinates',
+    coordinatesHint: 'A live readout of the active point’s place, coordinates, and relocated chart angles.',
     minimap: 'Minimap',
+    minimapHint: 'The natal chart wheel, kept small in the corner as you explore the map.',
     settings: 'Settings',
+    settingsHint: 'Themes, house systems, zodiac, and how the chart and map are drawn.',
     teleport: 'Teleport',
+    teleportHint: 'Search for any place and fly the map straight to it.',
     // The daily rise/culminate/set clock at the active point (the bottom sky band).
     skyTimes: 'Sky Times',
+    skyTimesHint: 'The daily rise, culmination, and set times at the active point, along the bottom band.',
     localSpace: 'Local Space',
+    localSpaceHint: 'Direction lines from the chart’s origin out to each planet — your local-space compass.',
     info: 'Info',
+    infoHint: 'A corner chip summarising the chart’s active systems — line frame, houses, and zodiac.',
     // Opens the guides as a reference — a glossary of the map controls you can revisit.
     guides: 'Guides',
+    guidesHint: 'Revisit the onboarding guides as a glossary of the map’s controls.',
   },
 } as const;

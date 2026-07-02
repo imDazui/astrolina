@@ -48,30 +48,14 @@ function bottomReserve(): number {
   );
 }
 
-// Gap kept below the top nav cluster when a HUD is pushed clear of it.
-const NAV_CLEARANCE = 8;
-
-// The top command bar + its tool readout, as one on-screen rect — or null when it isn't mounted
-// (or is off-screen). A floated HUD must stay clear of this: parked UNDER the bar its drag grip
-// can't be grabbed, and since positions persist that makes it stuck. It bites hardest in portrait,
-// where the bar spans the FULL width, so there's nowhere beside it to leave the HUD reachable.
-function topNavRect(): DOMRect | null {
-  const r = document.querySelector('.topnav-stack')?.getBoundingClientRect();
-  return r && r.height > 0 && r.bottom > 0 ? r : null;
-}
-
-// Clamp a top-left so the bar (w×h) stays fully on screen with a margin — and, when it would
-// horizontally overlap the top nav cluster, sits BELOW that cluster (never tucked under it, where
-// the grip is unreachable). The overlap test keeps desktop corner placement free: only a HUD that
-// actually sits across the (centred) bar is pushed down; in portrait the full-width bar overlaps
-// every HUD, so all of them clear it.
+// Clamp a top-left so the bar (w×h) stays fully on screen with a small margin. HUDs are NOT
+// pushed clear of the top nav cluster anymore: they render on a layer ABOVE it (see the z-index
+// notes in TopNav.css / LocationHud.css / the overlay-bar CSS), so a HUD parked over the bar keeps
+// a grabbable grip. Dropping the below-the-nav rule also lets a HUD use the FULL viewport height,
+// including the band behind the nav — instead of being forced under the readout.
 function clampPos(x: number, y: number, w: number, h: number): { x: number; y: number } {
   const cx = Math.min(Math.max(x, 4), Math.max(4, window.innerWidth - w - 4));
-  let top = TOP_MARGIN;
-  const nav = topNavRect();
-  if (nav && cx < nav.right && cx + w > nav.left) {
-    top = Math.max(top, nav.bottom + NAV_CLEARANCE);
-  }
+  const top = TOP_MARGIN;
   const cy = Math.min(
     Math.max(y, top),
     Math.max(top, window.innerHeight - bottomReserve() - h - 4),

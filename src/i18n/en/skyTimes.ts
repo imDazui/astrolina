@@ -39,4 +39,12 @@ export const skyTimes = {
   now: 'Now',
   // Footer: which timezone the clock reads in.
   zoneNote: 'Local time at this point ({zone})',
+  // Density toggle at the band's left edge: compact glyphs (hover a body for its times) vs. the
+  // times listed inline so no hover is needed.
+  detail: {
+    label: 'Times',
+    tipShow: 'Show times',
+    tipHide: 'Hide times',
+    hint: 'List each body’s rise / culmination / set / anti-culmination beside it, so you don’t have to hover. Scroll or drag the row if it runs past the edge.',
+  },
 } as const;

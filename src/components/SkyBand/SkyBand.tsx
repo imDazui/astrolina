@@ -15,7 +15,14 @@
 // here only when registered AND entitled (no teaser), tagged with the gated
 // tier in its hover tip. Chart-time-INDEPENDENT: the band reads the sky of the
 // chosen DAY, so it works even for unknown-birth-time charts.
-import { useMemo, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { PLANET_COLORS, type NodeType, type PlanetName } from '../../lib/ephemeris';
 import { dailySkyEvents, type BodyDayEvents, type EventKind } from '../../lib/astro/riseSet';
 import {
@@ -38,6 +45,10 @@ import './SkyBand.css';
  *  <Map bottomInset> and the bottom-dock registry: this while the row is
  *  compact, the registered track's own `height` while it shows. */
 export const SKY_BAND_H_COMPACT = 28;
+
+/** Persisted density preference: absent/0 = compact (hover a body for its times), 1 = the times
+ *  listed inline. Remembered across sessions so the chosen density sticks. */
+const TIMES_KEY = 'astro:sky-times-verbose:v1';
 
 const MS_DAY = 86_400_000;
 // Unix epoch ms → Julian Day (UT).
@@ -82,6 +93,27 @@ export function SkyBand({
   // same editor the timeline bar and My Charts use), for jumps the ‹ › pager
   // can't reasonably make — decades into the past or future.
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Density toggle: compact (glyphs; hover a body for its times) vs. verbose (the times listed
+  // inline, no hover needed). Persisted so the choice sticks across sessions.
+  const [showTimes, setShowTimes] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(TIMES_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleTimes = () =>
+    setShowTimes((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem(TIMES_KEY, next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  const legendRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ startX: number; startScroll: number; active: boolean } | null>(null);
 
   // The place's own zone — the whole band reads in LOCAL time there.
   const zone = useMemo(
@@ -159,6 +191,35 @@ export function SkyBand({
     </span>
   );
 
+  // Verbose row: the same four moments as the hover card, laid out inline after the body so they
+  // read without hovering. A circumpolar body has no rise/set, so it shows its all-day note
+  // instead. The angle tags (ASC / MC / DSC / IC) match the card's labels.
+  const inlineTimes = (d: BodyDayEvents): ReactNode =>
+    d.circumpolar ? (
+      <span className="sky-band-times sky-band-times-note">
+        {d.circumpolar === 'up' ? t('skyTimes.circumpolarUp') : t('skyTimes.circumpolarDown')}
+      </span>
+    ) : (
+      <span className="sky-band-times">
+        {KINDS.map((k) => {
+          const jd =
+            k === 'rise'
+              ? d.rise
+              : k === 'set'
+                ? d.set
+                : k === 'culminate'
+                  ? d.culminate
+                  : d.anticulminate;
+          return (
+            <span key={k} className="sky-band-time">
+              <span className="sky-band-time-kind">{kindLabel(k)}</span>
+              <span>{jd !== null ? clock(jd) : '—'}</span>
+            </span>
+          );
+        })}
+      </span>
+    );
+
   // The registered track (a downstream build's expandable center), entitled-only
   // — NO teaser: without entitlement neither the track nor its toggle exists.
   const trackExt = getSkyBandTrack();
@@ -169,9 +230,68 @@ export function SkyBand({
       ? { point, zone, dayStart, days, frac, clock, slideMs }
       : null;
 
+  // Verbose (inline times) only applies to the compact single row — the expanded track draws the
+  // times itself, and its legend is a 4-row grid.
+  const inlineMode = showTimes && !trackVisible;
+
+  // Edge fades for the compact legend: with the times shown it easily runs wider than the space
+  // before the context column. --fade-l/--fade-r (read by the mask in the CSS) cue that there's
+  // more off either edge; 0 means that side is at its end. Re-measured on scroll, resize, and
+  // whenever the row's content changes (day, planets, density).
+  useEffect(() => {
+    const el = legendRef.current;
+    if (!el) return;
+    const update = () => {
+      const max = el.scrollWidth - el.clientWidth;
+      const FADE = 24;
+      el.style.setProperty('--fade-l', el.scrollLeft > 1 ? `${FADE}px` : '0px');
+      el.style.setProperty('--fade-r', el.scrollLeft < max - 1 ? `${FADE}px` : '0px');
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro.disconnect();
+    };
+  }, [days, inlineMode, trackVisible]);
+
+  // Mouse drag-to-scroll (touch / pen keep native scrolling). A small movement threshold lets a
+  // plain click / hover through untouched; once it's really a drag we capture the pointer and mute
+  // the bodies (via the is-dragging class) so no stray hover fires mid-drag.
+  const onLegendPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'mouse' || trackVisible) return; // mouse only, and only the compact row
+    const el = legendRef.current;
+    if (!el || el.scrollWidth <= el.clientWidth) return;
+    dragRef.current = { startX: e.clientX, startScroll: el.scrollLeft, active: false };
+  };
+  const onLegendPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    const el = legendRef.current;
+    if (!d || !el) return;
+    const dx = e.clientX - d.startX;
+    if (!d.active) {
+      if (Math.abs(dx) < 5) return;
+      d.active = true;
+      el.classList.add('is-dragging');
+      el.setPointerCapture(e.pointerId);
+    }
+    el.scrollLeft = d.startScroll - dx;
+  };
+  const onLegendPointerEnd = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    const el = legendRef.current;
+    dragRef.current = null;
+    if (d?.active && el) {
+      el.classList.remove('is-dragging');
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+    }
+  };
+
   return (
     <div
-      className={`sky-band${trackVisible ? '' : ' is-compact'}`}
+      className={`sky-band${trackVisible ? '' : ' is-compact'}${inlineMode ? ' is-verbose' : ''}`}
       role="region"
       aria-label={t('skyTimes.title')}
     >
@@ -181,9 +301,34 @@ export function SkyBand({
         </div>
       ) : (
         <>
-          {/* LEFT — the body legend: glyph + name; hover = glyph + name headline
-              over the four-times card. */}
-          <div className="sky-band-legend">
+          {/* LEFTMOST — density toggle: compact glyphs (hover for a body's times) ⇄ the times
+              listed inline. Only in the compact row; the expanded track shows the times itself. */}
+          {!trackVisible && days.length > 0 && (
+            <TipButton
+              type="button"
+              className={`sky-band-detail-toggle${showTimes ? ' on' : ''}`}
+              placement="top"
+              aria-pressed={showTimes}
+              tip={t(showTimes ? 'skyTimes.detail.tipHide' : 'skyTimes.detail.tipShow')}
+              hint={t('skyTimes.detail.hint')}
+              onClick={toggleTimes}
+            >
+              <EyeIcon open={showTimes} className="sky-band-track-eye" size={13} />
+              <span>{t('skyTimes.detail.label')}</span>
+            </TipButton>
+          )}
+
+          {/* LEFT — the body legend: glyph + name (hover = the four-times card), or with the times
+              listed inline when the density toggle is on. Scrolls / drags when it runs wider than
+              the space before the context column, its edges fading to cue that. */}
+          <div
+            ref={legendRef}
+            className="sky-band-legend"
+            onPointerDown={onLegendPointerDown}
+            onPointerMove={onLegendPointerMove}
+            onPointerUp={onLegendPointerEnd}
+            onPointerCancel={onLegendPointerEnd}
+          >
             {days.map((d) => (
               <TipSpan
                 key={d.body}
@@ -196,10 +341,11 @@ export function SkyBand({
                     <span>{bodyName(d.body)}</span>
                   </span>
                 }
-                hint={timesCard(d)}
+                hint={inlineMode ? undefined : timesCard(d)}
               >
                 <PlanetGlyph planet={d.body} size={14} color={PLANET_COLORS[d.body]} />
                 <span className="sky-band-body-name">{bodyName(d.body)}</span>
+                {inlineMode && inlineTimes(d)}
               </TipSpan>
             ))}
           </div>

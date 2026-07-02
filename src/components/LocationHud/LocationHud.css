@@ -13,7 +13,11 @@
    local-space section. */
 .location-hud {
   position: fixed;
-  z-index: 22;
+  /* Above the top nav + its readout (z-25) so a window dragged over the bar is never stuck behind
+     it — its grip stays on top and grabbable (useMovableHud no longer forces it below the nav).
+     Below the reports dock (29) / expanded sidebar (30) / modals (100) / tips (1000); one step
+     above the overlay bars (26), matching how the plugin HUDs (40) already float. */
+  z-index: 27;
   width: 320px;
   max-width: 320px;
   padding: 0;

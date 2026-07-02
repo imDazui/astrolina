@@ -15,10 +15,14 @@
    synastry mode. */
 .synastry-hud {
   position: absolute;
-  bottom: calc(var(--edge, 16px) + var(--sky-band-h, 0px));
+  /* max() lifts the bar clear of the home-indicator inset when the app draws edge-to-edge
+     (installed standalone on a notched phone); env() is 0 everywhere else. */
+  bottom: calc(max(var(--edge, 16px), env(safe-area-inset-bottom, 0px)) + var(--sky-band-h, 0px));
   left: calc(50% + var(--es-width, 0px) / 4);
   transform: translateX(-50%);
-  z-index: 13;
+  /* Above the top nav (z-25) so a bar dragged up isn't stuck behind it; also clears the profile
+     box (20). Below the movable windows (27) / reports (29) / sidebar (30). */
+  z-index: 26;
   transition: left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
   max-width: calc(100vw - var(--es-width, 0px) - 80px);
 
@@ -510,11 +514,10 @@
   }
 }
 
-/* Touch: lift the bar above the profile box (the top-left/bottom-left stack is z-20) — including the
-   collapsed nub — so the profile never paints over it where they meet at the bottom of the screen.
-   The timeline + eclipse overlays already do this on touch; synastry was missing it. */
+/* Touch: match the base z (26) — above the top nav (25) and the profile box (20), including the
+   collapsed nub, so the bar is never stuck behind either where they meet at the screen edges. */
 @media (pointer: coarse) {
   .synastry-hud {
-    z-index: 21;
+    z-index: 26;
   }
 }

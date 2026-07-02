@@ -47,16 +47,56 @@
   overflow: hidden;
 }
 
-/* Compact (no track): the same entries flow inline on one row. */
+/* Compact (no track): the same entries flow inline on one row. It scrolls horizontally when the
+   bodies — especially with their times shown — run wider than the space before the context
+   column; the scrollbar is hidden and the edges fade instead (below) to cue the overflow. */
 .sky-band.is-compact .sky-band-legend {
   display: flex;
   flex: 1;
   min-width: 0;
   align-items: center;
   gap: 3px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 0 10px;
   border-right: none;
+  scrollbar-width: none;
+  /* --fade-l / --fade-r are set from JS (24px when that edge can scroll, 0 at the end), so the row
+     dissolves toward the context column instead of hard-clipping. One gradient drives both edges. */
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--fade-l, 0px),
+    #000 calc(100% - var(--fade-r, 0px)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--fade-l, 0px),
+    #000 calc(100% - var(--fade-r, 0px)),
+    transparent 100%
+  );
+}
+.sky-band.is-compact .sky-band-legend::-webkit-scrollbar {
+  display: none;
+}
+/* Mouse drag-to-scroll: grab cursor + mute the bodies so no stray hover / selection fires while
+   dragging (touch / trackpad just scroll natively). */
+.sky-band-legend.is-dragging {
+  cursor: grabbing;
+}
+.sky-band-legend.is-dragging > * {
+  pointer-events: none;
+}
+
+/* Verbose: each body carries its four times, so widen the inter-body gap and drop the help cursor
+   — there's nothing hidden left to hover for. */
+.sky-band.is-verbose .sky-band-legend {
+  gap: 14px;
+}
+.sky-band.is-verbose .sky-band-body {
+  cursor: default;
 }
 
 .sky-band-body {
@@ -81,6 +121,31 @@
   font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+/* Inline times (verbose mode): the four moments after the body, each with its small dim angle tag
+   (ASC / MC / DSC / IC), matching the hover card's labels. */
+.sky-band-times {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sky-band-time {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  color: var(--text);
+}
+.sky-band-time-kind {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+.sky-band-times-note {
+  color: var(--text-faint);
 }
 
 /* ── CENTER: the registered track's slot ── */
@@ -173,7 +238,8 @@
 
 .sky-band-day-btn,
 .sky-band-close,
-.sky-band-track-toggle {
+.sky-band-track-toggle,
+.sky-band-detail-toggle {
   border: 1px solid rgba(var(--tint), 0.16);
   background: rgba(var(--tint), 0.05);
   border-radius: 5px;
@@ -187,7 +253,8 @@
 
 .sky-band-day-btn:hover:not(:disabled),
 .sky-band-close:hover,
-.sky-band-track-toggle:hover {
+.sky-band-track-toggle:hover,
+.sky-band-detail-toggle:hover {
   color: var(--text-strong);
   border-color: rgba(var(--tint), 0.32);
 }
@@ -236,6 +303,25 @@
 }
 
 .sky-band-track-toggle.on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* Leftmost density toggle — the same eye-pill as the track toggle, parked on the band's far-left
+   edge (before the body legend). Accent-lit while the times are shown inline. */
+.sky-band-detail-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  align-self: center;
+  margin: 0 2px 0 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sky-band-detail-toggle.on {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);

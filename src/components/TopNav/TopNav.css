@@ -17,11 +17,13 @@
   top: max(var(--edge, 10px), env(safe-area-inset-top));
   left: calc(50% + var(--es-width, 0px) / 4);
   transform: translateX(-50%);
-  /* Sit above the movable HUD windows (Location / Local Space at z-index 22, Eclipse /
-     Synastry at 13). The nav's open dropdown panels are trapped in this stack's stacking
-     context, so if the stack sat below a HUD, that HUD would paint over an open dropdown
-     and swallow its clicks — e.g. the Tools ▸ Slide row under an open Local Space window.
-     Stays below the expanded sidebar (30), modals (100), and hover tips (1000). */
+  /* The movable HUD windows + overlay bars deliberately layer ABOVE this nav now (windows at 27,
+     overlay bars at 26, plugin HUDs at 40) so one dragged over the bar is never stuck behind it —
+     its grip stays on top and grabbable (useMovableHud no longer forces HUDs below the nav). Trade-
+     off: a HUD parked over an OPEN nav dropdown (Tools / Overlay / View) covers that menu's rows
+     where they overlap, since the panels are trapped in this stack's context — acceptable, as the
+     windows seldom sit up here and the plugin HUDs already behaved this way. Stays below the
+     expanded sidebar (30), modals (100), and hover tips (1000). */
   z-index: 25;
   /* The stack is content-sized to the WIDEST bar (the main bar), so the narrower, centred tool
      readout below it leaves transparent stack area on either side. At z-25 that empty area sits

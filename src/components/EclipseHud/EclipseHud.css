@@ -14,10 +14,14 @@
    it clear of the expanded sidebar. Same slot as TimelineHud/SynastryHud. */
 .eclipse-hud {
   position: absolute;
-  bottom: calc(var(--edge, 16px) + var(--sky-band-h, 0px));
+  /* max() lifts the bar clear of the home-indicator inset when the app draws edge-to-edge
+     (installed standalone on a notched phone); env() is 0 everywhere else. */
+  bottom: calc(max(var(--edge, 16px), env(safe-area-inset-bottom, 0px)) + var(--sky-band-h, 0px));
   left: calc(50% + var(--es-width, 0px) / 4);
   transform: translateX(-50%);
-  z-index: 13;
+  /* Above the top nav (z-25) so a bar dragged up isn't stuck behind it; also clears the profile
+     box (20). Below the movable windows (27) / reports (29) / sidebar (30). */
+  z-index: 26;
   transition: left 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
   max-width: calc(100vw - var(--es-width, 0px) - 80px);
 
@@ -577,10 +581,10 @@
    (the sidebar-aware nudge is dropped). Plus a tighter body so the bar is shorter. Last in the
    file, so it wins over the narrow-screen rule above. */
 @media (pointer: coarse) {
-  /* Lift the bar above the profile window (z-20), matching the timeline overlay — applies to the
-     collapsed nub too, so it's never hidden behind the profile at the bottom of the screen. */
+  /* Match the base z (26) on touch too — above the top nav (25) and the profile box (20),
+     including the collapsed nub, so the bar is never stuck behind either. */
   .eclipse-hud {
-    z-index: 21;
+    z-index: 26;
   }
   .eclipse-hud:not(.is-collapsed) {
     left: 50%;

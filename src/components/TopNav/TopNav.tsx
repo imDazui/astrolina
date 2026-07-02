@@ -559,7 +559,16 @@ function CheckItem({
         {hotkey && !locked && <span className="navmenu-key">{hotkey}</span>}
       </button>
       {hasTip && (
-        <HoverTip pos={pos} placement="left" title={label} hint={hint} advanced={tier === 'adv'} />
+        <HoverTip
+          pos={pos}
+          placement="left"
+          title={label}
+          hint={hint}
+          // Show the shortcut chip in the tip too (like the Tools/Overlay tips); locked teasers
+          // suppress it, since their key does nothing until the tier is reached.
+          hotkey={locked ? undefined : hotkey}
+          advanced={tier === 'adv'}
+        />
       )}
     </>
   );
@@ -726,17 +735,19 @@ export function TopNav({
     onToggle: () => void;
     hotkey?: string;
     tier?: PlanTier;
+    /** One-line description shown in the row's hover .ui-tip, like the Tools/Overlay menus. */
+    hint?: string;
   }[] = [
-    { id: 'coordinates', label: t('topNav.view.coordinates'), hotkey: 'C', checked: showCoords, onToggle: () => setShowCoords(!showCoords) },
-    { id: 'minimap', label: t('topNav.view.minimap'), hotkey: 'M', checked: showChart, onToggle: () => setShowChart(!showChart) },
-    { id: 'settings', label: t('topNav.view.settings'), hotkey: 'S', checked: showSettings, onToggle: () => setShowSettings(!showSettings) },
-    { id: 'teleport', label: t('topNav.view.teleport'), hotkey: 'G', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
+    { id: 'coordinates', label: t('topNav.view.coordinates'), hint: t('topNav.view.coordinatesHint'), hotkey: 'C', checked: showCoords, onToggle: () => setShowCoords(!showCoords) },
+    { id: 'minimap', label: t('topNav.view.minimap'), hint: t('topNav.view.minimapHint'), hotkey: 'M', checked: showChart, onToggle: () => setShowChart(!showChart) },
+    { id: 'settings', label: t('topNav.view.settings'), hint: t('topNav.view.settingsHint'), hotkey: 'S', checked: showSettings, onToggle: () => setShowSettings(!showSettings) },
+    { id: 'teleport', label: t('topNav.view.teleport'), hint: t('topNav.view.teleportHint'), hotkey: 'G', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
     ...(!phone
-      ? [{ id: 'skyTimes', label: t('topNav.view.skyTimes'), hotkey: 'H', tier: 'adv' as PlanTier, checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) }]
+      ? [{ id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'H', tier: 'adv' as PlanTier, checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) }]
       : []),
-    { id: 'localSpace', label: t('topNav.view.localSpace'), hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace) },
-    { id: 'guides', label: t('topNav.view.guides'), checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
-    { id: 'info', label: t('topNav.view.info'), checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
+    { id: 'localSpace', label: t('topNav.view.localSpace'), hint: t('topNav.view.localSpaceHint'), hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace) },
+    { id: 'guides', label: t('topNav.view.guides'), hint: t('topNav.view.guidesHint'), checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
+    { id: 'info', label: t('topNav.view.info'), hint: t('topNav.view.infoHint'), checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
     ...getMapExtensions()
       // Only 'view'-surface extensions get a View-menu row; 'timeline-drawer'
       // ones toggle from the time-overlay bar's display drawer instead.
@@ -745,6 +756,9 @@ export function TopNav({
         id: ext.id,
         label: ext.label,
         hotkey: ext.hotkey,
+        // An add-on carries its own description (MapExtension.hint); undefined ones just
+        // show no tip, as before.
+        hint: ext.hint,
         tier: tierOfEntitlement(ext.tier),
         checked: openExtensions.has(ext.id),
         onToggle: () => onToggleExtension(ext.id),
@@ -1122,6 +1136,7 @@ export function TopNav({
                 <CheckItem
                   key={it.id}
                   label={it.label}
+                  hint={it.hint}
                   hotkey={it.hotkey}
                   checked={it.checked}
                   tier={it.tier}

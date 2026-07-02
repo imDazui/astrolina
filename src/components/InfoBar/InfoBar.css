@@ -60,6 +60,8 @@
    above it (matching the screen-edge padding). 28px ≈ the ~24px attribution chip + a few px. */
 @media (pointer: coarse) {
   .info-bar {
-    bottom: calc(var(--edge, 3px) + 28px + var(--sky-band-h, 0px));
+    /* env() is additive, mirroring the bottom-left stack: the full-width attribution footer
+       below grows downward by the same inset, so the chip keeps its small gap above it. */
+    bottom: calc(var(--edge, 3px) + 28px + env(safe-area-inset-bottom, 0px) + var(--sky-band-h, 0px));
   }
 }
