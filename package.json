@@ -33,7 +33,11 @@
     "build:eclipses": "node scripts/build-eclipses.mjs",
     "verify:stars": "node scripts/verify-stars.mjs",
     "build:stars": "node scripts/build-stars.mjs",
+    "verify:relocate": "node scripts/verify-relocate.mjs",
+    "verify:cities": "node scripts/harness/run.mjs scripts/verify-cities.ts",
     "verify:composite": "node scripts/verify-composite.mjs",
+    "verify:angle-aspects": "node scripts/verify-angle-aspects.mjs",
+    "verify:aspect-lines": "node scripts/harness/run.mjs scripts/verify-aspect-lines.ts",
     "verify:ayanamsa": "node scripts/verify-ayanamsa.mjs",
     "deploy": "npm run build && wrangler pages deploy dist --project-name astrolina-maps",
     "deploy:preview": "npm run build && wrangler pages deploy dist --project-name astrolina-maps --branch preview"

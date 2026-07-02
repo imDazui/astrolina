@@ -287,10 +287,15 @@ function directionContext(
   const birthJD = birthDataToJD(chart);
   const eps = obliquity(birthJD);
   // The directed BASE: a composite chart directs its midpoint positions, not
-  // the real sky behind its frame-anchor moment.
+  // the real sky behind its frame-anchor moment. (Directed/progressed modes
+  // are currently OFF the menu for composites — COMPOSITE_BLOCKED_OVERLAYS —
+  // so this branch is anticipatory. If ever unblocked, note the shift helpers
+  // rebuild equatorial geometry from the directed point / shifted RA, so a
+  // zero-arc composite ring approximates rather than reproduces the base
+  // chart's mean-ra/dec geometry.)
   const real = getPlanetPositions(birthJD, nodeType);
   const natal = chart.composite
-    ? compositeEquatorial(chart.composite, nodeType, eps)
+    ? compositeEquatorial(chart.composite, nodeType)
     : real;
   const years = (epochMsToJD(targetDate) - birthJD) / TROPICAL_YEAR_DAYS;
   const progressedJD = birthJD + years;
@@ -585,7 +590,7 @@ export function buildOverlay(
         ? solveCompositeFrameJd(partner.composite)
         : birthDataToJD(partner);
       const positions = partner.composite
-        ? compositeEquatorial(partner.composite, nodeType, obliquity(pjd))
+        ? compositeEquatorial(partner.composite, nodeType)
         : getPlanetPositions(pjd, nodeType);
       return {
         kind: mode,

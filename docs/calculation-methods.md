@@ -120,12 +120,25 @@ overlays — is ordinary natal math.
 
 **Composite (midpoints)** has no real moment. Its conventions here:
 
-- **Planets** sit at the **shorter-arc midpoint** of the two charts' zodiacal
-  longitudes, **on the ecliptic** (latitude zero, so In Mundo and In Zodiaco
-  coincide). An exactly-opposed pair (no shorter arc) takes the side nearer the
-  composite Sun. Bodies resolve only when both parents can compute them, and
-  the lunar nodes follow the sidebar's mean/true setting; the South Node
-  midpoint stays exactly antipodal to the North Node midpoint by construction.
+- **Planets** are **coordinate-wise midpoints** of the two charts' own
+  coordinates, each averaged independently (the midpoint tradition, matching
+  Solar Fire): zodiacal longitude = the **shorter-arc midpoint** (an
+  exactly-opposed pair — no shorter arc — takes the side nearer the composite
+  Sun); ecliptic **latitude** = the plain mean; **declination** = the plain
+  mean of the two charts' native declinations (each at its own moment);
+  **right ascension** = the shorter-arc midpoint of the native RAs (ties break
+  toward the composite Sun's RA midpoint, and a pair straddling opposition
+  differently per frame keeps its RA on the longitude midpoint's side of the
+  sky, so the map can never contradict the wheel by half a turn). A composite row is deliberately
+  **not** a self-consistent 3D sky point — its declination is the mean of the
+  parents' declinations, not the declination of its (longitude, latitude)
+  point — so **In Mundo and In Zodiaco genuinely differ** for composites:
+  In-Mundo lines are placed by the mean RA/declination, while In-Zodiaco and
+  geodetic lines still derive from the longitude midpoint on the ecliptic.
+  Bodies resolve only when both parents can compute them, and the lunar nodes
+  follow the sidebar's mean/true setting; the South Node stays exactly
+  antipodal to the North Node midpoint in all four coordinates by
+  construction.
 - **The wheel angles and houses** use the **midpoint method à la Robert Hand**:
   every angle and house cusp is the **shorter-arc midpoint of the two parents' own
   angles/cusps** (each cast at its own parent's place). So the composite

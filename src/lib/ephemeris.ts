@@ -140,6 +140,13 @@ export interface PlanetPosition {
   name: PlanetName;
   ra: number;
   dec: number;
+  // Ecliptic coordinates OF RECORD, carried only by synthetic positions
+  // (midpoint charts) whose ra/dec are per-coordinate means rather than one
+  // sky point — there the ecliptic coords can't be recovered from ra/dec.
+  // The geometry helpers below prefer these when present; direct ephemeris
+  // samples omit them (their ra/dec round-trip exactly).
+  lon?: number;          // ecliptic longitude of record, radians
+  lat?: number;          // ecliptic latitude of record, radians
 }
 
 export interface EclipticPosition {
@@ -152,6 +159,10 @@ export interface EclipticPosition {
   speed?: number;        // ecliptic longitude motion, degrees/day (negative = Rx)
   retrograde?: boolean;
   stationary?: boolean;  // near a station (instantaneous speed ≈ 0)
+  // Equatorial RA of record, carried when the position's equatorial coords are
+  // per-coordinate means (midpoint charts) rather than derivable from lon/lat;
+  // getHorizontalCoords prefers it so the table matches the map.
+  ra?: number;           // right ascension, radians
 }
 
 export interface RelocatedAngles {
@@ -422,22 +433,30 @@ export function eclipticToRaDec(
 // every natal body is advanced by the solar arc. NOTE: the arc must be applied
 // in ecliptic longitude — adding it directly to RA is wrong for bodies off the
 // equator (Pluto, the Moon). Pass eps = obliquity(jd) for the round-trip.
+// Coordinates of record (midpoint charts) are preferred over the geometric
+// round-trip and carried forward shifted, so a directed midpoint stays anchored
+// to its true longitude of record; direct-sample inputs stay bare, keeping
+// "carried ⇔ synthetic" true along the whole chain.
 export function shiftEclipticLongitude(
   p: PlanetPosition,
   deltaLonRad: number,
   eps: number,
 ): PlanetPosition {
-  const lon = raDecToEclipticLon(p.ra, p.dec, eps) + deltaLonRad;
-  const lat = raDecToEclipticLat(p.ra, p.dec, eps);
+  const lon = norm2pi((p.lon ?? raDecToEclipticLon(p.ra, p.dec, eps)) + deltaLonRad);
+  const lat = p.lat ?? raDecToEclipticLat(p.ra, p.dec, eps);
   const { ra, dec } = eclipticToRaDec(lon, lat, eps);
-  return { name: p.name, ra, dec };
+  return p.lon !== undefined
+    ? { name: p.name, ra, dec, lon, lat }
+    : { name: p.name, ra, dec };
 }
 
 // Shift a body's RIGHT ASCENSION directly (declination unchanged) — the defining
 // operation of the "in RA" directions (solar arc / Naibod in RA) and of primary
 // directions advancing the RAMC frame. Unlike shiftEclipticLongitude (which
 // round-trips through the ecliptic), this is a pure RA increment, which is exactly
-// what those methods call for.
+// what those methods call for. Intentionally returns a bare {name, ra, dec}: an
+// RA shift invalidates any carried ecliptic coordinates of record, so downstream
+// re-derives them from the shifted ra/dec (the defining "in RA" reading).
 export function shiftRightAscension(
   p: PlanetPosition,
   deltaRaRad: number,
@@ -482,21 +501,25 @@ export type LineSystem = 'celestial' | 'geodetic';
 // Project bodies onto the ecliptic (set ecliptic latitude to 0) and convert back
 // to RA/dec — the "in zodiaco" line convention. Longitude is unchanged, so the
 // chart wheel (which reads ecliptic longitude) is unaffected; only the line
-// geometry on the map shifts for off-ecliptic bodies.
+// geometry on the map shifts for off-ecliptic bodies. A longitude of record
+// (midpoint charts) is preferred over the geometric round-trip: a synthetic
+// position's ra/dec are per-coordinate means, so inverting them would land on a
+// longitude other than the one the chart is defined by. The projected point IS
+// its own longitude of record, so `lon` rides along (idempotent).
 export function projectOntoEcliptic(
   positions: PlanetPosition[],
   jd: number,
 ): PlanetPosition[] {
   const eps = obliquity(jd);
   return positions.map((p) => {
-    const lon = raDecToEclipticLon(p.ra, p.dec, eps);
+    const lon = p.lon ?? raDecToEclipticLon(p.ra, p.dec, eps);
     const { ra, dec } = eclipticToRaDec(lon, 0, eps);
-    return { name: p.name, ra, dec };
+    return { name: p.name, ra, dec, lon };
   });
 }
 
 // ── Core sampling ─────────────────────────────────────────────────────────────
-interface BodySample {
+export interface BodySample {
   name: PlanetName;
   ra: number; // radians (equatorial)
   dec: number;
@@ -509,7 +532,9 @@ interface BodySample {
 // everything downstream needs, straight from Swiss. Two calc calls per body.
 // Returns null when the body has no ephemeris data for this date, so callers can
 // drop it instead of crashing the whole chart (see the try/catch below).
-function sampleBody(jd: number, name: PlanetName, nodeType: NodeType): BodySample | null {
+// Exported for the midpoint-chart math, which needs each parent's native
+// four-coordinate sample per body (same drop-a-body-on-null semantics).
+export function sampleBody(jd: number, name: PlanetName, nodeType: NodeType): BodySample | null {
   if (name === 'SouthNode') {
     // The south node is the antipode of the north node (on the ecliptic, lat 0).
     const nn = sampleBody(jd, 'NorthNode', nodeType);
@@ -705,8 +730,11 @@ export function bodyLonSpeed(
 
 // Ecliptic longitude/latitude for DERIVED positions (solar-arc shifts, overlay
 // bi-wheels) where the input is a {ra,dec} that is not a direct Swiss lookup, so
-// it must be converted geometrically. Speed/retrograde are meaningless for these
-// and intentionally omitted; the overlay wheel only reads `lon`.
+// it must be converted geometrically — unless the position carries coordinates
+// of record (midpoint charts), which are preferred: their ra/dec are
+// per-coordinate means, so the geometric inversion would drift off the chart's
+// own longitudes. Speed/retrograde are meaningless for these and intentionally
+// omitted; `ra` rides along for the equatorial readouts.
 export function toEclipticPositions(
   positions: PlanetPosition[],
   jd: number,
@@ -714,9 +742,10 @@ export function toEclipticPositions(
   const eps = obliquity(jd);
   return positions.map((p) => ({
     name: p.name,
-    lon: raDecToEclipticLon(p.ra, p.dec, eps),
-    lat: raDecToEclipticLat(p.ra, p.dec, eps),
+    lon: p.lon ?? raDecToEclipticLon(p.ra, p.dec, eps),
+    lat: p.lat ?? raDecToEclipticLat(p.ra, p.dec, eps),
     dec: p.dec,
+    ra: p.ra,
   }));
 }
 
@@ -744,7 +773,13 @@ export function getHorizontalCoords(
   const cosPhi = Math.cos(phi);
   const out = new Map<PlanetName, HorizontalCoords>();
   for (const p of ecliptic) {
-    const { ra, dec } = eclipticToRaDec(p.lon, p.lat ?? 0, eps);
+    // Equatorial coordinates of record (midpoint charts) win over the geometric
+    // conversion: a midpoint row's dec is a per-coordinate mean, not the dec of
+    // its (lon, lat) point, and the table must agree with the map lines.
+    const { ra, dec } =
+      p.ra !== undefined && p.dec !== undefined
+        ? { ra: p.ra, dec: p.dec }
+        : eclipticToRaDec(p.lon, p.lat ?? 0, eps);
     const H = lst - ra; // local hour angle
     const alt = Math.asin(
       sinPhi * Math.sin(dec) + cosPhi * Math.cos(dec) * Math.cos(H),

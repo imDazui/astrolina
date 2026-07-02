@@ -5,20 +5,39 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // Composite-midpoints relationship charts. A composite has NO real moment: each
-// body sits at the shorter-arc midpoint of the two parents' zodiacal longitudes,
-// on the ecliptic (latitude 0). The WHEEL ANGLES + houses are likewise the
-// shorter-arc midpoints of the two parents' own angles/cusps (à la Robert Hand).
-// The chart still STORES a real moment, though — the minute that realizes the
-// composite MAP frame (the MC-midpoint, below) — so the gmst-driven consumers
-// (the map lines, parans, local space, the timeline) run the ordinary natal
-// pipeline untouched; the PLANET POSITIONS and the WHEEL ANGLES branch to the
-// midpoint math here (App's position memos + compositeAngles, the directed
-// overlays' natal base, the Returns snap).
+// body's coordinates are the COORDINATE-WISE midpoints of the two parents' own
+// coordinates — the midpoint tradition (à la Robert Hand, matching Solar Fire)
+// averages every column independently rather than midpointing one 3D sky point.
+// The WHEEL ANGLES + houses are likewise the shorter-arc midpoints of the two
+// parents' own angles/cusps. The chart still STORES a real moment, though — the
+// minute that realizes the composite MAP frame (the MC-midpoint, below) — so the
+// gmst-driven consumers (the map lines, parans, local space, the timeline) run
+// the ordinary natal pipeline untouched; the PLANET POSITIONS and the WHEEL
+// ANGLES branch to the midpoint math here (App's position memos +
+// compositeAngles, the directed overlays' natal base, the Returns snap).
 //
 // Conventions (see docs/calculation-methods.md):
-//  - shorter-arc planet midpoints; an exactly-opposed pair takes the side
-//    nearer the composite Sun
-//  - planets on the ecliptic (latitude 0)
+//  - per body: zodiacal longitude = shorter-arc midpoint (an exactly-opposed
+//    pair takes the side nearer the composite Sun); ecliptic latitude = plain
+//    mean; declination = plain mean of the parents' NATIVE declinations (each
+//    at its own moment); right ascension = shorter-arc midpoint of the native
+//    RAs (ties break toward the composite Sun's RA midpoint — the longitude
+//    rule, per coordinate). The same mean-RA/mean-dec convention already
+//    anchors the In-Mundo midpoint lines (see angleAspects.ts).
+//  - a composite row is deliberately NOT a self-consistent 3D point: its
+//    declination is the mean of the parents' declinations, not the declination
+//    of the (lon, lat) midpoint — benchmark programs agree column-by-column,
+//    not point-by-point. The equatorial shape therefore CARRIES lon/lat of
+//    record (PlanetPosition.lon/lat), so the In-Zodiaco/geodetic projection and
+//    the longitude-directed overlays keep deriving from the true longitude
+//    midpoint instead of inverting the mean ra/dec. In Mundo and In Zodiaco
+//    genuinely differ for composites, like any chart with off-ecliptic bodies.
+//    (Edge, inherent to per-coordinate midpoints: for a pair a few degrees
+//    short of opposition, the shorter arc in longitude and the shorter arc in
+//    RA can resolve to opposite sides of the sky — the exact-opposition tie is
+//    the Sun rules' knife-edge, but this straddle window is wider than any
+//    tie, so the RA midpoint is explicitly snapped to the longitude-of-record
+//    side; see the quarter-turn test in compositeSamples.)
 //  - wheel angles + houses = shorter-arc midpoints of the two parents' angles and
 //    cusps (à la Robert Hand): the composite Ascendant and Midheaven are each the
 //    exact midpoint of the two natal ones (see compositeAngles)
@@ -36,6 +55,8 @@ import {
   obliquity,
   PLANET_NAMES,
   relocate,
+  sampleBody,
+  type BodySample,
   type EclipticPosition,
   type HouseSystem,
   type NodeType,
@@ -79,26 +100,51 @@ export function shortArcMidLon(a: number, b: number, tieRef?: number): number {
     : other;
 }
 
+interface CompositeSample {
+  name: PlanetName;
+  lon: number; // shorter-arc midpoint of the parents' zodiacal longitudes
+  lat: number; // plain mean of the parents' ecliptic latitudes
+  ra: number; // shorter-arc midpoint of the parents' native right ascensions
+  dec: number; // plain mean of the parents' native declinations
+}
+
 /**
- * Midpoint zodiacal longitudes (radians) for every body BOTH parents resolve
- * (an asteroid outside its ephemeris range in either chart drops out, like a
- * normal chart outside coverage). The Sun is settled first so its midpoint can
- * arbitrate any exactly-opposed pair.
+ * Coordinate-wise midpoints for every body BOTH parents resolve (an asteroid
+ * outside its ephemeris range in either chart drops out, like a normal chart
+ * outside coverage). The Sun is settled first so its own midpoints can
+ * arbitrate any exactly-opposed pair — in each frame by its own coordinate
+ * (longitude ties toward the Sun's longitude midpoint, RA ties toward its RA
+ * midpoint). Latitude and declination don't wrap, so a plain mean is exact.
  */
-export function compositeLongitudes(
+function compositeSamples(
   parents: CompositeParents,
   nodeType: NodeType,
-): { name: PlanetName; lon: number }[] {
+): CompositeSample[] {
   const jdA = birthDataToJD(parents.a);
   const jdB = birthDataToJD(parents.b);
-  const sunA = bodyLonSpeed(jdA, 'Sun');
-  const sunB = bodyLonSpeed(jdB, 'Sun');
+  const sunA = sampleBody(jdA, 'Sun', nodeType);
+  const sunB = sampleBody(jdB, 'Sun', nodeType);
   if (!sunA || !sunB) return [];
-  const sunMid = shortArcMidLon(sunA.lon, sunB.lon);
-  const out: { name: PlanetName; lon: number }[] = [];
+  const sunMidLon = shortArcMidLon(sunA.lon, sunB.lon);
+  const sunMidRa = shortArcMidLon(sunA.ra, sunB.ra);
+  const midpoint = (a: BodySample, b: BodySample) => {
+    const lon = shortArcMidLon(a.lon, b.lon, sunMidLon);
+    let ra = shortArcMidLon(a.ra, b.ra, sunMidRa);
+    // A pair a hair short of opposition can straddle it differently per frame:
+    // RA−λ skews each separation independently (same-sign latitudes stretch
+    // the RA arc past 180° while the longitude arc stays under), so the two
+    // shorter-arc midpoints land on OPPOSITE sides of the sky. The row is one
+    // body — keep its RA on the side of its longitude of record. RA−λ never
+    // legitimately approaches a quarter turn, so the test is unambiguous.
+    if (Math.abs(wrapPi(ra - lon)) > Math.PI / 2) ra = wrap2pi(ra + Math.PI);
+    return { lon, lat: (a.lat + b.lat) / 2, ra, dec: (a.dec + b.dec) / 2 };
+  };
+  const out: CompositeSample[] = [];
   for (const name of PLANET_NAMES) {
     if (name === 'Sun') {
-      out.push({ name, lon: sunMid });
+      // midpoint() reproduces sunMidLon/sunMidRa exactly: with the tie-ref
+      // being the [0, π) tie candidate itself, the tie resolves to it.
+      out.push({ name, ...midpoint(sunA, sunB) });
       continue;
     }
     if (name === 'SouthNode') {
@@ -107,44 +153,67 @@ export function compositeLongitudes(
       // could differ is the exactly-opposed tie — where the shared near-Sun
       // rule would collapse BOTH nodes onto one point. Deriving keeps the
       // documented antipodality in every case (and halves the Swiss calls).
+      // The antipode of an ecliptic-plane point in all four coordinates:
+      // lon + π, ra + π, dec negated; node latitude is identically 0 (the
+      // literal, not −lat, so no −0 ever reaches a readout).
       const nn = out.find((p) => p.name === 'NorthNode');
-      if (nn) out.push({ name, lon: wrap2pi(nn.lon + Math.PI) });
+      if (nn) {
+        out.push({
+          name,
+          lon: wrap2pi(nn.lon + Math.PI),
+          lat: 0,
+          ra: wrap2pi(nn.ra + Math.PI),
+          dec: -nn.dec,
+        });
+      }
       continue;
     }
-    const a = bodyLonSpeed(jdA, name, nodeType);
-    const b = bodyLonSpeed(jdB, name, nodeType);
+    const a = sampleBody(jdA, name, nodeType);
+    const b = sampleBody(jdB, name, nodeType);
     if (!a || !b) continue;
-    out.push({ name, lon: shortArcMidLon(a.lon, b.lon, sunMid) });
+    out.push({ name, ...midpoint(a, b) });
   }
   return out;
 }
 
-/** Composite positions in the map pipeline's equatorial shape (lat 0 by the
- *  ecliptic-placement convention, so In Mundo and In Zodiaco coincide). */
+/**
+ * Midpoint zodiacal longitudes (radians) — the longitude-only projection of
+ * compositeSamples, for consumers that read nothing else.
+ */
+export function compositeLongitudes(
+  parents: CompositeParents,
+  nodeType: NodeType,
+): { name: PlanetName; lon: number }[] {
+  return compositeSamples(parents, nodeType).map(({ name, lon }) => ({
+    name,
+    lon,
+  }));
+}
+
+/** Composite positions in the map pipeline's equatorial shape: ra/dec are the
+ *  coordinate-wise means (the In-Mundo truth), with the zodiacal lon/lat OF
+ *  RECORD riding along — the In-Zodiaco/geodetic projection and the directed
+ *  overlays derive from those, never from an inversion of the mean ra/dec. */
 export function compositeEquatorial(
   parents: CompositeParents,
   nodeType: NodeType,
-  eps: number,
 ): PlanetPosition[] {
-  return compositeLongitudes(parents, nodeType).map(({ name, lon }) => {
-    const { ra, dec } = eclipticToRaDec(lon, 0, eps);
-    return { name, ra, dec };
-  });
+  return compositeSamples(parents, nodeType).map(
+    ({ name, ra, dec, lon, lat }) => ({ name, ra, dec, lon, lat }),
+  );
 }
 
-/** Composite positions for the wheel/readouts. Midpoints have no motion, so
- *  speed/retrograde stay absent (same shape as the derived overlay rings). */
+/** Composite positions for the wheel/readouts, with the mean latitude and mean
+ *  declination the tables show (and `ra` of record for the equatorial columns).
+ *  Midpoints have no motion, so speed/retrograde stay absent (same shape as the
+ *  derived overlay rings). */
 export function compositeEcliptic(
   parents: CompositeParents,
   nodeType: NodeType,
-  eps: number,
 ): EclipticPosition[] {
-  return compositeLongitudes(parents, nodeType).map(({ name, lon }) => ({
-    name,
-    lon,
-    lat: 0,
-    dec: eclipticToRaDec(lon, 0, eps).dec,
-  }));
+  return compositeSamples(parents, nodeType).map(
+    ({ name, lon, lat, ra, dec }) => ({ name, lon, lat, dec, ra }),
+  );
 }
 
 /** One body's composite longitude (radians) — the Returns snap's natal

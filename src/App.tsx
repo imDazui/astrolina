@@ -1449,16 +1449,17 @@ export default function App() {
         : 0,
     [current],
   );
-  // A composite chart's positions are the parents' longitude midpoints, not a
-  // cast of the stored moment (which only anchors the sidereal frame — see
-  // lib/astro/composite.ts). Everything downstream of these two memos follows
-  // automatically: lines, parans, local space, zenith, aspect/midpoint lines,
-  // the wheel, eclipse natal contacts, the advanced tables.
+  // A composite chart's positions are the parents' coordinate-wise midpoints
+  // (lon/lat/RA/dec each averaged per body), not a cast of the stored moment
+  // (which only anchors the sidereal frame — see lib/astro/composite.ts).
+  // Everything downstream of these two memos follows automatically: lines,
+  // parans, local space, zenith, aspect/midpoint lines, the wheel, eclipse
+  // natal contacts, the advanced tables.
   const positions = useMemo(
     () => {
       if (!current) return [];
       return current.composite
-        ? compositeEquatorial(current.composite, nodeType, obliquity(jd))
+        ? compositeEquatorial(current.composite, nodeType)
         : getPlanetPositions(jd, nodeType);
     },
     // ephemerisEpoch isn't read by the calc — it marks the deferred asteroid
@@ -1470,7 +1471,7 @@ export default function App() {
     () => {
       if (!current) return [];
       return current.composite
-        ? compositeEcliptic(current.composite, nodeType, obliquity(jd))
+        ? compositeEcliptic(current.composite, nodeType)
         : getEclipticPositions(jd, nodeType);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1496,10 +1497,12 @@ export default function App() {
   // its bearing ~3.7°). The map LINES instead use `linePositions` below.
   const slidPositions = useMemo(() => {
     if (!(sliding && current)) return positions;
+    // Composite midpoints are time-independent — reuse the memo (same array
+    // identity) so a slide drag doesn't resample Swiss and rebuild every line
+    // layer per bucket for byte-identical output.
+    if (current.composite) return positions;
     const jdEff = jd + slideBucket * SLIDE_BUCKET_DAYS;
-    return current.composite
-      ? compositeEquatorial(current.composite, nodeType, obliquity(jdEff))
-      : getPlanetPositions(jdEff, nodeType);
+    return getPlanetPositions(jdEff, nodeType);
     // ephemerisEpoch marks deferred asteroid data arriving (resample with new data).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions, sliding, slideBucket, current, jd, nodeType, ephemerisEpoch]);

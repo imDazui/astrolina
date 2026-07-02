@@ -11,8 +11,12 @@
 // solver (composite MC = shorter-arc midpoint of the two natal MCs, latitude-free,
 // solved jd within a half sidereal day of the Davison midpoint), the à-la-Hand
 // WHEEL angles (composite ASC and MC are each the exact midpoint of the two natal
-// ones), the wheel↔map MC agreement, the documented map-ASC-vs-wheel-ASC gap, and
-// a/b symmetry.
+// ones), the wheel↔map MC agreement, the documented map-ASC-vs-wheel-ASC gap,
+// a/b symmetry — and the COORDINATE-WISE body midpoints (lat = plain mean,
+// dec = plain mean of native declinations, RA = shorter-arc midpoint of native
+// RAs) against published Solar Fire / Matrix Horizons composite values for a
+// benchmark couple (second jd pair below), including the sentinel that the
+// mean declination departs the old flatten-to-ecliptic value.
 //
 // Run: npm run verify:composite
 import swe from '@swisseph/node';
@@ -232,5 +236,239 @@ check(
   'derived south node antipodal even at the tie',
   Math.abs(wrapPi(derivedSN - tiedNN - Math.PI)) < 1e-12,
 );
+
+// ── Coordinate-wise body midpoints (lat / dec / RA) ──────────────────────────
+// Mirrors composite.ts compositeSamples: per body, lon = shorter-arc midpoint
+// (near-Sun tie), lat = plain mean, dec = plain mean of NATIVE declinations,
+// ra = shorter-arc midpoint of native RAs (Sun-RA tie). Benchmarks: the Solar
+// Fire (SF) / Matrix Horizons composite tables for this exact couple. SF prints
+// D°MM′, so benchmark tolerances allow display rounding (the programs' own
+// natal inputs already differ by ≤1′ from ours).
+const EQ_FLAG = FLAG | CalculationFlag.Equatorial;
+const eclOf = (jd, body) => {
+  const r = calculatePosition(jd, body, FLAG);
+  return { lon: wrap2pi(r.longitude * D2R), lat: r.latitude * D2R };
+};
+const eqOf = (jd, body) => {
+  // With the Equatorial flag, Swiss returns RA in .longitude, dec in .latitude.
+  const r = calculatePosition(jd, body, EQ_FLAG);
+  return { ra: wrap2pi(r.longitude * D2R), dec: r.latitude * D2R };
+};
+const sampleOf = (jd, body) => ({ ...eclOf(jd, body), ...eqOf(jd, body) });
+// Declination of an ecliptic (lon, lat) point — the OLD flattened pipeline used
+// this with lat 0; the sentinel below proves the mean dec departs it.
+const decOfEcl = (lon, lat, eps) =>
+  Math.asin(Math.sin(lat) * Math.cos(eps) + Math.cos(lat) * Math.sin(eps) * Math.sin(lon));
+const arcmin = (rad) => rad * R2D * 60; // signed arcminutes
+const fmtDM = (rad) => {
+  const neg = rad < 0;
+  let m = Math.round(Math.abs(rad) * R2D * 60);
+  const d = Math.floor(m / 60);
+  m -= d * 60;
+  return `${neg ? '-' : '+'}${d}°${String(m).padStart(2, '0')}′`;
+};
+const SIGNS = ['ARI', 'TAU', 'GEM', 'CAN', 'LEO', 'VIR', 'LIB', 'SCO', 'SAG', 'CAP', 'AQU', 'PIS'];
+const fmtZodiac = (rad) => {
+  let m = Math.round(wrap2pi(rad) * R2D * 60);
+  let d = Math.floor(m / 60);
+  m -= d * 60;
+  if (d >= 360) d -= 360;
+  return `${String(d % 30).padStart(2, '0')} ${SIGNS[Math.floor(d / 30)]} ${String(m).padStart(2, '0')}`;
+};
+
+// The BENCHMARK pair: the couple behind the audit's published Solar Fire /
+// Matrix Horizons composite tables. Recovered numerically from those tables
+// (natal latitudes + composite longitudes over-determine the two moments; the
+// solution is unique across 1915–2005 and reproduces every published value to
+// <1′). Bare JDs on purpose: the positions are geocentric, so birthplaces are
+// irrelevant (and unrecorded), like the reference charts above.
+const jdA2 = 2436819.5222; // "His" chart
+const jdB2 = 2438295.6333; // "Her" chart
+const sunA2 = sampleOf(jdA2, Planet.Sun);
+const sunB2 = sampleOf(jdB2, Planet.Sun);
+const sunMidLon2 = shortArcMidLon(sunA2.lon, sunB2.lon);
+const sunMidRa2 = shortArcMidLon(sunA2.ra, sunB2.ra);
+const midpointOf = (a, b) => {
+  const lon = shortArcMidLon(a.lon, b.lon, sunMidLon2);
+  let ra = shortArcMidLon(a.ra, b.ra, sunMidRa2);
+  // Mirrors compositeSamples: a near-opposed pair can straddle the antipode
+  // differently in the RA frame; the RA midpoint snaps to the side of the
+  // longitude of record (quarter-turn test).
+  if (Math.abs(wrapPi(ra - lon)) > Math.PI / 2) ra = wrap2pi(ra + Math.PI);
+  return { lon, lat: (a.lat + b.lat) / 2, ra, dec: (a.dec + b.dec) / 2 };
+};
+
+// The audited bodies with the audit's benchmark values (arcminutes).
+// natA/natB: the natal ecliptic latitudes as the audit read them off this app
+// (chart-identity check); sfLat/sfDec: the SF composite column.
+const AUDIT = [
+  { name: 'Moon', body: Planet.Moon, natA: +226, natB: +231, sfLat: +228, sfDec: -896 },
+  { name: 'Jupiter', body: Planet.Jupiter, natA: +42, natB: -97, sfLat: -27, sfDec: -405 },
+  { name: 'Saturn', body: Planet.Saturn, natA: +46, natB: -75, sfLat: -14, sfDec: -1187 },
+  { name: 'Neptune', body: Planet.Neptune, natA: +104, natB: +104, sfLat: +103, sfDec: -775 },
+];
+const audited = AUDIT.map((t) => {
+  const a = sampleOf(jdA2, t.body);
+  const b = sampleOf(jdB2, t.body);
+  return { ...t, a, b, mid: midpointOf(a, b) };
+});
+
+// (8) Chart identity: the natal ecliptic latitudes match the audit's readings
+// of the app (±1.5′ display rounding) — proves this really is the benchmark
+// couple, so the composite comparisons below are apples-to-apples.
+for (const { name, a, b, natA, natB } of audited) {
+  check(
+    `natal ${name} latitudes match the audited charts`,
+    Math.abs(arcmin(a.lat) - natA) < 1.5 && Math.abs(arcmin(b.lat) - natB) < 1.5,
+    `A ${fmtDM(a.lat)} (audit ${fmtDM((natA / 60) * D2R)}), B ${fmtDM(b.lat)} (audit ${fmtDM((natB / 60) * D2R)})`,
+  );
+}
+
+// (9) Composite latitude = plain mean of the natal latitudes, agreeing with the
+// SF composite column (±1.5′: SF/MxH round a half-minute opposite ways, and
+// their natal inputs differ from ours by ≤1′).
+for (const { name, mid, sfLat } of audited) {
+  check(
+    `composite ${name} latitude = mean of natal latitudes ≈ SF`,
+    Math.abs(arcmin(mid.lat) - sfLat) < 1.5,
+    `${fmtDM(mid.lat)} vs SF ${fmtDM((sfLat / 60) * D2R)}`,
+  );
+}
+
+// (10) Composite declination = plain mean of the parents' NATIVE declinations,
+// agreeing with the SF composite column (±3′). This is the column no
+// point-derived declination can reproduce (see 12).
+for (const { name, mid, sfDec } of audited) {
+  check(
+    `composite ${name} declination = mean of native declinations ≈ SF`,
+    Math.abs(arcmin(mid.dec) - sfDec) < 3.0,
+    `${fmtDM(mid.dec)} vs SF ${fmtDM((sfDec / 60) * D2R)}`,
+  );
+}
+
+// (11) Construction identities of the midpoint itself.
+{
+  const { a, b, mid } = audited[0];
+  check(
+    'composite lat/dec are the exact per-coordinate means (construction)',
+    Math.abs(mid.lat - (a.lat + b.lat) / 2) < 1e-15 &&
+      Math.abs(mid.dec - (a.dec + b.dec) / 2) < 1e-15,
+  );
+}
+
+// (12) Sentinels: the mean declination is NOT the declination of any single
+// composite point — neither the old flattened (lonMid, 0) pipeline nor the
+// (lonMid, latMean) point reproduces it (the row is not a self-consistent 3D
+// point; benchmark programs agree per column, not per point).
+{
+  // Obliquity at the pair's Davison midpoint — within float noise of any frame
+  // moment this chart could store, and the sentinel thresholds are arcminutes.
+  const eps = eclEps((jdA2 + jdB2) / 2);
+  const moon = audited[0];
+  const flattened = decOfEcl(moon.mid.lon, 0, eps);
+  check(
+    'mean declination departs the old flatten-to-ecliptic value (Moon)',
+    Math.abs(arcmin(moon.mid.dec - flattened)) > 10,
+    `mean ${fmtDM(moon.mid.dec)} vs flattened ${fmtDM(flattened)}`,
+  );
+  const jup = audited[1];
+  const pointDec = decOfEcl(jup.mid.lon, jup.mid.lat, eps);
+  check(
+    'mean declination departs the (lonMid, latMean) point value (Jupiter)',
+    Math.abs(arcmin(jup.mid.dec - pointDec)) > 60,
+    `mean ${fmtDM(jup.mid.dec)} vs point ${fmtDM(pointDec)}`,
+  );
+}
+
+// (13) Node antipodality holds in ALL FOUR coordinates for the derived SN.
+{
+  const nnA = sampleOf(jdA2, LunarPoint.MeanNode);
+  const nnB = sampleOf(jdB2, LunarPoint.MeanNode);
+  const nn = midpointOf(nnA, nnB);
+  const sn = { lon: wrap2pi(nn.lon + Math.PI), lat: 0, ra: wrap2pi(nn.ra + Math.PI), dec: -nn.dec };
+  check(
+    'derived south node antipodal in lon, RA, dec (and lat 0)',
+    Math.abs(wrapPi(sn.lon - nn.lon - Math.PI)) < 1e-12 &&
+      Math.abs(wrapPi(sn.ra - nn.ra - Math.PI)) < 1e-12 &&
+      sn.dec === -nn.dec &&
+      Object.is(sn.lat, 0),
+  );
+}
+
+// (14) The composite RA is equidistant from the two natal RAs on the shorter
+// arc (the longitude rule, per coordinate) — Sun and Moon.
+for (const [label, a, b, mid] of [
+  ['Sun', sunA2, sunB2, { ra: sunMidRa2 }],
+  ['Moon', audited[0].a, audited[0].b, audited[0].mid],
+]) {
+  const dA = Math.abs(wrapPi(mid.ra - a.ra));
+  const dB = Math.abs(wrapPi(mid.ra - b.ra));
+  check(
+    `composite ${label} RA equidistant on the shorter arc`,
+    Math.abs(dA - dB) < 1e-12 && dA <= Math.PI / 2 + 1e-12,
+    `each side ${(dA * R2D).toFixed(4)}°`,
+  );
+}
+
+// (15) a/b symmetry of the new coordinates: swapping the parents changes nothing.
+{
+  const { a, b, mid } = audited[1];
+  const swapped = midpointOf(b, a);
+  check(
+    'a/b symmetry (lat / dec / RA midpoints)',
+    Math.abs(swapped.lat - mid.lat) < 1e-15 &&
+      Math.abs(swapped.dec - mid.dec) < 1e-15 &&
+      Math.abs(wrapPi(swapped.ra - mid.ra)) < 1e-12,
+  );
+}
+
+// (16) Near-opposition straddle: a pair just short of opposition in longitude
+// whose same-sign latitudes stretch the RA separation PAST 180° — the two
+// shorter arcs then resolve to opposite sides of the sky, and the quarter-turn
+// snap must bring the RA midpoint back to the longitude-of-record side.
+{
+  const eps = eclEps((jdA2 + jdB2) / 2);
+  const raDecOfEcl = (lon, lat) => {
+    const x = Math.cos(lat) * Math.cos(lon);
+    const y = Math.cos(lat) * Math.sin(lon);
+    const z = Math.sin(lat);
+    const ye = y * Math.cos(eps) - z * Math.sin(eps);
+    const ze = y * Math.sin(eps) + z * Math.cos(eps);
+    return { ra: wrap2pi(Math.atan2(ye, x)), dec: Math.atan2(ze, Math.sqrt(x * x + ye * ye)) };
+  };
+  const mk = (lonDeg, latDeg) => {
+    const lon = lonDeg * D2R;
+    const lat = latDeg * D2R;
+    return { lon, lat, ...raDecOfEcl(lon, lat) };
+  };
+  const a = mk(0, 5);
+  const b = mk(179.6, 5); // Δλ = 179.6° < 180, but ΔRA > 180° (same-sign lats)
+  const rawRaMid = shortArcMidLon(a.ra, b.ra);
+  const m = midpointOf(a, b);
+  check(
+    'straddle: raw RA midpoint lands on the wrong side (the hazard is real)',
+    Math.abs(wrapPi(rawRaMid - m.lon)) > Math.PI / 2,
+    `raw RA mid ${(rawRaMid * R2D).toFixed(1)}° vs lonMid ${(m.lon * R2D).toFixed(1)}°`,
+  );
+  check(
+    'straddle: snapped RA midpoint stays on the longitude-of-record side',
+    Math.abs(wrapPi(m.ra - m.lon)) <= Math.PI / 2,
+    `snapped RA ${(m.ra * R2D).toFixed(1)}°`,
+  );
+  check(
+    'straddle: snap is a/b symmetric',
+    Math.abs(wrapPi(midpointOf(b, a).ra - m.ra)) < 1e-12,
+  );
+}
+
+// Reference table (feeds the audit reply): the composite positions this math
+// produces for the benchmark couple, in the audit's own display format.
+console.log('\nComposite positions (coordinate-wise midpoints), benchmark couple:');
+console.log('  body      longitude   latitude   declination   natal lats (A, B)');
+for (const { name, a, b, mid } of audited) {
+  console.log(
+    `  ${name.padEnd(8)}  ${fmtZodiac(mid.lon)}   ${fmtDM(mid.lat).padStart(7)}   ${fmtDM(mid.dec).padStart(8)}      ${fmtDM(a.lat)}, ${fmtDM(b.lat)}`,
+  );
+}
 
 process.exit(failures ? 1 : 0);
