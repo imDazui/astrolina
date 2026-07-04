@@ -321,9 +321,10 @@
 @media (pointer: coarse) {
   .map-zoom-out {
     /* max() mirrors the overlay bars' own bottom offset (they lift clear of the
-       home-indicator inset when the app draws edge-to-edge), keeping the pill's
+       home-indicator inset when the app draws edge-to-edge, and the reserved band's
+       height already includes any inset it pads itself by), keeping the pill's
        clearance measured from the bar's real position. */
-    bottom: calc(var(--sky-band-h, 0px) + max(var(--edge, 16px), env(safe-area-inset-bottom, 0px)) + var(--overlay-bar-gap, 0px) + var(--zoom-out-clearance));
+    bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--sky-band-h, 0px) + var(--edge, 16px)) + var(--overlay-bar-gap, 0px) + var(--zoom-out-clearance));
   }
 }
 .map-zoom-out:focus-visible {
@@ -874,8 +875,10 @@
     border-radius: 0 !important; /* full-bleed bar: square the corners at the screen edges */
     /* When the app draws edge-to-edge (installed standalone on a notched phone), grow the bar
        into the home-indicator inset: its background fills the strip while the credit links stay
-       above the indicator, tappable. 0 everywhere else. */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+       above the indicator, tappable. 0 everywhere else — and 0 again while a reserved bottom
+       band is up: the whole map frame (this footer included) lifts above the band, which
+       already clears the indicator itself, so the padding would only hollow out the bar. */
+    padding-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--sky-band-h, 0px)));
   }
 }
 

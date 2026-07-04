@@ -14,7 +14,10 @@
 // TRACK for the center (lib/extensions/skyBandTrack.ts) — its eye-toggle shows
 // here only when registered AND entitled (no teaser), tagged with the gated
 // tier in its hover tip. Chart-time-INDEPENDENT: the band reads the sky of the
-// chosen DAY, so it works even for unknown-birth-time charts.
+// chosen DAY, so it works even for unknown-birth-time charts. On PHONES the
+// same DOM reflows to stacked rows (track / legend / context — see the CSS)
+// and the band pads itself by the home-indicator inset; the legend's tips are
+// tap-revealed there.
 import {
   useEffect,
   useMemo,
@@ -31,6 +34,7 @@ import {
   type SkyBandTrackContext,
 } from '../../lib/extensions/skyBandTrack';
 import { getIanaTimezone, offsetHoursAt, zoneLabelAt } from '../../lib/atlas/timezone';
+import { usePhone } from '../../lib/touch';
 import { planetRank } from '../../lib/astro/format';
 import { useT } from '../../i18n';
 import { TipButton, TipSpan } from '../ui/HoverTip';
@@ -45,6 +49,19 @@ import './SkyBand.css';
  *  <Map bottomInset> and the bottom-dock registry: this while the row is
  *  compact, the registered track's own `height` while it shows. */
 export const SKY_BAND_H_COMPACT = 28;
+
+/** The phone layout's two stacked rows (legend + context, 28px each). App adds
+ *  the registered track's height while it shows, the bottom safe-area inset AND
+ *  the tap cushion below (the band pads itself by both), so the published
+ *  height is the band's TOTAL. */
+export const SKY_BAND_H_PHONE = 56;
+
+/** Extra bottom breathing room (px) under the phone rows, beyond the safe-area
+ *  inset: keeps the context row's controls — the ✕ hugs the bottom-right —
+ *  clear of the display's rounded corners and comfortably tappable, and lifts
+ *  the row off the raw screen edge on inset-less (home-button) phones. Kept in
+ *  sync with the padding-bottom in SkyBand.css's .is-phone rule. */
+export const SKY_BAND_PHONE_CUSHION = 8;
 
 /** Persisted density preference: absent/0 = compact (hover a body for its times), 1 = the times
  *  listed inline. Remembered across sessions so the chosen density sticks. */
@@ -85,6 +102,9 @@ export function SkyBand({
   onClose,
 }: SkyBandProps) {
   const { t, fmt } = useT();
+  // Phone-sized screens reflow the band to stacked rows (the is-phone class —
+  // the CSS owns the layout; the DOM is the same either way).
+  const phone = usePhone();
   // Day pager: offset from "today", anchored once per mount so the band doesn't
   // slide under the reader at local midnight.
   const [dayOffset, setDayOffset] = useState(0);
@@ -150,8 +170,11 @@ export function SkyBand({
     if (dayStart === null || !zone) return '';
     const noonMs = dayStart + MS_DAY / 2;
     const wall = new Date(noonMs + offsetHoursAt(zone, noonMs) * 3_600_000);
-    return `${wall.getUTCDate()} ${fmt.monthName(wall.getUTCMonth() + 1)} ${wall.getUTCFullYear()}`;
-  }, [dayStart, zone, fmt]);
+    // Phones abbreviate the month: the pager can't shrink, so a full "December"
+    // would crush the place label beside it in the context row.
+    const month = (phone ? fmt.monthAbbr : fmt.monthName)(wall.getUTCMonth() + 1);
+    return `${wall.getUTCDate()} ${month} ${wall.getUTCFullYear()}`;
+  }, [dayStart, zone, fmt, phone]);
   // An instant's wall-clock fraction of the shown day (the track's x-mapping).
   // Both ends use the offset AT THEIR OWN instant, so DST days place every
   // marker at its true local clock position.
@@ -291,7 +314,7 @@ export function SkyBand({
 
   return (
     <div
-      className={`sky-band${trackVisible ? '' : ' is-compact'}${inlineMode ? ' is-verbose' : ''}`}
+      className={`sky-band${trackVisible ? '' : ' is-compact'}${inlineMode ? ' is-verbose' : ''}${phone ? ' is-phone' : ''}`}
       role="region"
       aria-label={t('skyTimes.title')}
     >

@@ -15,8 +15,10 @@
 .eclipse-hud {
   position: absolute;
   /* max() lifts the bar clear of the home-indicator inset when the app draws edge-to-edge
-     (installed standalone on a notched phone); env() is 0 everywhere else. */
-  bottom: calc(max(var(--edge, 16px), env(safe-area-inset-bottom, 0px)) + var(--sky-band-h, 0px));
+     (installed standalone on a notched phone); env() is 0 everywhere else. The reserved
+     bottom band's height already includes any inset it pads itself by, so env() is max'd
+     against band+edge, never added on top. */
+  bottom: max(env(safe-area-inset-bottom, 0px), calc(var(--sky-band-h, 0px) + var(--edge, 16px)));
   left: calc(50% + var(--es-width, 0px) / 4);
   transform: translateX(-50%);
   /* Above the top nav (z-25) so a bar dragged up isn't stuck behind it; also clears the profile

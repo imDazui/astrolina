@@ -740,8 +740,9 @@ button.topnav-status:hover {
   .topnav {
     width: 100%;
     /* Square the TOP corners so the full-width bar melds seamlessly into the top screen edge; the
-       bottom corners keep their 40px sweep down into the map. */
-    border-radius: 0 0 40px 40px;
+       bottom corners keep a sweep down into the map, toned down from the desktop 40px to a
+       blockier-but-still-rounded 30px at this full-device width. */
+    border-radius: 0 0 30px 30px;
     /* Pad the controls down clear of the notch while the bar's BACKGROUND extends up past the screen
        top (the --topnav-bleed above). The notch inset reserves more height than the controls need for
        clearance, so sit them ~20% higher than the full inset (×0.8) — closer to the notch, reclaiming
@@ -753,7 +754,7 @@ button.topnav-status:hover {
   /* Consistent spread: name (left) · status pill (centre) · icon menus (right), at content-
      independent positions so the bar's parts always sit in the same place in portrait. Extra RIGHT
      padding keeps the right-pinned View trigger clear of the bar's rounded bottom-right corner
-     (40px radius) so it doesn't bleed over the edge; the left stays at the base gutter. */
+     (30px radius) so it doesn't bleed over the edge; the left stays at the base gutter. */
   .topnav-row {
     grid-template-columns: 1fr auto 1fr;
     gap: 8px;

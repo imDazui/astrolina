@@ -56,12 +56,15 @@
 
 /* Mobile: --edge collapses to 3px, so the attribution footer drops to the very bottom. The
    desktop 44px is a fixed value tuned to the roomier desktop --edge (16px), which leaves an
-   oversized gap once the footer drops. Track the footer down so the chip keeps a small gap
-   above it (matching the screen-edge padding). 28px ≈ the ~24px attribution chip + a few px. */
+   oversized gap once the footer drops. Track the footer down so the chip sits just above the
+   footer: its box + margin come to ~25px, and 28px keeps the same visual breathing room as the
+   left/right --edge gutters while clearing it, in step with the bottom-left profile strip. */
 @media (pointer: coarse) {
   .info-bar {
-    /* env() is additive, mirroring the bottom-left stack: the full-width attribution footer
-       below grows downward by the same inset, so the chip keeps its small gap above it. */
-    bottom: calc(var(--edge, 3px) + 28px + env(safe-area-inset-bottom, 0px) + var(--sky-band-h, 0px));
+    /* max(env, band), mirroring the bottom-left stack: with no band the full-width
+       attribution footer grows downward by the inset (its padding-bottom), with the band
+       up (inset already inside its height) the footer rides the band's top instead —
+       either way the chip keeps its small gap above the footer. */
+    bottom: calc(var(--edge, 3px) + 28px + max(env(safe-area-inset-bottom, 0px), var(--sky-band-h, 0px)));
   }
 }

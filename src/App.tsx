@@ -39,7 +39,12 @@ import { TimelineHud } from './components/TimelineHud/TimelineHud';
 import { SynastryHud } from './components/SynastryHud/SynastryHud';
 import { EclipseHud } from './components/EclipseHud/EclipseHud';
 import { TeleportHud } from './components/TeleportHud/TeleportHud';
-import { SkyBand, SKY_BAND_H_COMPACT } from './components/SkyBand/SkyBand';
+import {
+  SkyBand,
+  SKY_BAND_H_COMPACT,
+  SKY_BAND_H_PHONE,
+  SKY_BAND_PHONE_CUSHION,
+} from './components/SkyBand/SkyBand';
 import { getSkyBandTrack, isSkyBandTrackEntitled } from './lib/extensions/skyBandTrack';
 import { publishBottomDock, retireBottomDock } from './lib/bottomDock';
 import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
@@ -55,7 +60,8 @@ import { ChartManager } from './components/ChartManager/ChartManager';
 import { ImportChartModal } from './components/ImportChartModal/ImportChartModal';
 import { MissionGuide } from './components/MissionGuide/MissionGuide';
 import { useMissions } from './lib/useMissions';
-import { isPhone, isTouchLayout, useTouchLayout, usePhone } from './lib/touch';
+import { isTouchLayout, useTouchLayout, usePhone } from './lib/touch';
+import { useSafeAreaBottom } from './lib/safeArea';
 // Type-only: erased at compile time, so the eclipses module itself still
 // loads lazily (the value import lives in the dynamic-import effect below).
 import type { EclipseCatalogRow, EclipseContact } from './lib/astro/eclipses';
@@ -1134,9 +1140,8 @@ export default function App() {
         case 'c': setShowCoords((v) => !v); break;
         case 's': setShowSettings((v) => !v); break;
         case 'g': setShowTeleport((v) => !v); break;
-        // Sky Times is an 'adv'-tier view (matches its View-menu row); the band
-        // doesn't render on phones, so the key is inert there too.
-        case 'h': if (advancedWheel && !isPhone()) setShowSkyTimes((v) => !v); break;
+        // Sky Times is an 'adv'-tier view (matches its View-menu row).
+        case 'h': if (advancedWheel) setShowSkyTimes((v) => !v); break;
         case 'l':
           // Local space isn't shown in Mundane (geodetic); opening it returns to the
           // celestial frame (matches the View-menu toggle + the slide tool).
@@ -1301,14 +1306,18 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:view-skytimes:v1', showSkyTimes ? '1' : '0');
   }, [showSkyTimes]);
-  // The Sky Band occupies REAL layout space along the bottom. Hidden on phones
-  // (the bottom edge is already crowded there and the band is hover-driven) and
-  // while the Capture tool owns the map-frame insets. The map gets the height as
-  // a PROP (inline style + resize land on one commit); the rest of the bottom
-  // furniture shifts via the bottom-dock var, published here in a LAYOUT effect
-  // so it moves in the same paint.
+  // The Sky Band occupies REAL layout space along the bottom (hidden while the
+  // Capture tool owns the map-frame insets). Phones get the stacked layout —
+  // two 28px rows plus the track while it shows — and the band pads itself by
+  // the home-indicator inset, so the height computed here (and published as
+  // --sky-band-h) is the band's TOTAL on phones, inset included; the shifted
+  // furniture max()es the var against env() rather than adding. The map gets
+  // the height as a PROP (inline style + resize land on one commit); the rest
+  // of the bottom furniture shifts via the bottom-dock var, published here in
+  // a LAYOUT effect so it moves in the same paint.
   const phoneLayout = usePhone();
-  const skyBandVisible = showSkyTimes && !phoneLayout && mapTool !== 'capture';
+  const safeBottom = useSafeAreaBottom();
+  const skyBandVisible = showSkyTimes && mapTool !== 'capture';
   // The band's expandable TRACK (a downstream build's registered center — see
   // lib/extensions/skyBandTrack.ts; the open core registers none, so its band
   // is always the compact row). The expanded/compact switch is owned here (not
@@ -1323,8 +1332,14 @@ export default function App() {
   const skyBandTrackExt = getSkyBandTrack();
   const skyBandTrackAvailable = !!skyBandTrackExt && isSkyBandTrackEntitled(skyBandTrackExt);
   const skyBandTrackShown = skyBandTrackAvailable && skyBandTrackOn;
-  const skyBandH =
-    skyBandTrackShown && skyBandTrackExt ? skyBandTrackExt.height : SKY_BAND_H_COMPACT;
+  const skyBandH = phoneLayout
+    ? SKY_BAND_H_PHONE +
+      (skyBandTrackShown && skyBandTrackExt ? skyBandTrackExt.height : 0) +
+      safeBottom +
+      SKY_BAND_PHONE_CUSHION
+    : skyBandTrackShown && skyBandTrackExt
+      ? skyBandTrackExt.height
+      : SKY_BAND_H_COMPACT;
   useLayoutEffect(() => {
     publishBottomDock('sky-band', skyBandVisible ? skyBandH : 0);
     return () => retireBottomDock('sky-band');

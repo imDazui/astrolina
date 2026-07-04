@@ -532,25 +532,28 @@ body,
 @media (pointer: coarse) and (max-width: 880px) {
   .top-left-stack {
     top: auto;
-    /* + the reserved bottom band: matters on 600-880px tablets, which get the
-       sky band (phones don't render it, so the var is 0 there). The max() keeps the
-       stack clear of the home-indicator inset when the app draws edge-to-edge (the
+    /* + the reserved bottom band (the sky band, when it's up). Its published height
+       already INCLUDES any home-indicator inset the band pads itself by (phones), so
+       env() is max'd against band+edge — never added on top — while still lifting the
+       stack clear of the inset when no band is up and the app draws edge-to-edge (the
        BOTTOM inset is real wherever it's reported, unlike the phantom symmetric
        LEFT/RIGHT landscape insets the corner note above avoids). */
-    bottom: calc(max(var(--edge, 16px), env(safe-area-inset-bottom, 0px)) + var(--sky-band-h, 0px));
+    bottom: max(env(safe-area-inset-bottom, 0px), calc(var(--sky-band-h, 0px) + var(--edge, 16px)));
   }
 }
 
 /* Portrait phones: the map's attribution/credits footer becomes a full-width centred bar pinned
-   along the very bottom (see Map.css). Lift the bottom-left profile strip just clear of it — a
-   small gap above the footer, matching the screen-edge padding (on touch --edge is 3px, so both
-   otherwise hug the bottom). 28px ≈ the ~24px footer chip + a few px, in step with .info-bar. */
+   along the very bottom (see Map.css). Lift the bottom-left profile strip just clear of it: the
+   footer's box + margin come to ~25px, and 28px keeps the same visual breathing room as the
+   left/right --edge gutters while clearing it, in step with .info-bar. */
 @media (pointer: coarse) and (max-width: 600px) {
   .top-left-stack {
-    /* --sky-band-h is 0 on phones (no band); kept for symmetry with the tablet rule.
-       env() is ADDITIVE here (not max'd): the footer bar below grows downward by the
-       same inset (its own padding-bottom), so the strip rides up with the footer's top. */
-    bottom: calc(var(--edge, 3px) + 28px + env(safe-area-inset-bottom, 0px) + var(--sky-band-h, 0px));
+    /* max(env, band): with no band the footer bar below grows downward by the inset
+       (its own padding-bottom), so the strip rides up with the footer's top; with the
+       band up (its height already includes the inset it pads itself by) the footer's
+       padding collapses (Map.css) and the bar rides the band's top instead. Either
+       way the strip sits 28px + --edge above the footer's top edge. */
+    bottom: calc(var(--edge, 3px) + 28px + max(env(safe-area-inset-bottom, 0px), var(--sky-band-h, 0px)));
   }
 }
 

@@ -12,6 +12,9 @@
 // read this var — the map takes its inset as a prop (an inline style commits
 // before layout effects, so its resize() always measures the final size; a
 // var write from a sibling's effect can land after the map already resized).
+// The published height is a band's TOTAL: on phones the sky band pads itself
+// by the home-indicator inset and includes it here, so consumers combine the
+// var with env(safe-area-inset-bottom) via max(), never by adding the two.
 const heights = new Map<string, number>();
 
 function apply(): void {

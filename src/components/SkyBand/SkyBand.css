@@ -49,8 +49,11 @@
 
 /* Compact (no track): the same entries flow inline on one row. It scrolls horizontally when the
    bodies — especially with their times shown — run wider than the space before the context
-   column; the scrollbar is hidden and the edges fade instead (below) to cue the overflow. */
-.sky-band.is-compact .sky-band-legend {
+   column; the scrollbar is hidden and the edges fade instead (below) to cue the overflow.
+   Phones keep this single scrolling row even while a track shows (the 4-row grid above assumes
+   the expanded band's height; on phones the legend is its own 28px row — see the phone block). */
+.sky-band.is-compact .sky-band-legend,
+.sky-band.is-phone .sky-band-legend {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -78,7 +81,8 @@
     transparent 100%
   );
 }
-.sky-band.is-compact .sky-band-legend::-webkit-scrollbar {
+.sky-band.is-compact .sky-band-legend::-webkit-scrollbar,
+.sky-band.is-phone .sky-band-legend::-webkit-scrollbar {
   display: none;
 }
 /* Mouse drag-to-scroll: grab cursor + mute the bodies so no stray hover / selection fires while
@@ -353,4 +357,90 @@
   gap: 12px;
   font-size: 11px;
   color: var(--text-faint);
+}
+
+/* ── PHONES (the is-phone class — a coarse-pointer screen small in EITHER orientation,
+   mirroring lib/touch.ts usePhone) ──
+   The desktop single row can't hold a finger-sized legend AND the context column, so the same
+   DOM reflows to STACKED rows: the registered track (while it shows) on top, then the legend
+   row, then the context row. The band also pads itself by the home-indicator inset, and the
+   height App publishes INCLUDES that inset — so --sky-band-h is the band's TOTAL height here,
+   and the shifted bottom furniture max()es the var against env() rather than adding the two. */
+.sky-band.is-phone {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* Row 1 takes whatever the published height leaves beyond the two 28px rows — exactly the
+     registered track's height while it shows, 0 otherwise. */
+  grid-template-rows: minmax(0, 1fr) 28px 28px;
+  grid-template-areas:
+    'center center center'
+    'toggle legend legend'
+    'side   side   close';
+  height: var(--sky-band-h, 56px);
+  /* The safe-area inset plus a small tap cushion (SKY_BAND_PHONE_CUSHION in the TSX — the
+     two must stay in sync): controls in the bottom row — the ✕ hugs the bottom-right —
+     stay clear of the display's rounded corners and the home-indicator area, and keep a
+     little lift off the raw screen edge on inset-less (home-button) phones. */
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+}
+.sky-band.is-phone .sky-band-center {
+  grid-area: center;
+}
+.sky-band.is-phone .sky-band-detail-toggle {
+  grid-area: toggle;
+}
+.sky-band.is-phone .sky-band-legend {
+  grid-area: legend;
+}
+/* The context column becomes the bottom row; its three side-rows sit inline. */
+.sky-band.is-phone .sky-band-side {
+  grid-area: side;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 0 10px;
+  border-left: none;
+  min-width: 0;
+}
+/* The place row is the flexible one — it shrinks and ellipsizes so the pager /
+   zone / toggles never crush. */
+.sky-band.is-phone .sky-band-side-row {
+  flex: none;
+  min-width: 0;
+}
+.sky-band.is-phone .sky-band-side-row:has(.sky-band-place) {
+  flex: 1 1 auto;
+  justify-content: flex-start;
+}
+/* Portrait is tight: the zone keeps its clock icon (a tap reveals the full zone) and the
+   track + density toggles keep their eyes — the text labels go, CLIPPED rather than
+   display:none so every control keeps its accessible name. */
+.sky-band.is-phone .sky-band-zone,
+.sky-band.is-phone .sky-band-track-toggle,
+.sky-band.is-phone .sky-band-detail-toggle {
+  position: relative;
+}
+.sky-band.is-phone .sky-band-zone > span,
+.sky-band.is-phone .sky-band-track-toggle > span,
+.sky-band.is-phone .sky-band-detail-toggle > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.sky-band.is-phone .sky-band-close {
+  grid-area: close;
+  margin: 0 8px 0 2px;
+}
+/* Empty state (no chart, no pin): the message fills the band; the ✕ centres on the right. */
+.sky-band.is-phone .sky-band-empty {
+  grid-row: 1 / -1;
+  grid-column: 1 / 3;
+}
+.sky-band.is-phone:has(.sky-band-empty) .sky-band-close {
+  grid-area: auto;
+  grid-row: 1 / -1;
+  grid-column: 3;
 }

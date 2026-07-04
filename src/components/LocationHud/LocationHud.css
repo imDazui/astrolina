@@ -24,6 +24,17 @@
   cursor: default;
   overflow: hidden;
 }
+/* The frosted panel here is the shared .timeline-hud chrome, whose base rule ALSO carries the
+   docked overlay-bar positioning (position:absolute; z-index:12). At EQUAL specificity, and
+   landing later in the runtime-injected CSS than this file, that base rule was overriding the
+   position:fixed / z-index:27 above — leaving Capture / Teleport / Local Space pinned at z-12,
+   BEHIND the top nav (z-25). Re-assert them with a compound selector that outweighs the base
+   chrome (0,2,0 > 0,1,0), regardless of load order. The window still places itself via inline
+   left/top, so only position + z-index need restating. */
+.location-hud.timeline-hud {
+  position: fixed;
+  z-index: 27;
+}
 
 /* The Local Space window carries far less than the Teleport search (no results list),
    so it runs 30% narrower than the shared 320px base (224px). Overrides both width and

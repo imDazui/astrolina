@@ -36,7 +36,7 @@ import { PinchIcon } from '../ui/PinchIcon';
 import { ZoomIcon } from '../ui/ZoomIcon';
 import { useT } from '../../i18n';
 import type { TFn } from '../../i18n';
-import { useTouchLayout, useNarrowNav, usePhone } from '../../lib/touch';
+import { useTouchLayout, useNarrowNav } from '../../lib/touch';
 // Reuse the overlay bar's chrome (.timeline-hud + accent/mapstate vars); this bar
 // is the same component language, docked at the top as a curved island.
 import '../TimelineHud/TimelineHud.css';
@@ -725,9 +725,6 @@ export function TopNav({
   // partition is stable, so each group keeps its declared order (e.g. Guides stays
   // above Info).
   const touch = useTouchLayout();
-  // The Sky Times band never renders on phones (the bottom edge is already
-  // crowded there), so its View row hides too — no dead toggle.
-  const phone = usePhone();
   const viewItems: {
     id: string;
     label: string;
@@ -742,9 +739,7 @@ export function TopNav({
     { id: 'minimap', label: t('topNav.view.minimap'), hint: t('topNav.view.minimapHint'), hotkey: 'M', checked: showChart, onToggle: () => setShowChart(!showChart) },
     { id: 'settings', label: t('topNav.view.settings'), hint: t('topNav.view.settingsHint'), hotkey: 'S', checked: showSettings, onToggle: () => setShowSettings(!showSettings) },
     { id: 'teleport', label: t('topNav.view.teleport'), hint: t('topNav.view.teleportHint'), hotkey: 'G', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
-    ...(!phone
-      ? [{ id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'H', tier: 'adv' as PlanTier, checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) }]
-      : []),
+    { id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'H', tier: 'adv', checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) },
     { id: 'localSpace', label: t('topNav.view.localSpace'), hint: t('topNav.view.localSpaceHint'), hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace) },
     { id: 'guides', label: t('topNav.view.guides'), hint: t('topNav.view.guidesHint'), checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
     { id: 'info', label: t('topNav.view.info'), hint: t('topNav.view.infoHint'), checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
