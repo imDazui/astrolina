@@ -1,0 +1,53 @@
+/*
+ * AstroLina: web-based astrocartography for curious minds.
+ * Copyright (C) 2026 AstroLina <https://astrolina.org>
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Licensed under the GNU AGPL v3.0 with an additional attribution term under
+ * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
+ */
+
+/* Horizon-frame dial for the wheel sidebar — rim styling mirrors the map's
+   horizon compass (LocalHorizonWheel.css) so the two read as one instrument. */
+.local-space-wheel {
+  display: block;
+  overflow: visible;
+}
+
+.local-space-wheel .lsw-ring {
+  fill: none;
+  stroke: rgba(var(--tint), 0.45);
+  stroke-width: 1;
+}
+.local-space-wheel .lsw-ring-inner {
+  fill: none;
+  stroke: rgba(var(--tint), 0.18);
+  stroke-width: 0.7;
+}
+.local-space-wheel .lsw-tick {
+  stroke: rgba(var(--tint), 0.32);
+  stroke-width: 0.8;
+}
+.local-space-wheel .lsw-tick-major {
+  stroke: rgba(var(--tint), 0.6);
+  stroke-width: 1.4;
+}
+.local-space-wheel .lsw-axis {
+  stroke: rgba(var(--tint), 0.16);
+  stroke-width: 0.7;
+}
+.local-space-wheel .lsw-center {
+  fill: var(--text-muted);
+}
+
+.local-space-wheel .lsw-card {
+  fill: var(--text-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Planet marks come from the zodiac wheel's classes (planet-disc-fill,
+   planet-hit, planet-mark hover lift — WheelSvg.css); only the below-horizon
+   dim is this dial's own. */
+.local-space-wheel .lsw-below {
+  opacity: 0.55;
+}

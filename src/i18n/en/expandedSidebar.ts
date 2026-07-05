@@ -172,5 +172,46 @@ export const expandedSidebar = {
   overlayAspectsTip: 'Overlay aspects',
   overlayAspectsHint: 'Aspects between the overlay chart’s bodies and your natal ones (e.g. a transiting planet to a natal planet), showing how the overlay activates the chart.',
 
+  // Local-space amalgamation: the horizon dial's caption below the wheel stack
+  // and the aspect list's frame-status badges (Local Space view on).
+  localSpace: {
+    caption: 'Local space',
+    lost: 'Broken in local space',
+    lostHint: 'This natal aspect does not hold between the bodies’ compass bearings (azimuths) at the local-space origin.',
+    only: 'Local space only',
+    onlyHint: 'These bodies aspect each other by azimuth at the local-space origin, though not in the natal zodiac.',
+    both: 'Held in local space',
+    bothHint: 'This aspect holds in both frames — in the natal zodiac and between the bodies’ compass bearings (azimuths) at the local-space origin.',
+    compare: 'Compare',
+    compareTip: 'Compare frames',
+    compareHint: 'Compare the frames pair by pair: each row shows a pair’s natal aspect, its local-space aspect, the orb change (− means closer to exact), and a status — retained, changed (same pair, different aspect), lost, or new. Column headers sort; the status pills filter. Declination pairs, having no horizon analogue, show in the combined list only.',
+    pairCol: 'Pair',
+    pairColHint: 'The two bodies. Sort to group rows by planet.',
+    natalCol: 'Natal',
+    natalColHint: 'The pair’s aspect by ecliptic longitude in the natal chart, with its orb. Sorts by orb.',
+    lsCol: 'Local space',
+    lsColHint: 'The pair’s aspect between compass bearings (azimuths) at the local-space origin, with its orb. Sorts by orb.',
+    deltaCol: 'Δ orb',
+    deltaColHint: 'How the orb changes from natal to local space — negative means closer to exact (tighter), positive further (wider).',
+    statusCol: 'Status',
+    statusColHint: 'The pair’s fate across the two frames: retained, changed, lost, or new.',
+    status: {
+      retained: 'Retained',
+      changed: 'Changed',
+      lost: 'Lost',
+      new: 'New',
+    },
+    statusHint: {
+      retained: 'The pair makes the same aspect in both frames — the natal bond carries into local space.',
+      changed: 'The pair aspects in both frames, but as different aspects — the bond persists, its character shifts.',
+      lost: 'The natal aspect has no local-space counterpart — the bearing between these bodies makes no aspect.',
+      new: 'These bodies aspect each other only by azimuth at the local-space origin — absent natally.',
+    },
+    tighter: 'Tighter in local space',
+    tighterHint: 'This pair sits {delta} closer to exact between azimuths than in the zodiac.',
+    wider: 'Wider in local space',
+    widerHint: 'This pair sits {delta} further from exact between azimuths than in the zodiac.',
+  },
+
   resize: 'Drag to resize',
 } as const;

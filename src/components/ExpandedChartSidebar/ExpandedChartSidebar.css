@@ -745,6 +745,162 @@
   white-space: nowrap;
 }
 
+/* Horizon-frame (local-space) statuses on the amalgamated list. Lost = the
+   whole row dims + a red ⊘ badge; both-frames = a tinted capsule (padding +
+   negative margin so neighbouring rows' grid columns stay aligned — .asp has
+   no horizontal padding of its own). */
+.es-aspect-list .asp-ls-lost {
+  opacity: 0.45;
+}
+
+.es-aspect-list .asp-ls-both {
+  background: rgba(var(--tint), 0.08);
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin: 0 -6px;
+}
+
+/* Badge glyphs inside the type cell, after the aspect name — the ℞/S pattern. */
+.es-ls-lost {
+  margin-left: 4px;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.es-ls-tag {
+  margin-left: 4px;
+  color: var(--map-accent);
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+/* Aspects heading row: the counted heading left, the frames switch right
+   (the switch shows only while horizon data is in). */
+.es-aspect-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.es-aspect-head h3 {
+  margin-bottom: 0;
+}
+
+/* Orb-shift marker on a kept pair: how the horizon frame moved the aspect
+   relative to natal — ▾ tighter (accent) / ▴ wider (muted). */
+.es-orb-shift {
+  margin-left: 3px;
+  font-size: 8px;
+}
+.es-orb-tighter {
+  color: var(--map-accent);
+}
+.es-orb-wider {
+  color: var(--text-muted);
+}
+
+/* Separate view: the frame table — one row per pair (natal aspect, local-space
+   aspect, signed orb change, status), sortable headers, and status filter
+   pills above. Status colours: retained calm, changed station-yellow, lost
+   danger, new accent — shared by the pills and the status cells. */
+.es-status-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+.es-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid rgba(var(--tint), 0.16);
+  border-radius: 999px;
+  padding: 3px 11px;
+  cursor: pointer;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  opacity: 0.5;
+}
+.es-status-pill.on {
+  opacity: 1;
+  border-color: rgba(var(--tint), 0.3);
+}
+.es-status-pill .es-status-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+
+.es-frames-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+.es-frames-table th {
+  text-align: left;
+  padding: 0 8px 3px 0;
+}
+.es-ft-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.es-ft-sort.on {
+  color: var(--text-strong);
+}
+.es-ft-arrow {
+  font-size: 8px;
+}
+.es-frames-table td {
+  padding: 2px 8px 2px 0;
+  border-bottom: 1px solid rgba(var(--tint), 0.04);
+}
+.es-ft-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.es-frames-table .es-ft-type {
+  color: var(--text-muted);
+  text-transform: capitalize;
+  margin: 0 5px 0 5px;
+}
+.es-frames-table .es-ft-orb {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+.es-ft-none {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+.es-ft-num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.es-st-retained {
+  color: var(--text-muted);
+}
+.es-st-changed {
+  color: #c79a17;
+}
+.es-st-lost {
+  color: var(--danger);
+}
+.es-st-new {
+  color: var(--map-accent);
+}
+
 /* --- Section 3: wheel + aspect toggles --- */
 
 .es-section-wheel {

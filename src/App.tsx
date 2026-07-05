@@ -132,7 +132,11 @@ import {
   type AngleOverlayLineProps,
 } from './lib/astro/angleAspects';
 import { generateParans, generateStarParans, type ParanProps } from './lib/astro/parans';
-import { generateLocalSpace, type LocalSpaceProps } from './lib/astro/localSpace';
+import {
+  generateLocalSpace,
+  localSpaceCoordMap,
+  type LocalSpaceProps,
+} from './lib/astro/localSpace';
 import { generateLocalSpaceCrossings } from './lib/astro/localSpaceCrossings';
 import {
   buildOverlay,
@@ -1674,6 +1678,14 @@ export default function App() {
           )
         : EMPTY_FC,
     [slidPositions, gmst, localSpaceOrigin, noTime],
+  );
+  // Per-body azimuth/altitude at the local-space origin, keyed by planet. The
+  // wheel sidebar's horizon dial + aspect statuses read THIS (not advancedCoords,
+  // whose observer is the active point) so they agree exactly with the map's
+  // local-space lines — same origin pref, and same slid sky while sliding.
+  const localSpaceCoords = useMemo(
+    () => localSpaceCoordMap(allLocalSpace),
+    [allLocalSpace],
   );
   const allZenith = useMemo(
     () => generateZenithStamps(linePositions, meridianLng),
@@ -4148,6 +4160,14 @@ export default function App() {
           visibleLineTypes={visibleLineTypes}
           advancedCoords={advancedCoords}
           angleCoords={angleCoords}
+          // Horizon-frame data for the sidebar's local-space dial + aspect
+          // statuses: only while the Local Space view is on and the gated tier
+          // is met, and never against a promoted overlay (the wheel would be
+          // showing the overlay's bodies at another moment — no coherent frame
+          // to compare). This one condition is the entire gate.
+          localSpaceCoords={
+            lsActive && !promoteOverlay && gatedTierMet ? localSpaceCoords : null
+          }
           aspectOrbs={effAspectOrbs}
           advanced={advancedWheel}
           setAdvanced={setAdvancedMode}

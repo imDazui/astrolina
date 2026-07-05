@@ -24,6 +24,8 @@ export interface LocalSpaceProps {
    *  line (the azimuth is the bearing to it). The LS label's click-to-fly target. */
   zenithLng: number;
   zenithLat: number;
+  /** Degrees above the horizon at the origin (negative = below). */
+  altitude: number;
 }
 
 function azimuthFromNorth(
@@ -73,6 +75,26 @@ function greatCircleArc(
   return coords;
 }
 
+/** Per-body azimuth/altitude (degrees) keyed by planet, distilled from
+ *  generateLocalSpace's lines (each 'out' half carries its body's horizon
+ *  coordinates) — for consumers that need the frame's coordinates rather than
+ *  the drawn geometry. Also spares App a `new Map()` literal, where `Map`
+ *  names the MapLibre component. */
+export function localSpaceCoordMap(
+  fc: FeatureCollection<LineString, LocalSpaceProps>,
+): Map<PlanetName, { az: number; alt: number }> {
+  const m = new Map<PlanetName, { az: number; alt: number }>();
+  for (const f of fc.features) {
+    if (f.properties.direction === 'out') {
+      m.set(f.properties.planet, {
+        az: f.properties.azimuth,
+        alt: f.properties.altitude,
+      });
+    }
+  }
+  return m;
+}
+
 export function generateLocalSpace(
   positions: PlanetPosition[],
   gmst: number,
@@ -86,6 +108,12 @@ export function generateLocalSpace(
 
   for (const p of positions) {
     const az = azimuthFromNorth(p.ra, p.dec, lst, latRad);
+    const H = lst - p.ra;
+    const altitude =
+      Math.asin(
+        Math.sin(latRad) * Math.sin(p.dec) +
+          Math.cos(latRad) * Math.cos(p.dec) * Math.cos(H),
+      ) * RAD2DEG;
     const zenithLng = normLng((p.ra - gmst) * RAD2DEG);
     const zenithLat = p.dec * RAD2DEG;
     const halves: { bearing: number; direction: 'out' | 'in' }[] = [
@@ -110,6 +138,7 @@ export function generateLocalSpace(
           direction,
           zenithLng,
           zenithLat,
+          altitude,
         },
         geometry: { type: 'LineString', coordinates: unwrapLongitudes(arc) },
       });

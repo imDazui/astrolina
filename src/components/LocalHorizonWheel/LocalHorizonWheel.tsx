@@ -93,17 +93,18 @@ export function LocalHorizonWheel({
       })}
 
       {/* Degree numbers on the 30° notches only (the 15° ones were too small to
-          read, so they're dropped). The cardinals show N/E/S/W instead. Each notch
-          sits at its geographic position (clockwise from north) but is LABELLED in
-          the local-space convention: East = 0°, North = 90° (counter-clockwise from
-          east), so the numbers run 0 at E up to 90 at N. */}
+          read, so they're dropped). The cardinals show N/E/S/W instead. Labels are
+          geographic azimuth — 0° at North, clockwise (E = 90°, S = 180°, W = 270°) —
+          the same convention as every other azimuth readout, so the dial, the line
+          badges, and the sidebar's coordinate table all quote the same number for
+          the same direction. */}
       {TICKS.map((i) => {
         if (i % 6 === 0 || i % 2 !== 0) return null;
-        const azN = i * 15; // geographic position, clockwise from north
+        const azN = i * 15; // geographic azimuth, clockwise from north
         const a = azN * RAD;
         const x = 50 + DEG_RADIUS * Math.sin(a);
         const y = 50 - DEG_RADIUS * Math.cos(a);
-        const label = (90 - azN + 360) % 360; // East = 0°, North = 90°
+        const label = azN;
         return (
           <span
             key={azN}

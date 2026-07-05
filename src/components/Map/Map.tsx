@@ -3229,13 +3229,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // 'out' runs toward the planet; 'in' is the opposite (nadir) half. The badge
         // sits at this screen bearing from the origin.
         const angle = north + (lp.azimuth * Math.PI) / 180 + (out ? 0 : Math.PI);
-        // This half's bearing (clockwise from north): out = toward the planet, in =
-        // the reciprocal. Labelled in the E=0 / N=90 convention (matches the dial).
+        // This half's bearing — geographic azimuth, 0° at North, clockwise (matches
+        // the dial and the sidebar's coordinate table): out = toward the planet,
+        // in = the reciprocal. Formatted as degrees + arcminutes.
         const bearingAzN = out ? lp.azimuth : (lp.azimuth + 180) % 360;
-        // Bearing in the E=0 / N=90 convention, formatted as degrees + arcminutes.
-        const azE = (90 - bearingAzN + 360) % 360;
-        let azWhole = Math.floor(azE);
-        let azMin = Math.round((azE - azWhole) * 60);
+        let azWhole = Math.floor(bearingAzN);
+        let azMin = Math.round((bearingAzN - azWhole) * 60);
         if (azMin === 60) {
           azMin = 0;
           azWhole = (azWhole + 1) % 360;

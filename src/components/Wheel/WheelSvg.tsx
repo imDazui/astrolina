@@ -51,8 +51,9 @@ const houseMeaning = (t: TFn, idx: number) =>
 
 // A short, standard keyword gloss per body — the novice hint shown when hovering
 // a planet disc. Kept terse so the tag stays compact. Resolved via
-// wheel.planetMeanings, keyed by the PlanetName code.
-const planetMeaning = (t: TFn, p: PlanetName) =>
+// wheel.planetMeanings, keyed by the PlanetName code. Exported so sibling wheel
+// surfaces can serve the identical hover gloss.
+export const planetMeaning = (t: TFn, p: PlanetName) =>
   t(`wheel.planetMeanings.${p}` as MsgKey);
 
 // The chart angles, keyed by the label drawn on the wheel. The title + sub
@@ -70,7 +71,8 @@ const ANGLE_HINTS: { key: AngleKey }[] = [
 
 // A hovered hint: the SVG anchor (px = user units, since the viewBox is 1:1), the
 // element's radius (for the tag's standoff), and the tag's text + accent color.
-interface HoverTip {
+// Exported (with WheelTip below) so sibling wheel surfaces reuse the same tag.
+export interface HoverTip {
   x: number;
   y: number;
   r: number;
@@ -95,7 +97,7 @@ const TIP_FLIP_Y = 72;
 
 // The floating hint tag, anchored to a wheel element. Reuses the shared .ui-tip
 // chrome (index.css) so it matches the map's zenith popup + the timeline nub.
-function WheelTip({ tip, size }: { tip: HoverTip; size: number }) {
+export function WheelTip({ tip, size }: { tip: HoverTip; size: number }) {
   const placement = tip.y < TIP_FLIP_Y ? 'below' : 'above';
   const offset = tip.r + 9;
   const top = placement === 'below' ? tip.y + offset : tip.y - offset;
@@ -130,7 +132,7 @@ export function fmtLon(lonRad: number): string {
   return `${deg}°${String(min).padStart(2, '0')}' ${sign}`;
 }
 
-interface Aspect {
+export interface Aspect {
   a: string;
   b: string;
   type: string;
@@ -276,6 +278,40 @@ export function computeCrossAspects(
   return out;
 }
 
+// Aspects between the bodies' horizon-frame azimuths (degrees clockwise from
+// north) — the same separations the local-space lines draw on the map, so a
+// pair whose bearings are 120° apart reads as a trine in that frame.
+// aspectBetween only folds an angular separation, so azimuths in radians drop
+// straight in; `lonA`/`lonB` carry the azimuths (radians) so chord drawing can
+// reuse them. Pairs missing an azimuth entry are skipped.
+export function computeAzimuthAspects(
+  planets: EclipticPosition[],
+  azimuths: ReadonlyMap<string, number>,
+  orbs: AspectOrbs = DEFAULT_ASPECT_ORBS,
+): Aspect[] {
+  const out: Aspect[] = [];
+  const D2R = Math.PI / 180;
+  for (let i = 0; i < planets.length; i++) {
+    for (let j = i + 1; j < planets.length; j++) {
+      const a = planets[i];
+      const b = planets[j];
+      const azA = azimuths.get(a.name);
+      const azB = azimuths.get(b.name);
+      if (azA === undefined || azB === undefined) continue;
+      const asp = aspectBetween(
+        azA * D2R,
+        azB * D2R,
+        orbs,
+        isLuminary(a.name) || isLuminary(b.name),
+      );
+      if (asp) {
+        out.push({ a: a.name, b: b.name, ...asp, lonA: azA * D2R, lonB: azB * D2R });
+      }
+    }
+  }
+  return out;
+}
+
 function svgPos(
   lonRad: number,
   ascRad: number,
@@ -340,7 +376,7 @@ function signSectorPath(
 // cluster past 360 into an untouched body just after 0. So the pass runs in a
 // frame rotated to start just after the LARGEST circular gap (whose two ends
 // are the only neighbours guaranteed already clear), then maps back mod 360.
-function relaxRing(arr: { off: number }[], sep: number): void {
+export function relaxRing(arr: { off: number }[], sep: number): void {
   if (arr.length < 2) return;
   let gapIdx = arr.length - 1; // gap between the last entry and the first (+360)
   let gapSize = arr[0].off + 360 - arr[arr.length - 1].off;

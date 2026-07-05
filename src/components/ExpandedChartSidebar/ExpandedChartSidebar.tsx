@@ -37,11 +37,14 @@ import {
   ARIES_FRAME,
   WheelSvg,
   computeAspects,
+  computeAzimuthAspects,
   computeCrossAspects,
   computeDeclinationAspects,
+  type Aspect,
   type AspectCategory,
 } from '../Wheel/WheelSvg';
 import { NoChartWheel } from '../Wheel/NoChartWheel';
+import { LocalSpaceWheel } from '../LocalSpaceWheel/LocalSpaceWheel';
 import type { AspectOrbs } from '../../lib/aspectPrefs';
 import {
   essentialDignity,
@@ -188,6 +191,10 @@ interface ExpandedChartSidebarProps {
   advancedCoords: Map<PlanetName, HorizontalCoords>;
   /** RA + declination + azimuth/altitude for the angles (ecliptic points). */
   angleCoords: Record<'asc' | 'mc' | 'dsc' | 'ic' | 'vertex' | 'antivertex', AngleCoords> | null;
+  /** Per-body azimuth/altitude (degrees) at the local-space origin — non-null only
+   *  while the Local Space view is on and the caller's tier gate passes. Drives the
+   *  horizon dial below the wheel stack and the aspect list's frame statuses. */
+  localSpaceCoords?: Map<PlanetName, { az: number; alt: number }> | null;
   /** Per-aspect orb limits (Advanced ▸ Aspect orbs) for the grid + wheel lines. */
   aspectOrbs: AspectOrbs;
   /** The Advanced reading mode (degree rim, aspect grid, coordinate tables). The
@@ -209,6 +216,13 @@ interface ExpandedChartSidebarProps {
 
 const WIDTH_KEY = 'astro:expanded-sidebar-width:v1';
 const ASPECTS_KEY = 'astro:visible-aspects:v1';
+const FRAMES_KEY = 'astro:aspect-frames:v1';
+
+// Frame-table vocabulary (the aspects section's Separate view): every pair's
+// fate across the natal → local-space frames, plus the sortable columns.
+const FRAME_STATUSES = ['retained', 'changed', 'lost', 'new'] as const;
+type FrameStatus = (typeof FRAME_STATUSES)[number];
+type FrameSortKey = 'pair' | 'natal' | 'ls' | 'delta' | 'status';
 const DEFAULT_WIDTH = 720;
 const MIN_WIDTH = 480;
 // Touch screens (usually a narrower landscape phone) get a lower floor than the desktop
@@ -288,6 +302,44 @@ function TipGlyph({
       </span>
       <HoverTip pos={pos} placement="right" title={title} hint={hint} />
     </>
+  );
+}
+
+// A list row that explains itself as a .ui-tip on hover — for rows whose STATE
+// is carried by row styling alone (no badge to hover). The whole <li> is the
+// trigger, but it yields to the tip-bearing glyphs inside it: the row tip only
+// shows while the pointer rests on the row's plain parts. Mouse yield lives
+// here (mouseover/mouseout against the kernel's ui-tip-tap marker); touch
+// yield is the kernel's own nested-trigger rule.
+function TipRow({
+  className,
+  title,
+  hint,
+  children,
+}: {
+  className: string;
+  title: ReactNode;
+  hint?: string;
+  children: ReactNode;
+}) {
+  const { ref, pos, show, hide } = useHoverTip<HTMLLIElement>('right', { tapReveal: true });
+  return (
+    <li
+      ref={ref}
+      className={className}
+      onMouseOver={(e) => {
+        const nested = (e.target as Element).closest('.ui-tip-tap');
+        if (nested && nested !== ref.current) hide();
+        else show();
+      }}
+      onMouseOut={(e) => {
+        const to = e.relatedTarget as Node | null;
+        if (!to || !ref.current?.contains(to)) hide();
+      }}
+    >
+      {children}
+      <HoverTip pos={pos} placement="right" title={title} hint={hint} />
+    </li>
   );
 }
 
@@ -524,6 +576,7 @@ export function ExpandedChartSidebar({
   visibleLineTypes,
   advancedCoords,
   angleCoords,
+  localSpaceCoords,
   aspectOrbs,
   advanced,
   setAdvanced,
@@ -585,6 +638,24 @@ export function ExpandedChartSidebar({
     );
   }, [visibleAspects]);
 
+  // Aspect-frame view while horizon data is in: combined (default — one merged
+  // list) vs separate (two matched columns). Persisted like the pills above.
+  const [splitFrames, setSplitFrames] = useState(
+    () => localStorage.getItem(FRAMES_KEY) === 'separate',
+  );
+  useEffect(() => {
+    localStorage.setItem(FRAMES_KEY, splitFrames ? 'separate' : 'combined');
+  }, [splitFrames]);
+  // Frame-table controls (Separate view): active sort column/direction and
+  // the status pills' filter. Session-only — the table is exploratory.
+  const [frameSort, setFrameSort] = useState<{
+    key: FrameSortKey;
+    dir: 1 | -1;
+  }>({ key: 'status', dir: 1 });
+  const [frameStatuses, setFrameStatuses] = useState<Set<FrameStatus>>(
+    () => new Set(FRAME_STATUSES),
+  );
+
 
   // Respect the Map Filter's planet toggles across every area of the expanded
   // view (planet list, wheel, aspects, overlay aspects), and present them in the
@@ -601,6 +672,19 @@ export function ExpandedChartSidebar({
   // unknown and there are none — the neutral Aries frame (planets-only wheel).
   // Everything that shows angle VALUES keeps reading `angles` (null → hidden).
   const frame = angles ?? (planetsOnly ? ARIES_FRAME : null);
+
+  // Horizon-frame (local-space) data, shared by the dial below the wheel stack
+  // and the aspect list's frame statuses. Null while the view is off (or the
+  // caller's gate holds it back) — everything downstream then renders as if
+  // the feature didn't exist.
+  const lsCoords =
+    localSpaceCoords && localSpaceCoords.size > 0 ? localSpaceCoords : null;
+  const lsAzimuths = lsCoords
+    ? new Map(Array.from(lsCoords, ([n, c]) => [n, c.az]))
+    : null;
+  const azAspects = lsAzimuths
+    ? computeAzimuthAspects(shownPlanets, lsAzimuths, aspectOrbs)
+    : null;
 
   // The four chart angles, gated by the Map Filter's line-type toggles. Drives
   // which angle marks (As/Ds/Mc/Ic) the wheel draws.
@@ -943,6 +1027,25 @@ export function ExpandedChartSidebar({
           // full wheels — natal, then the overlay as a standalone chart with
           // its own internal aspect chords. Bi-wheel is the default.
           const showDual = dualWheels && hasOverlay;
+          // Horizon dial at the bottom of the wheel stack while the Local
+          // Space view is on — below the natal wheel, or below the overlay
+          // wheel when Dual splits them. Captioned like the dual divider.
+          const lsWheel = lsCoords && (
+            <>
+              <div className="es-dual-caption">
+                <span className="es-overlay-caption">
+                  {t('expandedSidebar.localSpace.caption')}
+                </span>
+              </div>
+              <LocalSpaceWheel
+                size={wheelSize}
+                planets={shownPlanets}
+                coords={lsCoords}
+                aspects={azAspects ?? undefined}
+                visibleAspects={visibleAspects}
+              />
+            </>
+          );
           return (
             <>
               {/* Use the wheel's empty top corners: the chart-state title (left,
@@ -973,7 +1076,10 @@ export function ExpandedChartSidebar({
                 </div>
               )}
               <div
-                className={`es-wheel-pane${showDual ? ' es-wheel-pane-dual' : ''}`}
+                // The dual modifier stacks the pane's children in a column —
+                // needed whenever more than one wheel renders, so the horizon
+                // dial lands BELOW the wheel(s) rather than beside them.
+                className={`es-wheel-pane${showDual || lsWheel ? ' es-wheel-pane-dual' : ''}`}
                 ref={wheelPaneRef}
               >
                 {frame ? (
@@ -1012,27 +1118,31 @@ export function ExpandedChartSidebar({
                         readouts={fixedFullWidth}
                         interactive
                       />
+                      {lsWheel}
                     </>
                   ) : (
-                    <WheelSvg
-                      size={wheelSize}
-                      angles={frame}
+                    <>
+                      <WheelSvg
+                        size={wheelSize}
+                        angles={frame}
 
-                      planets={shownPlanets}
-                      detailed={true}
-                      advanced={advanced}
-                      aspectOrbs={aspectOrbs}
-                      overlayPlanets={shownOverlay}
-                      overlayAngles={overlayAngles}
-                      visibleAspects={visibleAspects}
-                      visibleAngles={visibleAngles}
-                      // Portrait phone: the panel can't be dragged wider, so the wheel never reaches
-                      // READOUT_MIN — force the per-point degree·sign·minute readouts on (still
-                      // geometry-guarded), which also draws the house ring in tighter to fit them.
-                      readouts={fixedFullWidth}
-                      interactive
-                      planetsOnly={planetsOnly && !angles}
-                    />
+                        planets={shownPlanets}
+                        detailed={true}
+                        advanced={advanced}
+                        aspectOrbs={aspectOrbs}
+                        overlayPlanets={shownOverlay}
+                        overlayAngles={overlayAngles}
+                        visibleAspects={visibleAspects}
+                        visibleAngles={visibleAngles}
+                        // Portrait phone: the panel can't be dragged wider, so the wheel never reaches
+                        // READOUT_MIN — force the per-point degree·sign·minute readouts on (still
+                        // geometry-guarded), which also draws the house ring in tighter to fit them.
+                        readouts={fixedFullWidth}
+                        interactive
+                        planetsOnly={planetsOnly && !angles}
+                      />
+                      {lsWheel}
+                    </>
                   )
                 ) : noChart ? (
                   // A promoted overlay with no coherent chart (CCG, Natal hidden) — an
@@ -1379,40 +1489,460 @@ export function ExpandedChartSidebar({
       {angles && advanced && (() => {
         // Longitude aspects plus the declination pairs (parallel reads with the
         // conjunction toggle, contraparallel with the hard-aspect toggle).
-        const aspects = [
-          ...computeAspects(shownPlanets, aspectOrbs),
-          ...computeDeclinationAspects(shownPlanets, aspectOrbs),
-        ]
-          .filter((a) => visibleAspects.has(a.category))
-          .sort((a, b) => a.orb - b.orb);
-        if (aspects.length === 0) return null;
+        // While horizon-frame data is in (azAspects), the section offers two
+        // views (the Separate switch beside the heading, shown only then):
+        //   • combined (default) — one merged list: each zodiacal aspect is
+        //     tagged 'both' (same pair + same type also holds between azimuths;
+        //     capsule + orb-shift marker) or 'lost' (dimmed + ⊘), and
+        //     azimuth-only aspects append as 'only' rows. Declination pairs
+        //     stay untagged (no horizon analogue).
+        //   • separate — a frame TABLE, one row per pair: natal aspect,
+        //     local-space aspect, signed orb change, and a status — retained /
+        //     changed (the pair holds in both frames but as different types) /
+        //     lost / new. Headers sort, the status pills filter. Statuses are
+        //     computed BEFORE the category pills so they never lie; a row then
+        //     shows while either of its aspects passes the pills. Declination
+        //     pairs sit the table out (combined view only).
+        const vis = (a: Aspect) => visibleAspects.has(a.category);
+        const lonAll = computeAspects(shownPlanets, aspectOrbs);
+        const lonAspects = lonAll.filter(vis);
+        const decAspects = computeDeclinationAspects(
+          shownPlanets,
+          aspectOrbs,
+        ).filter(vis);
+        const k = (a: Aspect) => `${[a.a, a.b].sort().join('|')}|${a.type}`;
+        const azByKey =
+          azAspects && new Map(azAspects.map((a) => [k(a), a] as const));
+        const natKeys = new Set(lonAll.map(k));
+        const azOnly = (azAspects ?? [])
+          .filter(vis)
+          .filter((a) => !natKeys.has(k(a)));
+        if (lonAspects.length + decAspects.length + azOnly.length === 0) {
+          return null;
+        }
+        const byOrb = (x: Aspect, y: Aspect) => x.orb - y.orb;
+
+        // How the horizon frame moved a kept aspect relative to natal:
+        // ▾ tighter (closer to exact) / ▴ wider. Sub-arcminute drift reads
+        // as equal (no marker).
+        const orbShift = (nat: Aspect, ls: Aspect) => {
+          const d = ls.orb - nat.orb;
+          if (Math.abs(d) < 1 / 60) return null;
+          const tighter = d < 0;
+          return (
+            <TipGlyph
+              className={`es-orb-shift ${tighter ? 'es-orb-tighter' : 'es-orb-wider'}`}
+              title={
+                <span className="es-tip-title">
+                  {t(
+                    tighter
+                      ? 'expandedSidebar.localSpace.tighter'
+                      : 'expandedSidebar.localSpace.wider',
+                  )}
+                </span>
+              }
+              hint={t(
+                tighter
+                  ? 'expandedSidebar.localSpace.tighterHint'
+                  : 'expandedSidebar.localSpace.widerHint',
+                { delta: fmtOrb(Math.abs(d)) },
+              )}
+            >
+              {tighter ? '▾' : '▴'}
+            </TipGlyph>
+          );
+        };
+
+        // One aspect's five cells; extras slot INTO the type / orb cells
+        // (badges, orb-shift) so the row grid stays five columns.
+        const cells = (
+          a: Aspect,
+          typeExtra?: ReactNode,
+          orbExtra?: ReactNode,
+        ) => (
+          <>
+            <PlanetTipGlyph
+              planet={a.a as PlanetName}
+              size={12}
+              className="asp-planet"
+            />
+            <AspectGlyph type={a.type} color={a.color} />
+            <PlanetTipGlyph
+              planet={a.b as PlanetName}
+              size={12}
+              className="asp-planet"
+            />
+            <span className="asp-type">
+              {a.type}
+              {typeExtra}
+            </span>
+            <span className="asp-orb">
+              {fmtOrb(a.orb)}
+              {orbExtra}
+            </span>
+          </>
+        );
+
+        const lostBadge = (
+          <TipGlyph
+            className="es-ls-lost"
+            title={
+              <span className="es-tip-title">
+                <span style={{ color: 'var(--danger)' }}>⊘</span>{' '}
+                {t('expandedSidebar.localSpace.lost')}
+              </span>
+            }
+            hint={t('expandedSidebar.localSpace.lostHint')}
+          >
+            ⊘
+          </TipGlyph>
+        );
+        const newBadge = (glyph: string, className: string) => (
+          <TipGlyph
+            className={className}
+            title={
+              <span className="es-tip-title">
+                {t('expandedSidebar.localSpace.only')}
+              </span>
+            }
+            hint={t('expandedSidebar.localSpace.onlyHint')}
+          >
+            {glyph}
+          </TipGlyph>
+        );
+
+        const split = azByKey != null && splitFrames;
+
+        let count: number;
+        let body: ReactNode;
+        if (split) {
+          // One row per PAIR: fold each pair's two frames onto one line. The
+          // statuses read off presence + type equality; the Δ column is the
+          // signed orb change (negative = closer to exact in local space).
+          const pairKey = (a: Aspect) => [a.a, a.b].sort().join('|');
+          const natPairs = new Map(lonAll.map((a) => [pairKey(a), a] as const));
+          const azPairs = new Map(
+            azAspects!.map((a) => [pairKey(a), a] as const),
+          );
+          type FrameRow = {
+            nat: Aspect | null;
+            ls: Aspect | null;
+            delta: number | null;
+            status: FrameStatus;
+          };
+          const rows: FrameRow[] = [];
+          for (const [key, nat] of natPairs) {
+            const ls = azPairs.get(key) ?? null;
+            rows.push({
+              nat,
+              ls,
+              delta: ls ? ls.orb - nat.orb : null,
+              status: !ls ? 'lost' : ls.type === nat.type ? 'retained' : 'changed',
+            });
+          }
+          for (const [key, ls] of azPairs) {
+            if (!natPairs.has(key)) {
+              rows.push({ nat: null, ls, delta: null, status: 'new' });
+            }
+          }
+          count = rows.length;
+          const counts: Record<FrameStatus, number> = {
+            retained: 0,
+            changed: 0,
+            lost: 0,
+            new: 0,
+          };
+          for (const r of rows) counts[r.status] += 1;
+          const shownRows = rows.filter(
+            (r) =>
+              frameStatuses.has(r.status) &&
+              ((r.nat != null && vis(r.nat)) || (r.ls != null && vis(r.ls))),
+          );
+          const statusRank: Record<FrameStatus, number> = {
+            retained: 0,
+            changed: 1,
+            lost: 2,
+            new: 3,
+          };
+          const sortVal = (r: FrameRow): number => {
+            switch (frameSort.key) {
+              case 'pair': {
+                const x = (r.nat ?? r.ls)!;
+                return (
+                  planetRank(x.a as PlanetName) * 100 +
+                  planetRank(x.b as PlanetName)
+                );
+              }
+              case 'natal':
+                return r.nat?.orb ?? Infinity;
+              case 'ls':
+                return r.ls?.orb ?? Infinity;
+              case 'delta':
+                return r.delta ?? Infinity;
+              case 'status':
+                return statusRank[r.status];
+            }
+          };
+          const tightest = (r: FrameRow) =>
+            Math.min(r.nat?.orb ?? Infinity, r.ls?.orb ?? Infinity);
+          shownRows.sort(
+            (x, y) =>
+              frameSort.dir * (sortVal(x) - sortVal(y)) ||
+              tightest(x) - tightest(y),
+          );
+
+          const statusName = (s: FrameStatus) =>
+            t(
+              `expandedSidebar.localSpace.status.${s}` as 'expandedSidebar.localSpace.status.retained',
+            );
+          const statusHint = (s: FrameStatus) =>
+            t(
+              `expandedSidebar.localSpace.statusHint.${s}` as 'expandedSidebar.localSpace.statusHint.retained',
+            );
+          const header = (key: FrameSortKey, label: string, hint: string) => (
+            <th
+              aria-sort={
+                frameSort.key === key
+                  ? frameSort.dir === 1
+                    ? 'ascending'
+                    : 'descending'
+                  : undefined
+              }
+            >
+              <TipButton
+                type="button"
+                className={`es-ft-sort${frameSort.key === key ? ' on' : ''}`}
+                placement="bottom"
+                tip={label}
+                hint={hint}
+                onClick={() =>
+                  setFrameSort((s) =>
+                    s.key === key
+                      ? { key, dir: s.dir === 1 ? -1 : 1 }
+                      : { key, dir: 1 },
+                  )
+                }
+              >
+                {label}
+                {frameSort.key === key && (
+                  <span className="es-ft-arrow">
+                    {frameSort.dir === 1 ? '▴' : '▾'}
+                  </span>
+                )}
+              </TipButton>
+            </th>
+          );
+          const aspCell = (a: Aspect | null) =>
+            a ? (
+              <>
+                <AspectGlyph type={a.type} color={a.color} />
+                <span className="es-ft-type">{a.type}</span>
+                <span className="es-ft-orb">{fmtOrb(a.orb)}</span>
+              </>
+            ) : (
+              <span className="es-ft-none">—</span>
+            );
+          body = (
+            <>
+              <div className="es-status-pills">
+                {FRAME_STATUSES.map((s) => (
+                  <TipButton
+                    key={s}
+                    type="button"
+                    className={`es-status-pill es-st-${s}${frameStatuses.has(s) ? ' on' : ''}`}
+                    aria-pressed={frameStatuses.has(s)}
+                    placement="bottom"
+                    tip={statusName(s)}
+                    hint={statusHint(s)}
+                    onClick={() =>
+                      setFrameStatuses((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(s)) next.delete(s);
+                        else next.add(s);
+                        return next;
+                      })
+                    }
+                  >
+                    {statusName(s)}
+                    <span className="es-status-count">{counts[s]}</span>
+                  </TipButton>
+                ))}
+              </div>
+              <table className="es-frames-table">
+                <thead>
+                  <tr>
+                    {header(
+                      'pair',
+                      t('expandedSidebar.localSpace.pairCol'),
+                      t('expandedSidebar.localSpace.pairColHint'),
+                    )}
+                    {header(
+                      'natal',
+                      t('expandedSidebar.localSpace.natalCol'),
+                      t('expandedSidebar.localSpace.natalColHint'),
+                    )}
+                    {header(
+                      'ls',
+                      t('expandedSidebar.localSpace.lsCol'),
+                      t('expandedSidebar.localSpace.lsColHint'),
+                    )}
+                    {header(
+                      'delta',
+                      t('expandedSidebar.localSpace.deltaCol'),
+                      t('expandedSidebar.localSpace.deltaColHint'),
+                    )}
+                    {header(
+                      'status',
+                      t('expandedSidebar.localSpace.statusCol'),
+                      t('expandedSidebar.localSpace.statusColHint'),
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {shownRows.map((r, i) => {
+                    const x = (r.nat ?? r.ls)!;
+                    return (
+                      <tr key={i}>
+                        <td>
+                          <span className="es-ft-pair">
+                            <PlanetTipGlyph
+                              planet={x.a as PlanetName}
+                              size={12}
+                              className="asp-planet"
+                            />
+                            <PlanetTipGlyph
+                              planet={x.b as PlanetName}
+                              size={12}
+                              className="asp-planet"
+                            />
+                          </span>
+                        </td>
+                        <td>{aspCell(r.nat)}</td>
+                        <td>{aspCell(r.ls)}</td>
+                        <td className="es-ft-num">
+                          {r.delta == null || Math.abs(r.delta) < 1 / 60 ? (
+                            <span className="es-ft-none">—</span>
+                          ) : (
+                            <span
+                              className={
+                                r.delta < 0 ? 'es-orb-tighter' : 'es-orb-wider'
+                              }
+                            >
+                              {r.delta < 0 ? '−' : '+'}
+                              {fmtOrb(Math.abs(r.delta))}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <TipGlyph
+                            className={`es-st-${r.status}`}
+                            title={
+                              <span className="es-tip-title">
+                                {statusName(r.status)}
+                              </span>
+                            }
+                            hint={statusHint(r.status)}
+                          >
+                            {statusName(r.status)}
+                          </TipGlyph>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </>
+          );
+        } else {
+          type Row = Aspect & { ls: 'both' | 'lost' | 'only' | null };
+          const rows: Row[] = [
+            ...lonAspects.map(
+              (a): Row => ({
+                ...a,
+                ls: azByKey ? (azByKey.has(k(a)) ? 'both' : 'lost') : null,
+              }),
+            ),
+            ...decAspects.map((a): Row => ({ ...a, ls: null })),
+            ...azOnly.map((a): Row => ({ ...a, ls: 'only' })),
+          ]
+            // One metric across frames: zodiacal and azimuth orbs interleave.
+            .sort(byOrb);
+          count = rows.length;
+          body = (
+            <ul className="es-aspect-list">
+              {rows.map((a, i) => {
+                const rowCls = `asp asp-${a.category}${
+                  a.ls === 'lost' ? ' asp-ls-lost' : ''
+                }${a.ls === 'both' ? ' asp-ls-both' : ''}`;
+                // Frame badges ride in the type cell, right after the aspect
+                // name, so they read at a glance; a kept row's orb carries the
+                // orb-shift marker against its horizon counterpart.
+                const rowCells = cells(
+                  a,
+                  a.ls === 'lost'
+                    ? lostBadge
+                    : a.ls === 'only'
+                      ? newBadge('LS', 'es-ls-tag')
+                      : undefined,
+                  a.ls === 'both'
+                    ? orbShift(a, azByKey!.get(k(a))!)
+                    : undefined,
+                );
+                // A both-frames row has no badge — its capsule styling is the
+                // whole cue — so the row itself explains it on hover.
+                return a.ls === 'both' ? (
+                  <TipRow
+                    key={i}
+                    className={rowCls}
+                    title={
+                      <span className="es-tip-title">
+                        {t('expandedSidebar.localSpace.both')}
+                      </span>
+                    }
+                    hint={t('expandedSidebar.localSpace.bothHint')}
+                  >
+                    {rowCells}
+                  </TipRow>
+                ) : (
+                  <li key={i} className={rowCls}>
+                    {rowCells}
+                  </li>
+                );
+              })}
+            </ul>
+          );
+        }
+
         return (
           <section className="es-section es-section-aspects">
-            <TipHeading
-              tip={t('expandedSidebar.aspectsTip')}
-              hint={t('expandedSidebar.aspectsHint')}
-            >
-              {t('expandedSidebar.aspectsCount', { count: aspects.length })}
-            </TipHeading>
-            <ul className="es-aspect-list">
-              {aspects.map((a, i) => (
-                <li key={i} className={`asp asp-${a.category}`}>
-                  <PlanetTipGlyph
-                    planet={a.a as PlanetName}
-                    size={12}
-                    className="asp-planet"
-                  />
-                  <AspectGlyph type={a.type} color={a.color} />
-                  <PlanetTipGlyph
-                    planet={a.b as PlanetName}
-                    size={12}
-                    className="asp-planet"
-                  />
-                  <span className="asp-type">{a.type}</span>
-                  <span className="asp-orb">{fmtOrb(a.orb)}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="es-aspect-head">
+              <TipHeading
+                tip={t('expandedSidebar.aspectsTip')}
+                hint={t('expandedSidebar.aspectsHint')}
+              >
+                {t('expandedSidebar.aspectsCount', { count })}
+              </TipHeading>
+              {azByKey && (
+                <TipButton
+                  type="button"
+                  className={`es-advanced-toggle es-frames-toggle ${splitFrames ? 'on' : 'off'}`}
+                  onClick={() => setSplitFrames(!splitFrames)}
+                  role="switch"
+                  aria-checked={splitFrames}
+                  placement="bottom"
+                  tip={t('expandedSidebar.localSpace.compareTip')}
+                  hint={t('expandedSidebar.localSpace.compareHint')}
+                >
+                  <span className="es-toggle-label">
+                    {t('expandedSidebar.localSpace.compare')}
+                  </span>
+                  <span className="es-toggle-track">
+                    <span className="es-toggle-thumb" />
+                  </span>
+                </TipButton>
+              )}
+            </div>
+            {body}
           </section>
         );
       })()}

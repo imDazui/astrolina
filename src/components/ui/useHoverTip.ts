@@ -82,11 +82,30 @@ export function bindTouchTip(
   };
   const recentTouch = () => Date.now() - touchedAt < EMULATED_MOUSE_MS;
 
+  // A touch that lands on a NESTED tip trigger belongs to that trigger: an
+  // enclosing trigger (e.g. a list row whose glyphs carry their own tips) must
+  // yield, or one tap would toggle two cards at once. Nested triggers are
+  // recognisable by the ui-tip-tap class this kernel stamps on tapReveal binds.
+  let nestedTouch = false;
+  const nestedTrigger = (t: EventTarget | null): boolean => {
+    if (!(t instanceof Element)) return false;
+    const trigger = t.closest('.ui-tip-tap');
+    return trigger !== null && trigger !== el && el.contains(trigger);
+  };
+
   // tapReveal dismissal: while a tapped-open tip is showing, the next touch that lands
   // OUTSIDE the trigger (a tap elsewhere, or the start of a scroll) closes it. The
   // document listener is bound only while shown, so it costs nothing at rest.
   const onDocTouch = (e: TouchEvent) => {
-    if (e.target instanceof Node && el.contains(e.target)) return;
+    // A touch on the trigger's own plain parts keeps the tip; one on a nested
+    // trigger dismisses it like an outside tap (the nested tip takes over).
+    if (
+      e.target instanceof Node &&
+      el.contains(e.target) &&
+      !nestedTrigger(e.target)
+    ) {
+      return;
+    }
     dismiss();
   };
   const reveal = () => {
@@ -104,6 +123,13 @@ export function bindTouchTip(
 
   const onStart = (e: TouchEvent) => {
     touchedAt = Date.now();
+    nestedTouch = nestedTrigger(e.target);
+    if (nestedTouch) {
+      // The nested trigger's own kernel handles this touch end to end.
+      clear();
+      start = null;
+      return;
+    }
     suppressClick = false;
     moved = false;
     const t = e.touches[0];
@@ -136,6 +162,10 @@ export function bindTouchTip(
   };
   const onEnd = () => {
     touchedAt = Date.now();
+    if (nestedTouch) {
+      nestedTouch = false;
+      return;
+    }
     clear();
     if (tapReveal) {
       // A tap (no scroll) toggles the tip open/closed; a scroll already dismissed above.
@@ -150,6 +180,7 @@ export function bindTouchTip(
   };
   const onCancel = () => {
     touchedAt = Date.now();
+    nestedTouch = false;
     clear();
     if (tapReveal) dismiss();
     else hide();
