@@ -60,6 +60,7 @@ import {
   type MapClickDetail,
 } from '../../lib/extensions/mapOverlays';
 import type { MapExtensionContext } from '../../lib/extensions/mapExtensions';
+import { getParanAnnotation } from '../../lib/extensions/paranAnnotation';
 import { HoverTip, TipButton } from '../ui/HoverTip';
 import { bindTouchTip, tipPosFor, type TipPos } from '../ui/useHoverTip';
 import {
@@ -450,6 +451,9 @@ export interface SlideInfo {
   dtHours: number;
   /** Resulting wall-clock time at the birthplace, in the chart's zone — e.g. "18:42 EDT". */
   clock: string;
+  /** Wall-clock DATE at the birthplace on the slid day (localized, short — e.g.
+   *  "16 Jun"), so a spin across midnight reads as a day change. */
+  date: string;
   /** The slid instant itself (epoch ms UT) — for surfaces that project it onto
    *  their own clock (the sky band's time cursor follows the spin through it). */
   ms: number;
@@ -1307,6 +1311,13 @@ export interface MapHandle {
   teleportBack: () => { lat: number; lng: number } | null;
   zoomIn: () => void;
   zoomOut: () => void;
+  /** Drive the Slide tool's spin programmatically to an ABSOLUTE elapsed
+   *  rotation time (days, signed; 0 = the chart moment). No-op while the tool
+   *  is off or a spin-drag is in progress — the pointer owns the spin then. */
+  slideTo: (dtDays: number) => void;
+  /** Nudge the Slide tool's spin by a RELATIVE amount (days, signed), against
+   *  the live spin — safe under rapid repeats (no state read-back lag). */
+  slideBy: (deltaDays: number) => void;
   /** Composite the current capture frame (map canvas + the pin, edge labels, caption
    *  and watermark DOM overlays) into a PNG and resolve a Blob; null if the map isn't
    *  ready. Driven by the Capture tool's Download / Copy buttons. */
@@ -2504,6 +2515,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     },
     zoomIn: () => mapRef.current?.zoomIn(),
     zoomOut: () => mapRef.current?.zoomOut(),
+    // Read at call time: the ref is populated only while the Slide tool's
+    // effect is live, so these are safe no-ops whenever the tool is off.
+    slideTo: (dtDays: number) => slideApiRef.current?.to(dtDays),
+    slideBy: (deltaDays: number) => slideApiRef.current?.by(deltaDays),
     captureFrame: async () => {
       const map = mapRef.current;
       const frameEl = frameRef.current;
@@ -2878,6 +2893,15 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // re-push of the cage geometry can re-assert the rotation rather than snap to anchor,
   // and so badge clicks / flies can shift their geographic target by the same θ.
   const spinDegRef = useRef(0);
+  // One pending style-busy defer at a time (the data effect's `idle` fallback):
+  // the callback reads the latest refs, so queueing more would only repeat it.
+  const idleDeferRef = useRef(false);
+  // Programmatic slide drive, populated by the slide effect while the tool is
+  // active (null otherwise — MapHandle.slideTo/slideBy no-op then). Targets are
+  // elapsed rotation TIME in days, the same unit onSlide reports.
+  const slideApiRef = useRef<{ to(dtDays: number): void; by(deltaDays: number): void } | null>(
+    null,
+  );
   const themeRef = useRef(theme);
   // Current projection mode, read inside the once-bound load/style.load handlers
   // (setStyle resets projection, so it must be re-applied after each style load).
@@ -3834,6 +3858,23 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 );
                 line.id += `@${Math.round(e.lngLat.lat * 2)},${Math.round(e.lngLat.lng * 2)}`;
               }
+            } else if (line.layerId.startsWith('parans')) {
+              // Parans: a registered annotation (lib/extensions/paranAnnotation)
+              // may add a line computed for the hovered position — the id is
+              // salted with a quarter-degree longitude cell (≈ 1 clock minute)
+              // so the figure refreshes while sliding along the latitude line
+              // without re-setting the popup HTML on every pixel.
+              const sub = getParanAnnotation()?.(
+                line.props as unknown as ParanProps,
+                { lat: e.lngLat.lat, lng: e.lngLat.lng },
+              );
+              if (sub) {
+                line.html = line.html.replace(
+                  '</div>',
+                  `<span class="ui-tip-sub">${sub}</span></div>`,
+                );
+                line.id += `@${Math.round(e.lngLat.lng * 4)}`;
+              }
             }
             clearZenith();
             clearCross();
@@ -4422,12 +4463,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // App keeps the whole line pipeline resampled at natal+Δt (via linePositions), so the
   // layers here are already mutually aligned — we just rotate them as one. Empty layers
   // translate to empty — cheap. Reads refs only, so it's stable.
-  // `mode` for the heavy SECONDARY layers (everything but the cage): 'translate' keeps
-  // them pinned (full, accurate); 'empty' hides them; 'skip' leaves them as-is. While a
-  // spin-drag is in motion we drop them to 'empty'/'skip' so only the light cage re-tiles
-  // per frame — each setData round-trips through the geojson worker, and the orb-band /
-  // night-shade POLYGONS are the slowest to tile, so they'd otherwise lag the camera.
-  // They (and the badges) snap back accurately ~140 ms after motion settles.
+  // `mode` for the heavy SECONDARY layers (everything but the cage + parans): 'translate'
+  // keeps them pinned (full, accurate); 'empty' hides them; 'skip' leaves them as-is.
+  // While a spin-drag is in motion we drop them to 'empty'/'skip' so only the light
+  // cage + paran parallels re-tile per frame — each setData round-trips through the
+  // geojson worker, and the orb-band / night-shade POLYGONS are the slowest to tile,
+  // so they'd otherwise lag the camera. They (and the badges) snap back accurately
+  // ~140 ms after motion settles.
   const spinPaint = useCallback(
     (deg: number, mode: 'translate' | 'empty' | 'skip' = 'translate') => {
       const map = mapRef.current;
@@ -4439,12 +4481,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         src?.setData(translateLng((fc ?? empty) as FeatureCollection, -deg));
       };
       set('acg-lines', d.lines); // the cage always tracks the spin
+      // Parans stay live through the spin too: they're cheap straight parallels,
+      // and watching the ground turn against them is much of what the spin is FOR
+      // (the daily rotation is those pairings' time dimension) — so they must not
+      // vanish with the heavy layers mid-drag.
+      set('parans', d.parans);
       if (mode === 'skip') return;
       // 'empty' → undefined, which `set` resolves to the empty collection (hides it).
       const sec = (id: string, fc: FeatureCollection | null | undefined) =>
         set(id, mode === 'empty' ? undefined : fc);
       sec('angle-lines', d.angleLines);
-      sec('parans', d.parans);
       sec('orb-bands', d.orbBands);
       sec('star-lines', d.starLines);
       sec('night-shade', d.nightShade);
@@ -4555,6 +4601,11 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       dragStartX = x;
       slideDraggingRef.current = true;
       spinAtDragStart = spinDeg;
+      // Halt any in-flight camera animation (a badge-click fly, an ease) — otherwise
+      // the animation keeps writing the camera every frame while apply() writes it
+      // back, and the two fight in visible lurches. Stopping freezes the camera
+      // wherever the fly reached; the re-base below continues the spin from there.
+      map.stop();
       // Re-base from the live camera (centre = base − θ), so any camera move since the
       // last drag — a badge-click fly, a scroll-zoom recentre — is absorbed and this
       // drag continues smoothly instead of jumping back to the old base.
@@ -4595,6 +4646,47 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       }
       moveDrag(e.point.x);
     };
+    // A mid-drag wheel zoom recentres the camera toward the cursor; without a re-base
+    // the next apply() would snap the centre straight back to (base − θ) and undo it —
+    // a visible jump. Folding the zoom's recentre into the base per zoom frame lets
+    // zooming and spinning compose smoothly. (Between drags nothing fights the camera,
+    // and beginDrag re-bases anyway.)
+    const onZoomMidDrag = () => {
+      if (dragStartX === null) return;
+      const c = map.getCenter();
+      baseLng = c.lng + spinDeg;
+      baseLat = c.lat;
+    };
+
+    // Programmatic drive (MapHandle.slideTo/slideBy → readout nudges, keyboard,
+    // a track's scrub): same motions as a drag, minus the pointer. A live drag
+    // owns the spin (the next mousemove would overwrite anything set here), so
+    // drives are ignored mid-drag. The throttled apply() report covers a rapid
+    // stream (scrubbing); the trailing timer lands the exact resting value the
+    // way onUp does for a drag.
+    let driveReportTimer = 0;
+    const driveTo = (targetDeg: number) => {
+      if (dragStartX !== null) return;
+      // Halt an in-flight camera animation and fold any camera drift since the
+      // last apply into the base — the beginDrag treatment, for the same reasons.
+      map.stop();
+      const c = map.getCenter();
+      baseLng = c.lng + spinDeg;
+      baseLat = c.lat;
+      spinDeg = targetDeg;
+      schedule();
+      markSpinning();
+      if (driveReportTimer) clearTimeout(driveReportTimer);
+      driveReportTimer = window.setTimeout(() => {
+        driveReportTimer = 0;
+        onSlide?.(dtDaysOf(spinDeg));
+      }, 90);
+    };
+    slideApiRef.current = {
+      to: (dtDays) => driveTo(dtDays * 24 * SIDEREAL_DEG_PER_HOUR),
+      by: (deltaDays) => driveTo(spinDeg + deltaDays * 24 * SIDEREAL_DEG_PER_HOUR),
+    };
+
     // Right-click resets to the natal frame and exits (mirrors the measure tool).
     const onContextMenu = (e: maplibregl.MapMouseEvent) => {
       e.preventDefault();
@@ -4619,6 +4711,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     map.on('touchmove', onTouchMove);
     map.on('touchend', onUp);
     map.on('touchcancel', onUp);
+    map.on('zoom', onZoomMidDrag);
     window.addEventListener('mouseup', onWindowUp);
     window.addEventListener('touchend', onWindowUp);
     // Establish every layer at θ=0 immediately.
@@ -4627,6 +4720,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     return () => {
       if (raf) cancelAnimationFrame(raf);
       if (settleTimer) clearTimeout(settleTimer);
+      if (driveReportTimer) clearTimeout(driveReportTimer);
+      slideApiRef.current = null;
       slideDraggingRef.current = false;
       secondaryHiddenRef.current = false;
       map.off('mousedown', onDown);
@@ -4637,6 +4732,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       map.off('touchmove', onTouchMove);
       map.off('touchend', onUp);
       map.off('touchcancel', onUp);
+      map.off('zoom', onZoomMidDrag);
       window.removeEventListener('mouseup', onWindowUp);
       window.removeEventListener('touchend', onWindowUp);
       map.dragPan.enable();
@@ -4711,7 +4807,8 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       if (slideActiveRef.current) {
         // Slide owns the sources (rotated to the current spin) — re-apply at θ rather
         // than push natal positions, which would detach the layers from the spun cage.
-        // While spinning, only the cage is live (secondary hidden), so re-tile just it.
+        // While spinning, only the cage + parans are live (secondary hidden), so
+        // re-tile just those.
         spinPaint(spinDegRef.current, secondaryHiddenRef.current ? 'skip' : 'translate');
       } else {
         pushData(map, { lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, zenith, nadir, ecliptic, overlay, eclipse });
@@ -4723,9 +4820,20 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // the map settles) rather than `load` — `load` only ever fires on the FIRST style load, so a
       // deferred push after that would be dropped, stranding whatever data was last set (e.g. the
       // filtered subset when a line spotlight clears). `dataRef.current` carries the latest props.
+      // The deferred push must respect an active slide exactly like the live branch above: a
+      // spin-drag keeps the style busy per frame, so its bucket resamples all land here — and the
+      // map only goes idle AFTER the user releases, so a raw (untranslated) push would snap the
+      // spun cage back to natal the moment they let go (and stacked defers would repeat it).
+      if (idleDeferRef.current) return;
+      idleDeferRef.current = true;
       map.once('idle', () => {
-        pushData(map, dataRef.current);
-        computeBadges();
+        idleDeferRef.current = false;
+        if (slideActiveRef.current) {
+          spinPaint(spinDegRef.current, secondaryHiddenRef.current ? 'skip' : 'translate');
+        } else {
+          pushData(map, dataRef.current);
+          computeBadges();
+        }
       });
     }
   }, [lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay, eclipse, slideActive, computeBadges, spinPaint]);

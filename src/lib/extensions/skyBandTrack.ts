@@ -31,6 +31,10 @@ export interface SkyBandTrackContext {
   clock: (jd: number) => string;
   /** The Slide tool's slid instant (epoch ms UT) while it spins the sky; null idle. */
   slideMs: number | null;
+  /** Scrub the Slide tool's slid instant to an absolute time (epoch ms UT).
+   *  Present only while that tool is ARMED; absent otherwise — a track may key
+   *  a scrubbing affordance off its presence. */
+  slideTo?: (ms: number) => void;
 }
 
 export interface SkyBandTrack {

@@ -39,12 +39,21 @@ export const skyTimes = {
   now: 'Now',
   // Footer: which timezone the clock reads in.
   zoneNote: 'Local time at this point ({zone})',
-  // Density toggle at the band's left edge: compact glyphs (hover a body for its times) vs. the
-  // times listed inline so no hover is needed.
+  // Table toggle at the band's left edge: the inline times list (the default)
+  // laid out as the speculum table instead.
   detail: {
-    label: 'Times',
-    tipShow: 'Show times',
-    tipHide: 'Hide times',
-    hint: 'List each body’s rise / culmination / set / anti-culmination beside it, so you don’t have to hover. Scroll or drag the row if it runs past the edge.',
+    label: 'Table',
+    tipShow: 'Lay the times out as a table',
+    tipHide: 'Back to the inline list',
+    hint: 'The four angle moments as rows, one column per body. Scroll or drag the row if it runs past the edge.',
+  },
+  // Follow-the-cursor toggle in the context column (desktop only): the band reads live
+  // under the cursor as it moves over the map; a plain map click parks it on that spot.
+  follow: {
+    label: 'Cursor',
+    tipOn: 'Follow the cursor',
+    tipOff: 'Stop following the cursor',
+    hint: 'Read the sky clock live under the cursor as it moves across the map. Click the map to hold a spot; click again to resume. Turn off to return to the pin or birthplace.',
+    hintHeld: 'Held at the clicked spot — click the map again to resume following, or turn this off to return to the pin or birthplace.',
   },
 } as const;

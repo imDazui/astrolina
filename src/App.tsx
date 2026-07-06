@@ -43,9 +43,11 @@ import {
   SkyBand,
   SKY_BAND_H_COMPACT,
   SKY_BAND_H_PHONE,
+  SKY_BAND_H_TABLE,
   SKY_BAND_PHONE_CUSHION,
 } from './components/SkyBand/SkyBand';
 import { getSkyBandTrack, isSkyBandTrackEntitled } from './lib/extensions/skyBandTrack';
+import { MAP_CLICK_EVENT, type MapClickDetail } from './lib/extensions/mapOverlays';
 import { publishBottomDock, retireBottomDock } from './lib/bottomDock';
 import { getReservedLeftInset, subscribeReservedLeftInset } from './lib/leftDock';
 import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
@@ -132,6 +134,7 @@ import {
   type AngleOverlayLineProps,
 } from './lib/astro/angleAspects';
 import { generateParans, generateStarParans, type ParanProps } from './lib/astro/parans';
+import { dailySkyEvents } from './lib/astro/riseSet';
 import {
   generateLocalSpace,
   localSpaceCoordMap,
@@ -284,11 +287,22 @@ const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 // overlay extensions, so this is unused here.
 const OVERLAY_EXT_KEY = 'astro:overlay-ext:v1';
 
-// Slide tool: quantize the time-shifted line recompute to ~1-hour Δt steps. Even the
-// fastest body (Moon, ~0.5°/h) drifts only ~0.5° per step — invisible against a spin —
-// while a fast drag triggers only a handful of (quadratic paran/aspect) resamples
-// instead of one every half-degree of spin.
-const SLIDE_BUCKET_DAYS = 1 / 24;
+// Slide tool: quantize the time-shifted line recompute to TWO-MINUTE Δt steps. Even
+// the fastest body (Moon, ~0.5°/h) moves only ~1 arcmin per step, so the cage no
+// longer visibly pops while spinning zoomed in (the old 1-hour buckets stepped the
+// Moon's lines ~0.5° at a time — a real jump at regional zoom). The cost stays
+// bounded regardless of bucket size: the Map throttles the spin's readout callback
+// (~15 Hz), so a drag can't trigger resamples faster than that — finer buckets only
+// mean SLOW drags resample as often as fast ones always have.
+const SLIDE_BUCKET_DAYS = 1 / 720;
+
+const MS_DAY = 86_400_000;
+const msToJD = (ms: number) => ms / MS_DAY + 2440587.5;
+const jdToMs = (jd: number) => (jd - 2440587.5) * MS_DAY;
+// The chart moment as a UT epoch — ONE formula shared by the slide readout, the
+// programmatic scrub target and the event stepping, so they can never disagree.
+const chartUtcMs = (c: StoredChart) =>
+  Date.UTC(c.year, c.month - 1, c.day, c.hour, c.minute) - c.tzOffset * 3_600_000;
 
 // The Earth/Glass basemaps are light, so the Moon's pale gray barely shows. On those
 // themes only, swap it for a darker slate (MOON_LINE_DARK, shared from lib/theme so the
@@ -455,7 +469,7 @@ const seedCharts: StoredChart[] = SEED_BIRTHS.map((b, i) => ({
 }));
 
 export default function App() {
-  const { t, labels } = useT();
+  const { t, labels, fmt } = useT();
   // A share link (?c=…) restores a chart + view. Consumed exactly once at boot
   // (the param is stripped from the address bar); malformed tokens decode to
   // null and the app boots normally. The chart lands in the library like an
@@ -1114,8 +1128,25 @@ export default function App() {
             'button, a, [role="button"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]',
           ) !== null));
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
       const el = e.target as HTMLElement | null;
+      // Slide nudges — the ONLY pre-repeat-guard case: a held arrow must keep
+      // stepping (auto-repeat), and Shift selects the coarse step so it can't
+      // sit behind the modifier guard either. ← → = ±4 min (≈1° of turn),
+      // Shift+← → = ±1 h. Inert unless the Slide tool is armed, so the arrows
+      // stay free everywhere else.
+      if (
+        (e.key === 'ArrowLeft' || e.key === 'ArrowRight') &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey
+      ) {
+        if (mapTool === 'slide' && !isTypingField(el)) {
+          nudgeSlide((e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 1 : 4 / 60));
+          e.preventDefault();
+          return;
+        }
+      }
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
       // Space → center the map on the active pin; if none is placed, drop a pin
       // on the natal birthplace and center on that. Skipped when a button/link/
       // field is focused (where Space has its own behavior).
@@ -1258,10 +1289,10 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-    // toggleExtension / toggleTool are stable useCallbacks declared later in this component; the
-    // keydown closure reads them lazily (post-commit), so they're intentionally left out of the
-    // deps — listing them here would touch their temporal dead zone during render.
-  }, [current, pinned, toggleSlide, advancedWheel, lineSystem]);
+    // toggleExtension / toggleTool / nudgeSlide are stable useCallbacks declared later in this
+    // component; the keydown closure reads them lazily (post-commit), so they're intentionally
+    // left out of the deps — listing them here would touch their temporal dead zone during render.
+  }, [current, pinned, toggleSlide, advancedWheel, lineSystem, mapTool]);
 
   // Optional opt-in seam for the eclipse-time map LINES (off by default). A fork can
   // dispatch `window.dispatchEvent(new CustomEvent('astro:cheat', { detail: { id:
@@ -1401,18 +1432,82 @@ export default function App() {
   const skyBandTrackExt = getSkyBandTrack();
   const skyBandTrackAvailable = !!skyBandTrackExt && isSkyBandTrackEntitled(skyBandTrackExt);
   const skyBandTrackShown = skyBandTrackAvailable && skyBandTrackOn;
+  // Table layout for the band's legend (the inline times list is the default),
+  // owned here like the track toggle: the table takes real height, so the
+  // reserved height below must follow it. Persisted under the legacy density
+  // key — a stored '2' meant "table"; anything else falls back to the list.
+  const [skyBandTable, setSkyBandTable] = useState(
+    () => localStorage.getItem('astro:sky-times-verbose:v1') === '2',
+  );
+  useEffect(() => {
+    localStorage.setItem('astro:sky-times-verbose:v1', skyBandTable ? '2' : '1');
+  }, [skyBandTable]);
+  // The table layout only takes effect while no track shows (the expanded
+  // track supersedes the legend layouts; the band suppresses them too).
+  const skyBandTableOn = skyBandTable && !skyBandTrackShown;
   const skyBandH = phoneLayout
     ? SKY_BAND_H_PHONE +
       (skyBandTrackShown && skyBandTrackExt ? skyBandTrackExt.height : 0) +
+      // Table mode: the 28px legend row grows to the table's height.
+      (skyBandTableOn ? SKY_BAND_H_TABLE - SKY_BAND_H_COMPACT : 0) +
       safeBottom +
       SKY_BAND_PHONE_CUSHION
     : skyBandTrackShown && skyBandTrackExt
       ? skyBandTrackExt.height
-      : SKY_BAND_H_COMPACT;
+      : skyBandTableOn
+        ? SKY_BAND_H_TABLE
+        : SKY_BAND_H_COMPACT;
   useLayoutEffect(() => {
     publishBottomDock('sky-band', skyBandVisible ? skyBandH : 0);
     return () => retireBottomDock('sky-band');
   }, [skyBandVisible, skyBandH]);
+  // Follow-the-cursor (desktop only — no cursor on phones): while on, the band
+  // reads live under the map cursor instead of the pin/birthplace; a plain map
+  // click parks it on that spot (click again to resume). The cursor point is
+  // throttled — the band re-solves a full day of rise/set events per point, so
+  // per-frame pushes would burn the main thread on readouts nobody can read
+  // that fast. Leaving the map HOLDS the last point (no snap-back flicker).
+  const [skyFollowOn, setSkyFollowOn] = useState(
+    () => localStorage.getItem('astro:skyband-follow:v1') === '1',
+  );
+  useEffect(() => {
+    localStorage.setItem('astro:skyband-follow:v1', skyFollowOn ? '1' : '0');
+  }, [skyFollowOn]);
+  const [skyHover, setSkyHover] = useState<Point | null>(null);
+  const [skyHeld, setSkyHeld] = useState<Point | null>(null);
+  const skyFollowActive = skyBandVisible && skyFollowOn && !phoneLayout;
+  // Read by the (stable) onHover callback: push cursor points only while
+  // following and not parked on a held spot.
+  const skyFollowLiveRef = useRef(false);
+  useEffect(() => {
+    skyFollowLiveRef.current = skyFollowActive && !skyHeld;
+  }, [skyFollowActive, skyHeld]);
+  const skyHoverTimerRef = useRef<number | null>(null);
+  const skyHoverPendingRef = useRef<Point | null>(null);
+  useEffect(() => {
+    if (skyFollowActive) return;
+    if (skyHoverTimerRef.current !== null) {
+      clearTimeout(skyHoverTimerRef.current);
+      skyHoverTimerRef.current = null;
+    }
+    skyHoverPendingRef.current = null;
+    setSkyHover(null);
+    setSkyHeld(null);
+  }, [skyFollowActive]);
+  // The park/resume click, off the neutral map-click broadcast. A map tool owns
+  // clicks while active (the same document signal overlays use to yield), so a
+  // measure/scan click never parks the band.
+  useEffect(() => {
+    if (!skyFollowActive) return;
+    const onClick = (e: Event) => {
+      if (document.documentElement.hasAttribute('data-map-tool-active')) return;
+      const { lat, lng } = (e as CustomEvent<MapClickDetail>).detail;
+      setSkyHeld((h) => (h ? null : { lat, lng }));
+    };
+    window.addEventListener(MAP_CLICK_EVENT, onClick);
+    return () => window.removeEventListener(MAP_CLICK_EVENT, onClick);
+  }, [skyFollowActive]);
+  const skyFollowPoint = skyFollowActive ? (skyHeld ?? skyHover) : null;
   // The widest RESERVED left dock (lib/leftDock) — a panel claiming its own column
   // rather than overlaying. Read into state (not the --es-width var) so the map's
   // inset arrives as a prop on the same commit as its resize (see lib/leftDock).
@@ -1737,17 +1832,17 @@ export default function App() {
   );
 
   // Slide readout (reuses the measure slot): the spin as a rotation angle about the
-  // pole, plus the resulting WALL-CLOCK time at the birthplace in the chart's zone.
-  // Spinning the globe by θ° advances Greenwich sidereal time by θ, i.e. θ/15.041
-  // SOLAR hours of real (clock) time — so the clock = birth moment + dtHours, shown
-  // DST-aware in the chart's IANA zone (legacy zone-less charts fall back to tzOffset).
-  // Null until the user spins.
+  // pole, plus the resulting WALL-CLOCK time + date at the birthplace in the chart's
+  // zone. Spinning the globe by θ° advances Greenwich sidereal time by θ, i.e.
+  // θ/15.041 SOLAR hours of real (clock) time — so the clock = birth moment + dtHours,
+  // shown DST-aware in the chart's IANA zone (legacy zone-less charts fall back to
+  // tzOffset). Non-null whenever the tool is ARMED with a chart (Δt 0 = the natal
+  // moment): the readout's controls and any surface scrubbing the slid instant need
+  // it live before the first spin.
   const slide = useMemo<SlideInfo | null>(() => {
-    if (mapTool !== 'slide' || slideDt === 0 || !current) return null;
+    if (mapTool !== 'slide' || !current) return null;
     const dtHours = slideDt * 24;
-    const birthUtcMs =
-      Date.UTC(current.year, current.month - 1, current.day, current.hour, current.minute) -
-      current.tzOffset * 3_600_000;
+    const birthUtcMs = chartUtcMs(current);
     const slidMs = birthUtcMs + dtHours * 3_600_000;
     const offH = current.tzIana
       ? offsetHoursAt(current.tzIana, slidMs)
@@ -1759,13 +1854,19 @@ export default function App() {
     const wall = new Date(slidMs + offH * 3_600_000);
     const hh = String(wall.getUTCHours()).padStart(2, '0');
     const mm = String(wall.getUTCMinutes()).padStart(2, '0');
+    // The date, with the year only when the spin left the chart's own year.
+    const year = wall.getUTCFullYear();
+    const date = `${wall.getUTCDate()} ${fmt.monthAbbr(wall.getUTCMonth() + 1)}${
+      year !== current.year ? ` ${year}` : ''
+    }`;
     return {
       thetaDeg: dtHours * SIDEREAL_DEG_PER_HOUR,
       dtHours,
       clock: `${hh}:${mm} ${label}`,
+      date,
       ms: slidMs,
     };
-  }, [mapTool, slideDt, current]);
+  }, [mapTool, slideDt, current, fmt]);
 
   // The "Aspects to angles" overlay lines (aspect and/or midpoint sets — both
   // share one map source). Unlike the base lines this generates FROM the visible
@@ -2554,6 +2655,11 @@ export default function App() {
   const pinnedLabel = useReverseGeocode(isNatalPin ? null : pinned, detailZoom);
   const hoverCity = useNearestCityLabel(mapTool === 'measure' ? null : hover);
   const hoverCountry = useCountryOf(hover);
+  // The sky band's place label while follow-the-cursor is on: the offline
+  // nearest city, falling back to the country, then "Ocean" — the hover
+  // readout's chain, but on the band's own (throttled / held) point.
+  const skyFollowCity = useNearestCityLabel(skyFollowPoint);
+  const skyFollowCountry = useCountryOf(skyFollowPoint);
   // Once pinned, hover stays frozen on the clicked point (onHover/onLeave are gated
   // on !pinned), so this hovered-point label doubles as the pin's placeholder while
   // the reverse-geocode loads.
@@ -2919,6 +3025,20 @@ export default function App() {
   }, []);
   const onHover = useCallback(
     (lat: number, lng: number) => {
+      // Sky-band follow mode: trailing ~200ms throttle (see the skyFollow block
+      // for why), independent of the pin gating below — following works with a
+      // pin placed.
+      if (skyFollowLiveRef.current) {
+        skyHoverPendingRef.current = { lat, lng };
+        if (skyHoverTimerRef.current === null) {
+          skyHoverTimerRef.current = window.setTimeout(() => {
+            skyHoverTimerRef.current = null;
+            if (skyFollowLiveRef.current && skyHoverPendingRef.current) {
+              setSkyHover(skyHoverPendingRef.current);
+            }
+          }, 200);
+        }
+      }
       if (!pinned && !resizingRef.current) setHover({ lat, lng });
     },
     [pinned],
@@ -3001,6 +3121,62 @@ export default function App() {
     setMapTool('off');
     setSlideDt(0);
   }, []);
+  // Slide tool precision controls (the readout's buttons + the arrow keys): relative
+  // nudges go through slideBy — computed Map-side against the LIVE spin, so rapid
+  // repeats never race the throttled slideDt report back.
+  const nudgeSlide = useCallback((dHours: number) => {
+    mapRef.current?.slideBy(dHours / 24);
+  }, []);
+  const resetSlide = useCallback(() => {
+    mapRef.current?.slideTo(0);
+  }, []);
+  // Scrub the slid instant to an absolute time (a band track may drive this while
+  // the tool is armed — see SkyBandTrackContext.slideTo).
+  const slideToMs = useCallback(
+    (ms: number) => {
+      if (!current) return;
+      mapRef.current?.slideTo((ms - chartUtcMs(current)) / MS_DAY);
+    },
+    [current],
+  );
+  // Jump to the previous/next ANGULAR EVENT — the nearest rise / culmination / set /
+  // anti-culmination of any visible body at the active point (pin, else birthplace),
+  // before/after the slid instant. Windows are anchored to the slid instant in
+  // absolute time (dailySkyEvents clamps events into a fixed 24h span from any
+  // start), so midnight and DST need no special casing; k reaches further only when
+  // a window has no qualifying event (sparse visible sets).
+  const stepSlideEvent = useCallback(
+    (dir: 1 | -1) => {
+      if (!current || visiblePlanets.size === 0) return;
+      const point = pinned ?? current.birthplace;
+      const base = chartUtcMs(current);
+      const slidMs = base + slideDt * MS_DAY;
+      const bodies = [...visiblePlanets];
+      const EPS = 1000; // keep a just-snapped event from re-matching
+      for (let k = 0; k < 3; k++) {
+        const winStart = slidMs - MS_DAY / 2 + dir * k * MS_DAY;
+        const days = dailySkyEvents(msToJD(winStart), point.lat, point.lng, bodies, nodeType);
+        let best: number | null = null;
+        for (const d of days) {
+          for (const jd of [d.rise, d.culminate, d.set, d.anticulminate]) {
+            if (jd === null) continue;
+            const ms = jdToMs(jd);
+            const ok = dir > 0 ? ms > slidMs + EPS : ms < slidMs - EPS;
+            if (ok && (best === null || (dir > 0 ? ms < best : ms > best))) best = ms;
+          }
+        }
+        if (best !== null) {
+          const dt = (best - base) / MS_DAY;
+          // Optimistic: land slideDt now so a fast second press steps from the
+          // NEW instant instead of the throttled report's stale one.
+          setSlideDt(dt);
+          mapRef.current?.slideTo(dt);
+          return;
+        }
+      }
+    },
+    [current, pinned, visiblePlanets, nodeType, slideDt],
+  );
   // Capture tool: right-click on the map exits the capture frame. Stable so the
   // Map's frame effect (which depends on it) isn't torn down on unrelated re-renders.
   const stopCapture = useCallback(() => {
@@ -3839,6 +4015,10 @@ export default function App() {
         slide={slide}
         onToggleSlide={toggleSlide}
         slideEnabled={slideAvailable}
+        onSlideNudge={nudgeSlide}
+        onSlideReset={resetSlide}
+        onSlideStep={stepSlideEvent}
+        slideStepEnabled={visiblePlanets.size > 0}
         locationLabel={locationLabel}
         fadeLocation={fadeLocation}
         overlayMode={overlayMode}
@@ -3984,22 +4164,32 @@ export default function App() {
       )}
       {skyBandVisible && (
         <SkyBand
-          // The day clock reads at the placed pin, else the chart's birthplace.
-          point={pinned ?? (current ? current.birthplace : null)}
+          // The day clock reads at the followed cursor point (while follow mode
+          // is on), else the placed pin, else the chart's birthplace.
+          point={skyFollowPoint ?? pinned ?? (current ? current.birthplace : null)}
           placeLabel={
-            pinned
-              ? isNatalPin
-                ? (current?.birthplace.label ?? null)
-                : pinnedLabel
-              : (current?.birthplace.label ?? null)
+            skyFollowPoint
+              ? (skyFollowCity ?? skyFollowCountry ?? t('common.locationFallbackOcean'))
+              : pinned
+                ? isNatalPin
+                  ? (current?.birthplace.label ?? null)
+                  : pinnedLabel
+                : (current?.birthplace.label ?? null)
           }
           visiblePlanets={visiblePlanets}
           nodeType={nodeType}
           trackShown={skyBandTrackShown}
           onToggleTrack={() => setSkyBandTrackOn((v) => !v)}
+          table={skyBandTable}
+          onToggleTable={() => setSkyBandTable((v) => !v)}
+          follow={!skyFollowOn || phoneLayout ? 'off' : skyHeld ? 'held' : 'live'}
+          onToggleFollow={() => setSkyFollowOn((v) => !v)}
           // While the Slide tool spins the sky, the track's time cursor follows
-          // the slid instant — the clock shifts with the spin.
+          // the slid instant — the clock shifts with the spin. And while the
+          // tool is ARMED, a registered track may scrub that instant back
+          // through slideTo (absent otherwise — the affordance keys off it).
           slideMs={slide?.ms ?? null}
+          slideTo={sliding ? slideToMs : undefined}
           onClose={() => setShowSkyTimes(false)}
         />
       )}

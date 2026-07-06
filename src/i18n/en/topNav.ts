@@ -90,6 +90,18 @@ export const topNav = {
     slideUnavailable:
       'Slide needs the natal chart on screen — unavailable while it’s hidden (eclipses) or an overlay is promoted.',
     slideToolbarHint: '{pan} to slide the world under the fixed lines{rightExit}',
+    // The slide control cluster (secondary bar): nudges, event steps, reset, and
+    // the readout chips' hover tips.
+    slideNudgeBack1h: 'Back one hour',
+    slideNudgeBack4m: 'Back four minutes (≈ 1° of turn)',
+    slideNudgeFwd4m: 'Forward four minutes (≈ 1° of turn)',
+    slideNudgeFwd1h: 'Forward one hour',
+    slideReset: 'Return to the natal sky',
+    slidePrevEvent: 'Jump to the previous rise, culmination or set at the active point',
+    slideNextEvent: 'Jump to the next rise, culmination or set at the active point',
+    slideElapsedTip: 'Time slid from the chart moment',
+    slideClockTip: 'Wall clock and date at the birthplace, in the chart’s zone',
+    slideAngleTip: 'Rotation about the pole',
     captureItem: 'Capture',
     captureHint:
       'Frame the map and export it as a PNG — pick an aspect ratio, choose what to include, then download or copy.',

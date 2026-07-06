@@ -19,7 +19,11 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  max-height: calc(100vh - 32px);
+  /* Stop above the reserved bottom band (the sky band) like the rest of the
+     bottom furniture — the panel is translucent, so running over the band let
+     its darker chrome show through the lower rows like a smudge. Same 16px
+     breathing at the bottom as at the top. */
+  max-height: calc(100vh - 32px - var(--sky-band-h, 0px));
   transition: border-color 0.15s;
 }
 

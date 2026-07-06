@@ -9,6 +9,12 @@ import { PLANET_CODES, PLANET_COLORS, type PlanetName, type PlanetPosition } fro
 import type { MeridianLng } from './lines';
 
 const RAD2DEG = 180 / Math.PI;
+const TWO_PI = 2 * Math.PI;
+
+// Normalize an angle into [0, 2π) — the range ParanProps.theta is published in.
+function norm2pi(x: number): number {
+  return ((x % TWO_PI) + TWO_PI) % TWO_PI;
+}
 
 // Paran rows are listed only to ±72° latitude, while the angle lines themselves
 // draw on to ±85°: rising/setting geometry degrades toward the circumpolar zone,
@@ -24,6 +30,12 @@ export interface ParanProps {
   angleB: 'ASC' | 'DSC';
   latitude: number;
   intersectionLng: number;
+  /** The pairing's shared LOCAL SIDEREAL TIME (radians, [0, 2π), equinox of
+   *  date): the diurnal instant both bodies stand on their angles together,
+   *  which holds at every longitude along the latitude (GMST + east-positive
+   *  longitude = theta). Carried so a consumer can read the line in the time
+   *  domain; frame-independent (the drawing frame only remaps longitudes). */
+  theta: number;
   color: string;
   label: string;
   /** Overlay/promoted tag (e.g. "Tr"); absent for the natal chart. Shown as the
@@ -163,6 +175,8 @@ export function generateParans(
             angleB,
             latitude: lat,
             intersectionLng,
+            // A culminates when the local sidereal time equals its (IC-shifted) RA.
+            theta: norm2pi(aRA),
             color: PLANET_COLORS[a.name],
             label: `${PLANET_CODES[a.name]} ${angleA} × ${PLANET_CODES[b.name]} ${angleB}`,
           },
@@ -193,6 +207,7 @@ export function generateParans(
             angleB: sol.angleB,
             latitude: sol.lat,
             intersectionLng,
+            theta: norm2pi(sol.theta),
             color: PLANET_COLORS[a.name],
             label: `${PLANET_CODES[a.name]} ${sol.angleA} × ${PLANET_CODES[b.name]} ${sol.angleB}`,
           },
@@ -237,6 +252,7 @@ export function generateStarParans(
     label: string,
     lat: number,
     intersectionLng: number,
+    theta: number,
   ) =>
     features.push({
       type: 'Feature',
@@ -247,6 +263,7 @@ export function generateStarParans(
         angleB,
         latitude: lat,
         intersectionLng,
+        theta: norm2pi(theta),
         color,
         label,
         star,
@@ -267,7 +284,7 @@ export function generateStarParans(
         push(
           p.name, s.name, angleA, angleB,
           `★ ${s.name} ${angleA} × ${PLANET_CODES[p.name]} ${angleB}`,
-          lat, normLng(meridianLng(aRA)),
+          lat, normLng(meridianLng(aRA)), aRA,
         );
       }
       // Planet culminating while the star rises or sets.
@@ -281,7 +298,7 @@ export function generateStarParans(
         push(
           p.name, s.name, angleA, angleB,
           `${PLANET_CODES[p.name]} ${angleA} × ★ ${s.name} ${angleB}`,
-          lat, normLng(meridianLng(aRA)),
+          lat, normLng(meridianLng(aRA)), aRA,
         );
       }
       // Both on the horizon together (the star listed first).
@@ -289,7 +306,7 @@ export function generateStarParans(
         push(
           p.name, s.name, sol.angleA, sol.angleB,
           `★ ${s.name} ${sol.angleA} × ${PLANET_CODES[p.name]} ${sol.angleB}`,
-          sol.lat, normLng(meridianLng(sol.theta)),
+          sol.lat, normLng(meridianLng(sol.theta)), sol.theta,
         );
       }
     }

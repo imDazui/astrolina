@@ -32,6 +32,26 @@
   user-select: none;
 }
 
+/* The band's chrome continues LEFT under an open left dock (the expanded chart
+   sidebar / any reserved left panel). The map shrinks up above the band, so the
+   strip behind the band's row — left of the band's own edge — is otherwise the
+   raw app background; through a frosted (translucent) dock that dark void reads
+   as a shadow smeared across the dock's bottom rows. Painting the band's own
+   background + border there gives the dock's glass band chrome to sample
+   instead. Sits in the band's stacking (z 6), i.e. under the dock like the band
+   itself; zero-width when no dock is open (--es-width: 0). */
+.sky-band::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  bottom: 0;
+  right: 100%;
+  width: var(--es-width, 0px);
+  background: inherit;
+  border-top: inherit;
+  pointer-events: none;
+}
+
 /* ── LEFT: the body legend ── */
 /* Expanded (a track is showing): a column-flowing grid, 4 rows tall. */
 .sky-band-legend {
@@ -312,8 +332,9 @@
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-/* Leftmost density toggle — the same eye-pill as the track toggle, parked on the band's far-left
-   edge (before the body legend). Accent-lit while the times are shown inline. */
+/* Leftmost TABLE toggle — the same eye-pill as the track toggle, parked on the
+   band's far-left edge (before the body legend). Accent-lit while the legend's
+   inline list is laid out as the speculum table instead. */
 .sky-band-detail-toggle {
   display: inline-flex;
   align-items: center;
@@ -413,7 +434,7 @@
   justify-content: flex-start;
 }
 /* Portrait is tight: the zone keeps its clock icon (a tap reveals the full zone) and the
-   track + density toggles keep their eyes — the text labels go, CLIPPED rather than
+   track + table toggles keep their eyes — the text labels go, CLIPPED rather than
    display:none so every control keeps its accessible name. */
 .sky-band.is-phone .sky-band-zone,
 .sky-band.is-phone .sky-band-track-toggle,
@@ -443,4 +464,132 @@
   grid-area: auto;
   grid-row: 1 / -1;
   grid-column: 3;
+}
+
+/* ── TABLE layout (is-table — the speculum, no track showing) ──
+   The band grows to SKY_BAND_H_TABLE (kept in sync with the TSX constant: four
+   17px time rows inside the band's chrome — no header row) and the legend
+   becomes a column-flowing grid: the four moment labels first, then per body a
+   full-height glyph cell BESIDE its four-cell times column. Same scroll /
+   drag / edge-fade machinery as the compact row. Placed AFTER the phone block
+   so the grid wins over the phone legend's single-row flex. */
+.sky-band.is-table .sky-band-legend {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  grid-template-rows: repeat(4, 17px);
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  align-items: center;
+  align-content: center;
+  padding: 0 10px;
+  border-right: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--fade-l, 0px),
+    #000 calc(100% - var(--fade-r, 0px)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--fade-l, 0px),
+    #000 calc(100% - var(--fade-r, 0px)),
+    transparent 100%
+  );
+}
+.sky-band.is-table .sky-band-legend::-webkit-scrollbar {
+  display: none;
+}
+
+/* The moment-label column (the same ASC / MC / DSC / IC codes as the hover
+   card), then per body: the glyph cell spanning ALL FOUR rows beside its times
+   column — its right rule runs the column's full height, the cue that the one
+   glyph owns all four times. */
+.sky-band-tbl-kind {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  padding-right: 8px;
+  cursor: help;
+}
+/* The glyph column is identification only (no hover box of its own — each TIME
+   cell carries the tip), so the full-height strip never lights up whole. */
+.sky-band-tbl-body {
+  grid-row: 1 / -1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 7px 0 12px;
+  border-right: 1px solid rgba(var(--tint), 0.18);
+  line-height: 1;
+}
+.sky-band-tbl-cell {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text);
+  text-align: center;
+  padding: 0 7px;
+  white-space: nowrap;
+  border-radius: 4px;
+  cursor: help;
+}
+.sky-band-tbl-cell:hover {
+  background: rgba(var(--tint), 0.1);
+}
+.sky-band-tbl-body.is-dim,
+.sky-band-tbl-cell.is-dim {
+  opacity: 0.45;
+}
+
+/* Phones: the legend row takes the table's height (App publishes the taller
+   band); the context row keeps its 28px. Table mode implies no track, so the
+   center area drops out of the template. */
+.sky-band.is-phone.is-table {
+  grid-template-rows: minmax(0, 1fr) 28px;
+  grid-template-areas:
+    'toggle legend legend'
+    'side   side   close';
+}
+
+/* ── Follow-the-cursor toggle (desktop only — hidden on phones in the TSX) ──
+   The same pill chrome as the track toggle; `is-held` marks the parked state
+   (a map click froze the followed point) with a dashed edge. */
+.sky-band-follow-toggle {
+  border: 1px solid rgba(var(--tint), 0.16);
+  background: rgba(var(--tint), 0.05);
+  border-radius: 5px;
+  color: var(--text-muted);
+  font: inherit;
+  line-height: 1;
+  padding: 3px 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sky-band-follow-toggle:hover {
+  color: var(--text-strong);
+  border-color: rgba(var(--tint), 0.32);
+}
+.sky-band-follow-toggle.on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.sky-band-follow-toggle.is-held {
+  border-style: dashed;
+}
+.sky-band-follow-cursor {
+  flex: none;
+  width: 10px;
+  height: 10px;
 }

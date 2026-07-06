@@ -137,6 +137,51 @@ console.log(`generated parans: ${props.length}`);
   check('paran ASC/DSC labels match actual rising/setting', labelErrors === 0, `${labelErrors} mislabeled`);
 }
 
+// ── 1b. theta — the pairing's shared sidereal time holds along the whole line ──
+// ParanProps.theta claims: wherever local sidereal time equals theta, both
+// bodies stand on their claimed angles (the paran recurring with the daily
+// turn, at ANY longitude along the latitude). For each paran, solve the
+// instant LST hits theta at three longitudes — the intersection plus two
+// arbitrary ones — and re-run the section-1 angle conditions there against the
+// chart's fixed (ra, dec). Cross-validates theta jointly against the latitude
+// and both bodies, on the sidereal-time side the intersection checks never
+// exercise directly.
+{
+  const TWO_PI = Math.PI * 2;
+  const RATE = TWO_PI * 1.00273790935; // mean sidereal turn rate, rad/day
+  const wrap2pi = (x: number) => ((x % TWO_PI) + TWO_PI) % TWO_PI;
+  let worstAlt = 0;
+  let worstMeridian = 0;
+  let badRange = 0;
+  for (const p of props) {
+    if (!(Number.isFinite(p.theta) && p.theta >= 0 && p.theta < TWO_PI)) {
+      badRange += 1;
+      continue;
+    }
+    const A = byName.get(p.planetA)!;
+    const B = byName.get(p.planetB)!;
+    for (const lng of [p.intersectionLng, -117.25, 31.5]) {
+      // The instant local sidereal time reaches theta at this longitude: one
+      // wrapped sidereal step from the chart instant, one refinement.
+      let jdT = jd + wrap2pi(p.theta - lng * DEG2RAD - gastRad(jd)) / RATE;
+      jdT += normDelta(p.theta - lng * DEG2RAD - gastRad(jdT)) / RATE;
+      const altB = Math.abs(altitudeOf(jdT, B.ra, B.dec, p.latitude, lng));
+      if (altB > worstAlt) worstAlt = altB;
+      if (p.angleA === 'MC' || p.angleA === 'IC') {
+        const H = normDelta(gastRad(jdT) + lng * DEG2RAD - A.ra);
+        const err = p.angleA === 'MC' ? Math.abs(H) : Math.abs(Math.abs(H) - Math.PI);
+        if (err > worstMeridian) worstMeridian = err;
+      } else {
+        const altA = Math.abs(altitudeOf(jdT, A.ra, A.dec, p.latitude, lng));
+        if (altA > worstAlt) worstAlt = altA;
+      }
+    }
+  }
+  check('theta in [0, 2π) on every paran', badRange === 0, `${badRange} out of range`);
+  check('theta: horizon bodies on the horizon when LST = theta (3 lngs each)', worstAlt < 1e-6, `max ${worstAlt.toExponential(2)} rad`);
+  check('theta: meridian bodies on the MC/IC when LST = theta (3 lngs each)', worstMeridian < 1e-6, `max ${worstMeridian.toExponential(2)} rad`);
+}
+
 // ── 2. Completeness vs an independent brute-force scan ────────────────────────
 // For each configuration, scan latitude and root-find where the constraint
 // crosses zero, using only textbook horizon algebra (no parans.ts code). Every

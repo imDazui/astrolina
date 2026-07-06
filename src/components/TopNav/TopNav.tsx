@@ -175,12 +175,22 @@ interface TopNavProps {
   measure: MeasureInfo | null;
   measureSnap?: boolean;
   setMeasureSnap?: (v: boolean) => void;
-  /** Slide-tool readout (rotation angle + sidereal time); null until spun. */
+  /** Slide-tool readout (elapsed time, wall clock + date, rotation angle);
+   *  non-null whenever the tool is armed with a chart (Δt 0 = natal). */
   slide: SlideInfo | null;
   /** Toggle the Slide tool — switches the geodetic line frame to celestial first if needed. */
   onToggleSlide: () => void;
   /** False when Slide can't run (natal linework hidden / overlay promoted) — greys the item. */
   slideEnabled: boolean;
+  /** Nudge the slid instant by signed HOURS (the readout's −1h/−4m/+4m/+1h). */
+  onSlideNudge?: (dHours: number) => void;
+  /** Return the spin to the natal sky (the readout's ⟲). */
+  onSlideReset?: () => void;
+  /** Jump to the previous/next angular event (rise/culmination/set/anti-culmination
+   *  of any visible body at the active point) — the readout's ⏮/⏭. */
+  onSlideStep?: (dir: 1 | -1) => void;
+  /** False when event stepping can't work (no visible bodies) — disables ⏮/⏭. */
+  slideStepEnabled?: boolean;
   /** Reverse-geocoded name of the active map point (pin/hover); null while
    *  measuring or with no active point (then the bar shows the birth location). */
   locationLabel: string | null;
@@ -251,13 +261,28 @@ function fmtMeasure(m: MeasureInfo): string {
   return `${deg}°${pad2(min)}′ · ${km} km · ${mi} mi`;
 }
 
-// "+48.2° E · 18:42 EDT" — the Slide spin as a signed rotation about the pole (with
-// hemisphere), then the resulting wall-clock time at the birthplace in the chart's zone.
-function fmtSlide(s: SlideInfo): string {
+// "+48.2° E" — the Slide spin as a signed rotation about the pole (with hemisphere).
+// De-emphasized beside the elapsed-time chip: time is what astrologers reason in.
+function fmtSlideAngle(s: SlideInfo): string {
   const sign = s.thetaDeg >= 0 ? '+' : '−';
   const dir = s.thetaDeg >= 0 ? 'E' : 'W';
-  const deg = `${sign}${Math.abs(s.thetaDeg).toFixed(1)}° ${dir}`;
-  return `${deg} · ${s.clock}`;
+  return `${sign}${Math.abs(s.thetaDeg).toFixed(1)}° ${dir}`;
+}
+
+// "+3h 12m" / "−1d 4h 07m" — the slid time as a signed elapsed reading, days
+// appearing past 24h. Minutes pad to two digits whenever a larger unit leads.
+function fmtSlideElapsed(dtHours: number): string {
+  const sign = dtHours < 0 ? '−' : '+';
+  let mins = Math.round(Math.abs(dtHours) * 60);
+  const d = Math.floor(mins / 1440);
+  mins -= d * 1440;
+  const h = Math.floor(mins / 60);
+  const m = mins - h * 60;
+  const parts: string[] = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0 || d > 0) parts.push(`${h}h`);
+  parts.push(`${parts.length > 0 ? pad2(m) : m}m`);
+  return sign + parts.join(' ');
 }
 
 // A click-away popover: a trigger button plus an absolutely-positioned panel that
@@ -687,6 +712,10 @@ export function TopNav({
   slide,
   onToggleSlide,
   slideEnabled,
+  onSlideNudge,
+  onSlideReset,
+  onSlideStep,
+  slideStepEnabled = true,
   locationLabel,
   fadeLocation,
   overlayMode,
@@ -1185,11 +1214,109 @@ export function TopNav({
             </>
           ) : sliding ? (
             slide ? (
-              <div className="topnav-measure">
-                <span className="topnav-measure-endpoints">
-                  <span className="topnav-dot" />
-                  {fmtSlide(slide)}
-                </span>
+              // The Slide control cluster: event steps ⏮/⏭ on the outside,
+              // −1h/−4m/+4m/+1h nudges inward, the readout (elapsed · clock ·
+              // date · angle) in the centre — or the usage hint while still at
+              // the natal moment — and ⟲ back to natal on the far right.
+              <div className="topnav-slide">
+                <span className="topnav-dot" />
+                <TipButton
+                  type="button"
+                  className="topnav-slide-btn"
+                  placement="bottom"
+                  onClick={() => onSlideStep?.(-1)}
+                  disabled={!slideStepEnabled}
+                  tip={t('topNav.tools.slidePrevEvent')}
+                >
+                  ⏮
+                </TipButton>
+                <TipButton
+                  type="button"
+                  className="topnav-slide-btn"
+                  placement="bottom"
+                  onClick={() => onSlideNudge?.(-1)}
+                  tip={t('topNav.tools.slideNudgeBack1h')}
+                  hotkey="Shift ←"
+                >
+                  −1h
+                </TipButton>
+                <TipButton
+                  type="button"
+                  className="topnav-slide-btn"
+                  placement="bottom"
+                  onClick={() => onSlideNudge?.(-4 / 60)}
+                  tip={t('topNav.tools.slideNudgeBack4m')}
+                  hotkey="←"
+                >
+                  −4m
+                </TipButton>
+                {slide.dtHours === 0 ? (
+                  <ToolHintText text={t('topNav.tools.slideToolbarHint')} />
+                ) : (
+                  <>
+                    <TipSpan
+                      className="topnav-slide-chip"
+                      placement="bottom"
+                      tip={t('topNav.tools.slideElapsedTip')}
+                    >
+                      {fmtSlideElapsed(slide.dtHours)}
+                    </TipSpan>
+                    <TipSpan
+                      className="topnav-slide-clock"
+                      placement="bottom"
+                      tip={t('topNav.tools.slideClockTip')}
+                    >
+                      {slide.clock} · {slide.date}
+                    </TipSpan>
+                    <TipSpan
+                      className="topnav-slide-angle"
+                      placement="bottom"
+                      tip={t('topNav.tools.slideAngleTip')}
+                    >
+                      {fmtSlideAngle(slide)}
+                    </TipSpan>
+                  </>
+                )}
+                <TipButton
+                  type="button"
+                  className="topnav-slide-btn"
+                  placement="bottom"
+                  onClick={() => onSlideNudge?.(4 / 60)}
+                  tip={t('topNav.tools.slideNudgeFwd4m')}
+                  hotkey="→"
+                >
+                  +4m
+                </TipButton>
+                <TipButton
+                  type="button"
+                  className="topnav-slide-btn"
+                  placement="bottom"
+                  onClick={() => onSlideNudge?.(1)}
+                  tip={t('topNav.tools.slideNudgeFwd1h')}
+                  hotkey="Shift →"
+                >
+                  +1h
+                </TipButton>
+                <TipButton
+                  type="button"
+                  className="topnav-slide-btn"
+                  placement="bottom"
+                  onClick={() => onSlideStep?.(1)}
+                  disabled={!slideStepEnabled}
+                  tip={t('topNav.tools.slideNextEvent')}
+                >
+                  ⏭
+                </TipButton>
+                <TipButton
+                  type="button"
+                  className="topnav-slide-btn"
+                  placement="bottom"
+                  onClick={() => onSlideReset?.()}
+                  disabled={slide.dtHours === 0}
+                  tip={t('topNav.tools.slideReset')}
+                >
+                  ⟲
+                </TipButton>
               </div>
             ) : (
               <ToolHintText text={t('topNav.tools.slideToolbarHint')} />
