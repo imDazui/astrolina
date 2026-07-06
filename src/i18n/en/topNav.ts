@@ -89,7 +89,7 @@ export const topNav = {
       'Slide the world under the fixed natal lines — advances time to show how parans build through the day. Works in flat or globe view.',
     slideUnavailable:
       'Slide needs the natal chart on screen — unavailable while it’s hidden (eclipses) or an overlay is promoted.',
-    slideToolbarHint: '{pan} to slide the world under the fixed lines{rightExit}',
+    slideToolbarHint: '{pan} to slide the world under the fixed lines',
     // The slide control cluster (secondary bar): nudges, event steps, reset, and
     // the readout chips' hover tips.
     slideNudgeBack1h: 'Back one hour',

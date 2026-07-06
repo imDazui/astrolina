@@ -11,6 +11,16 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
+/** A longitude resolved to its canonical meridian, (−180, 180]. On the flat map a
+ *  cursor or pin over a REPEATED world copy carries a wrapped longitude — e.g.
+ *  −234° for the 126°E meridian — and the readout must show the real meridian,
+ *  whichever copy the pointer is over. −180 maps to +180 (the dateline is +180) to
+ *  match the line geometry's own convention (astro/lines normLng). */
+export function canonicalLng(lngDeg: number): number {
+  const lng = (((lngDeg + 180) % 360) + 360) % 360 - 180;
+  return lng === -180 ? 180 : lng;
+}
+
 function fmtDms(absDeg: number): { d: number; m: number; s: number } {
   const d = Math.floor(absDeg);
   const minFull = (absDeg - d) * 60;
@@ -27,7 +37,8 @@ export function fmtLat(latDeg: number): string {
 }
 
 export function fmtLng(lngDeg: number): string {
-  const dir = lngDeg >= 0 ? 'E' : 'W';
-  const { d, m, s } = fmtDms(Math.abs(lngDeg));
+  const lng = canonicalLng(lngDeg);
+  const dir = lng >= 0 ? 'E' : 'W';
+  const { d, m, s } = fmtDms(Math.abs(lng));
   return `${d}°${dir}${pad2(m)}'${pad2(s)}"`;
 }

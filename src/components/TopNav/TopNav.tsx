@@ -20,6 +20,7 @@ import {
   overlayBlockedFor,
   type OverlayMode,
 } from '../../lib/astro/timeline';
+import { canonicalLng } from '../../lib/coordFormat';
 import { getMapExtensions } from '../../lib/extensions/mapExtensions';
 import { getToolExtensions } from '../../lib/extensions/toolExtensions';
 import { getOverlayExtensions } from '../../lib/extensions/overlayExtensions';
@@ -240,10 +241,13 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-// "40.713°N, 74.006°W" — a measure endpoint as signed-hemisphere decimals.
+// "40.713°N, 74.006°W" — a measure endpoint as signed-hemisphere decimals. The
+// longitude is resolved to its canonical meridian first, so an endpoint picked on
+// a repeated world copy reads as the real meridian, not its ±360° wrap.
 function fmtLatLng(p: { lat: number; lng: number }): string {
+  const lngDeg = canonicalLng(p.lng);
   const lat = `${Math.abs(p.lat).toFixed(3)}°${p.lat >= 0 ? 'N' : 'S'}`;
-  const lng = `${Math.abs(p.lng).toFixed(3)}°${p.lng >= 0 ? 'E' : 'W'}`;
+  const lng = `${Math.abs(lngDeg).toFixed(3)}°${lngDeg >= 0 ? 'E' : 'W'}`;
   return `${lat}, ${lng}`;
 }
 
