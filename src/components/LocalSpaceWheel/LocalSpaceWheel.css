@@ -6,48 +6,126 @@
  * AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
  */
 
-/* Horizon-frame dial for the wheel sidebar — rim styling mirrors the map's
-   horizon compass (LocalHorizonWheel.css) so the two read as one instrument. */
+/* Horizon-frame GLOBE for the wheel sidebar: a hand-rolled orthographic sphere you
+   drag to rotate. Grid/shading are theme-aware via rgba(var(--tint), α), matching
+   the map's horizon compass palette. */
 .local-space-wheel {
   display: block;
   overflow: visible;
+  cursor: grab;
+  /* The globe is a drag surface — claim the gesture so touch-drag rotates instead
+     of scrolling the panel, and never let a drag select the rim/glyph text (that
+     was the blue highlight when spinning). */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.local-space-wheel.lsw-dragging {
+  cursor: grabbing;
 }
 
-.local-space-wheel .lsw-ring {
+/* Sphere body: a soft gradient (lit upper-left) reads as a ball; the rim sharpens
+   the silhouette over busy panel backgrounds. */
+.local-space-wheel .lsw-globe-hi {
+  stop-color: rgba(var(--tint), 0.14);
+}
+.local-space-wheel .lsw-globe-lo {
+  stop-color: rgba(var(--tint), 0.02);
+}
+.local-space-wheel .lsw-globe-rim {
+  fill: none;
+  stroke: rgba(var(--tint), 0.4);
+  stroke-width: 1;
+}
+
+/* Graticule. Near arcs (front hemisphere) are solid; far arcs are faint so the
+   sphere reads with depth. The horizon (equator) is emphasised. */
+.local-space-wheel .lsw-grid {
+  fill: none;
+  stroke: rgba(var(--tint), 0.28);
+  stroke-width: 0.7;
+}
+.local-space-wheel .lsw-grid-back {
+  fill: none;
+  stroke: rgba(var(--tint), 0.1);
+  stroke-width: 0.6;
+}
+.local-space-wheel .lsw-grid-horizon {
+  fill: none;
+  stroke: rgba(var(--tint), 0.6);
+  stroke-width: 1.3;
+}
+.local-space-wheel .lsw-grid-horizon-back {
+  fill: none;
+  stroke: rgba(var(--tint), 0.2);
+  stroke-width: 0.9;
+}
+
+/* Cardinal letters (N/E/S/W, Z) + azimuth degree numbers; font-size is set inline
+   so it scales with the dial (the paired globes render at ~half width). */
+.local-space-wheel .lsw-card {
+  fill: var(--text-strong);
+  font-weight: 700;
+}
+.local-space-wheel .lsw-deg {
+  fill: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Planet marks come from the zodiac wheel's classes (planet-disc-fill, planet-hit,
+   planet-mark hover lift — WheelSvg.css); far-side + below-horizon dimming is set
+   inline on each mark so the two can compound. */
+
+/* ── 2D compass (the default dial) ──────────────────────────────────────
+   A flat azimuth compass: planets on an outer donut, the aspect web inside an
+   inner circle. Theme-aware via the same rgba(var(--tint), α) idiom. */
+.local-space-compass {
+  display: block;
+  overflow: visible;
+  /* No drag here (2D), but still never let a stray select highlight the labels. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.local-space-compass .lsc-ring {
   fill: none;
   stroke: rgba(var(--tint), 0.45);
   stroke-width: 1;
 }
-.local-space-wheel .lsw-ring-inner {
+.local-space-compass .lsc-inner {
   fill: none;
-  stroke: rgba(var(--tint), 0.18);
-  stroke-width: 0.7;
+  stroke: rgba(var(--tint), 0.22);
+  stroke-width: 0.8;
 }
-.local-space-wheel .lsw-tick {
+.local-space-compass .lsc-tick {
   stroke: rgba(var(--tint), 0.32);
   stroke-width: 0.8;
 }
-.local-space-wheel .lsw-tick-major {
+.local-space-compass .lsc-tick-major {
   stroke: rgba(var(--tint), 0.6);
   stroke-width: 1.4;
 }
-.local-space-wheel .lsw-axis {
-  stroke: rgba(var(--tint), 0.16);
-  stroke-width: 0.7;
-}
-.local-space-wheel .lsw-center {
-  fill: var(--text-muted);
-}
-
-.local-space-wheel .lsw-card {
+.local-space-compass .lsc-card {
   fill: var(--text-strong);
-  font-size: 13px;
   font-weight: 700;
 }
+.local-space-compass .lsc-deg {
+  fill: var(--text-muted);
+  font-weight: 600;
+}
+/* Per-planet azimuth readout, colored to its body; a panel-tinted stroke painted
+   behind the fill keeps it crisp over the spokes and inner circle. */
+.local-space-compass .lsc-az {
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: rgba(var(--bg-panel), 0.85);
+}
 
-/* Planet marks come from the zodiac wheel's classes (planet-disc-fill,
-   planet-hit, planet-mark hover lift — WheelSvg.css); only the below-horizon
-   dim is this dial's own. */
-.local-space-wheel .lsw-below {
-  opacity: 0.55;
+/* Honor reduced motion: drop the hover-lift transition (the drag itself is
+   user-driven, not an animation, so nothing else needs disabling). */
+@media (prefers-reduced-motion: reduce) {
+  .local-space-wheel.interactive .planet-mark-visual,
+  .local-space-compass.interactive .planet-mark-visual {
+    transition: none;
+  }
 }

@@ -77,7 +77,7 @@ export interface HoverTip {
   y: number;
   r: number;
   title: string;
-  sub?: string;
+  sub?: ReactNode;
   color?: string;
   /** Glyph shown before the title — the hovered body or sign. */
   marker?: ReactNode;

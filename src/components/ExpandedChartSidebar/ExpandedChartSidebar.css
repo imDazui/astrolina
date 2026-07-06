@@ -948,6 +948,47 @@
   padding: 2px 0;
 }
 
+/* Local-space section header: the "Local space" caption on the left, the 2D/3D
+   dial toggle (the shared es-advanced-toggle switch) on the right edge. */
+.es-ls-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 2px 2px 0;
+}
+
+/* Local-space pair: two half-width horizon dials on one row (natal, relocated),
+   each a titled column; the empty slot mirrors a dial's round footprint so the
+   row stays balanced when there's no relocation to show. */
+.es-ls-pair {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+}
+.es-ls-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.es-ls-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px dashed rgba(var(--tint), 0.25);
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
 .es-section-wheel svg {
   display: block;
   flex-shrink: 0;

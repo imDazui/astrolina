@@ -144,6 +144,12 @@ export function SkyBand({
   const [pickerOpen, setPickerOpen] = useState(false);
   const legendRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startX: number; startScroll: number; active: boolean } | null>(null);
+  // Narrow band: the legend drops the body NAMES (glyphs only) once the band's OWN
+  // width falls below 1000px. That width is the viewport MINUS the open sidebar
+  // (the band is inset by --es-width), so we measure the band box itself rather
+  // than the raw screen — a wide screen with the chart sidebar open still counts.
+  const bandRef = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
 
   // The place's own zone — the whole band reads in LOCAL time there.
   const zone = useMemo(
@@ -293,6 +299,17 @@ export function SkyBand({
     };
   }, [days, inlineMode, tableMode, trackVisible]);
 
+  // Track the band's rendered width (viewport minus the open sidebar) → is-narrow.
+  useEffect(() => {
+    const el = bandRef.current;
+    if (!el) return;
+    const update = () => setNarrow(el.clientWidth < 1000);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Mouse-wheel scrolling for the overflowing legend: a vertical wheel (the
   // common mouse) pans the row horizontally — the trackpad's own horizontal
   // delta wins when it's the larger axis. Nothing else reacts to a wheel over
@@ -409,7 +426,8 @@ export function SkyBand({
 
   return (
     <div
-      className={`sky-band${trackVisible ? '' : tableMode ? ' is-table' : ' is-compact'}${inlineMode ? ' is-verbose' : ''}${phone ? ' is-phone' : ''}`}
+      ref={bandRef}
+      className={`sky-band${trackVisible ? '' : tableMode ? ' is-table' : ' is-compact'}${inlineMode ? ' is-verbose' : ''}${phone ? ' is-phone' : ''}${narrow ? ' is-narrow' : ''}`}
       role="region"
       aria-label={t('skyTimes.title')}
     >

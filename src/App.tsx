@@ -1782,6 +1782,51 @@ export default function App() {
     () => localSpaceCoordMap(allLocalSpace),
     [allLocalSpace],
   );
+  // The sidebar's local-space pair shows two horizon frames side by side,
+  // independent of the map's single-origin pref: natal (always, at the birthplace)
+  // and relocated (at the placed pin). Same slid sky + method as the map lines —
+  // only the observer's location changes between them.
+  const natalLocalSpaceCoords = useMemo(
+    () =>
+      current && !noTime
+        ? localSpaceCoordMap(
+            generateLocalSpace(
+              slidPositions,
+              gmst,
+              current.birthplace.lat,
+              current.birthplace.lng,
+            ),
+          )
+        : null,
+    [current, noTime, slidPositions, gmst],
+  );
+  // Right dial: null when nothing is pinned, or the pin coincides with the
+  // birthplace — the relocated frame would just clone the natal one, so the
+  // sidebar leaves that slot empty rather than repeat it.
+  const relocatedLocalSpaceCoords = useMemo(() => {
+    if (!current || noTime || !pinned) return null;
+    const atHome =
+      Math.abs(pinned.lat - current.birthplace.lat) < 1e-4 &&
+      Math.abs(pinned.lng - current.birthplace.lng) < 1e-4;
+    if (atHome) return null;
+    return localSpaceCoordMap(
+      generateLocalSpace(slidPositions, gmst, pinned.lat, pinned.lng),
+    );
+  }, [current, noTime, pinned, slidPositions, gmst]);
+  // Whether the aspect-section's local-space frame (localSpaceCoords, the origin
+  // pref) sits on a RELOCATED origin (a pin away from the birthplace) vs the natal
+  // birthplace — so the sidebar's Compare table can label its Local-space column
+  // for whichever dial it mirrors.
+  const localSpaceRelocated = useMemo(
+    () =>
+      !!(
+        localSpaceOrigin &&
+        current &&
+        (Math.abs(localSpaceOrigin.lat - current.birthplace.lat) > 1e-4 ||
+          Math.abs(localSpaceOrigin.lng - current.birthplace.lng) > 1e-4)
+      ),
+    [localSpaceOrigin, current],
+  );
   const allZenith = useMemo(
     () => generateZenithStamps(linePositions, meridianLng),
     [linePositions, meridianLng],
@@ -4358,6 +4403,17 @@ export default function App() {
           localSpaceCoords={
             lsActive && !promoteOverlay && gatedTierMet ? localSpaceCoords : null
           }
+          natalLocalSpaceCoords={
+            lsActive && !promoteOverlay && gatedTierMet
+              ? natalLocalSpaceCoords
+              : null
+          }
+          relocatedLocalSpaceCoords={
+            lsActive && !promoteOverlay && gatedTierMet
+              ? relocatedLocalSpaceCoords
+              : null
+          }
+          localSpaceRelocated={localSpaceRelocated}
           aspectOrbs={effAspectOrbs}
           advanced={advancedWheel}
           setAdvanced={setAdvancedMode}

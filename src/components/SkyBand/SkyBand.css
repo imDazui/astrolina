@@ -146,6 +146,13 @@
   color: var(--text-muted);
   white-space: nowrap;
 }
+/* Once the band's own width (viewport minus the open sidebar) drops below 1000px
+   — the JS-set is-narrow class, see SkyBand.tsx — the legend gets tight, so drop
+   the body NAMES and keep just the glyphs (each name is still one hover/tap away
+   in its tip). */
+.sky-band.is-narrow .sky-band-body-name {
+  display: none;
+}
 
 /* Inline times (verbose mode): the four moments after the body, each with its small dim angle tag
    (ASC / MC / DSC / IC), matching the hover card's labels. */

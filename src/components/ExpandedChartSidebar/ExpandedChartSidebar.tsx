@@ -44,7 +44,12 @@ import {
   type AspectCategory,
 } from '../Wheel/WheelSvg';
 import { NoChartWheel } from '../Wheel/NoChartWheel';
-import { LocalSpaceWheel } from '../LocalSpaceWheel/LocalSpaceWheel';
+import {
+  LocalSpaceWheel,
+  useLocalSpaceView,
+  useLocalSpaceHover,
+} from '../LocalSpaceWheel/LocalSpaceWheel';
+import { LocalSpaceCompass } from '../LocalSpaceWheel/LocalSpaceCompass';
 import type { AspectOrbs } from '../../lib/aspectPrefs';
 import {
   essentialDignity,
@@ -193,8 +198,19 @@ interface ExpandedChartSidebarProps {
   angleCoords: Record<'asc' | 'mc' | 'dsc' | 'ic' | 'vertex' | 'antivertex', AngleCoords> | null;
   /** Per-body azimuth/altitude (degrees) at the local-space origin — non-null only
    *  while the Local Space view is on and the caller's tier gate passes. Drives the
-   *  horizon dial below the wheel stack and the aspect list's frame statuses. */
+   *  aspect list's frame statuses (the local-space pair uses the two props below). */
   localSpaceCoords?: Map<PlanetName, { az: number; alt: number }> | null;
+  /** Local space at the BIRTHPLACE — the left dial of the local-space pair, always
+   *  shown when the pair is active. Same gating as `localSpaceCoords`. */
+  natalLocalSpaceCoords?: Map<PlanetName, { az: number; alt: number }> | null;
+  /** Local space at the placed pin (relocated) — the right dial. Null when there is
+   *  no relocation, or it coincides with the birthplace: the slot is left empty
+   *  rather than cloning the natal dial. */
+  relocatedLocalSpaceCoords?: Map<PlanetName, { az: number; alt: number }> | null;
+  /** Whether the aspect list's local-space frame (`localSpaceCoords`) sits on a
+   *  relocated origin (pin ≠ birthplace) vs the natal birthplace — labels the
+   *  Compare table's Local-space column for whichever dial it mirrors. */
+  localSpaceRelocated?: boolean;
   /** Per-aspect orb limits (Advanced ▸ Aspect orbs) for the grid + wheel lines. */
   aspectOrbs: AspectOrbs;
   /** The Advanced reading mode (degree rim, aspect grid, coordinate tables). The
@@ -217,6 +233,7 @@ interface ExpandedChartSidebarProps {
 const WIDTH_KEY = 'astro:expanded-sidebar-width:v1';
 const ASPECTS_KEY = 'astro:visible-aspects:v1';
 const FRAMES_KEY = 'astro:aspect-frames:v1';
+const LS_MODE_KEY = 'astro:ls-wheel-3d:v1'; // local-space dials: '3d' globe vs 2D compass
 
 // Frame-table vocabulary (the aspects section's Separate view): every pair's
 // fate across the natal → local-space frames, plus the sortable columns.
@@ -577,6 +594,9 @@ export function ExpandedChartSidebar({
   advancedCoords,
   angleCoords,
   localSpaceCoords,
+  natalLocalSpaceCoords,
+  relocatedLocalSpaceCoords,
+  localSpaceRelocated,
   aspectOrbs,
   advanced,
   setAdvanced,
@@ -684,6 +704,28 @@ export function ExpandedChartSidebar({
     : null;
   const azAspects = lsAzimuths
     ? computeAzimuthAspects(shownPlanets, lsAzimuths, aspectOrbs)
+    : null;
+
+  // The local-space PAIR of dials: natal (birthplace) and relocated (pin). Each
+  // plots its own bodies and azimuth-aspect chords; the relocated dial is null when
+  // it would only duplicate the natal one (the caller leaves that slot empty then).
+  const toAz = (
+    m: Map<PlanetName, { az: number; alt: number }>,
+  ): Map<PlanetName, number> =>
+    new Map(Array.from(m, ([n, cc]) => [n, cc.az] as [PlanetName, number]));
+  const lsNatal =
+    natalLocalSpaceCoords && natalLocalSpaceCoords.size > 0
+      ? natalLocalSpaceCoords
+      : null;
+  const lsReloc =
+    relocatedLocalSpaceCoords && relocatedLocalSpaceCoords.size > 0
+      ? relocatedLocalSpaceCoords
+      : null;
+  const lsNatalAspects = lsNatal
+    ? computeAzimuthAspects(shownPlanets, toAz(lsNatal), aspectOrbs)
+    : null;
+  const lsRelocAspects = lsReloc
+    ? computeAzimuthAspects(shownPlanets, toAz(lsReloc), aspectOrbs)
     : null;
 
   // The four chart angles, gated by the Map Filter's line-type toggles. Drives
@@ -823,6 +865,20 @@ export function ExpandedChartSidebar({
   const wheelSize = Math.floor(
     Math.max(MIN_WHEEL, Math.min(MAX_WHEEL, paneWidth)),
   );
+  // Shared camera for the local-space globe pair: dragging either dial rotates
+  // both (kept aligned for natal-vs-relocated comparison). An external store, so a
+  // spin re-renders only the two globes — not this whole sidebar. Session-only; a
+  // double-click on a globe resets it to the default vantage.
+  const lsViewStore = useLocalSpaceView();
+  // Shared hovered body: hovering a glyph on one globe lights the same body's tip on
+  // the sibling globe too (same store-not-state reasoning as the camera).
+  const lsHoverStore = useLocalSpaceHover();
+  // Local-space dial style: the rotatable 3D globe (default) vs the flat 2D compass.
+  // Persisted like the other sidebar prefs.
+  const [ls3d, setLs3d] = useState(() => localStorage.getItem(LS_MODE_KEY) !== '2d');
+  useEffect(() => {
+    localStorage.setItem(LS_MODE_KEY, ls3d ? '3d' : '2d');
+  }, [ls3d]);
 
   const beginDrag = (e: ReactPointerEvent) => {
     if (e.button !== 0) return; // primary button / single touch contact only
@@ -1027,23 +1083,105 @@ export function ExpandedChartSidebar({
           // full wheels — natal, then the overlay as a standalone chart with
           // its own internal aspect chords. Bi-wheel is the default.
           const showDual = dualWheels && hasOverlay;
-          // Horizon dial at the bottom of the wheel stack while the Local
-          // Space view is on — below the natal wheel, or below the overlay
-          // wheel when Dual splits them. Captioned like the dual divider.
-          const lsWheel = lsCoords && (
+          // Local space as a PAIR of half-width horizon dials at the bottom of the
+          // wheel stack while the Local Space view is on: natal (birthplace) on the
+          // left — always — and relocated (pin) on the right, or an empty slot when
+          // the relocated frame would merely repeat the natal one. Each ~46% of the
+          // pane so both sit on one row with room for the rim labels between them.
+          const lsSize = Math.floor(wheelSize * 0.46);
+          // One dial — the flat 2D compass (default) or the rotatable 3D globe, per
+          // the toggle. The 2D compass ignores the camera store; both share the
+          // hover store so hovering a glyph lights the same body on the sibling dial.
+          const lsDial = (
+            cd: Map<PlanetName, { az: number; alt: number }>,
+            asp: Aspect[] | null,
+          ) =>
+            ls3d ? (
+              <LocalSpaceWheel
+                size={lsSize}
+                planets={shownPlanets}
+                coords={cd}
+                aspects={asp ?? undefined}
+                visibleAspects={visibleAspects}
+                viewStore={lsViewStore}
+                hoverStore={lsHoverStore}
+              />
+            ) : (
+              <LocalSpaceCompass
+                size={lsSize}
+                planets={shownPlanets}
+                coords={cd}
+                aspects={asp ?? undefined}
+                visibleAspects={visibleAspects}
+                hoverStore={lsHoverStore}
+              />
+            );
+          const lsPair = lsNatal && (
             <>
-              <div className="es-dual-caption">
+              <div className="es-ls-head">
                 <span className="es-overlay-caption">
                   {t('expandedSidebar.localSpace.caption')}
                 </span>
+                <TipButton
+                  type="button"
+                  // The toggle reads "Flat": OFF is the default 3D globe, ON the 2D
+                  // compass — so its on/off + aria track !ls3d.
+                  className={`es-advanced-toggle ${!ls3d ? 'on' : 'off'}`}
+                  onClick={() => setLs3d(!ls3d)}
+                  role="switch"
+                  aria-checked={!ls3d}
+                  placement="left"
+                  tip={t('expandedSidebar.localSpace.flatTip')}
+                  hint={t('expandedSidebar.localSpace.flatHint')}
+                >
+                  <span className="es-toggle-label">
+                    {t('expandedSidebar.localSpace.flat')}
+                  </span>
+                  <span className="es-toggle-track">
+                    <span className="es-toggle-thumb" />
+                  </span>
+                </TipButton>
               </div>
-              <LocalSpaceWheel
-                size={wheelSize}
-                planets={shownPlanets}
-                coords={lsCoords}
-                aspects={azAspects ?? undefined}
-                visibleAspects={visibleAspects}
-              />
+              <div className="es-ls-pair">
+                <div className="es-ls-col">
+                  <div className="es-dual-caption">
+                    <TipSpan
+                      className="es-overlay-caption"
+                      tapReveal
+                      tip={t('expandedSidebar.localSpace.natalWheel')}
+                      hint={t('expandedSidebar.localSpace.natalWheelHint')}
+                    >
+                      {t('expandedSidebar.localSpace.natalWheel')}
+                    </TipSpan>
+                  </div>
+                  {lsDial(lsNatal, lsNatalAspects)}
+                </div>
+                <div className="es-ls-col">
+                  <div className="es-dual-caption">
+                    <TipSpan
+                      className="es-overlay-caption"
+                      tapReveal
+                      tip={t('expandedSidebar.localSpace.relocatedWheel')}
+                      hint={t('expandedSidebar.localSpace.relocatedWheelHint')}
+                    >
+                      {t('expandedSidebar.localSpace.relocatedWheel')}
+                    </TipSpan>
+                  </div>
+                  {lsReloc ? (
+                    lsDial(lsReloc, lsRelocAspects)
+                  ) : (
+                    <TipSpan
+                      className="es-ls-empty"
+                      style={{ width: lsSize, height: lsSize }}
+                      tapReveal
+                      tip={t('expandedSidebar.localSpace.relocatedEmpty')}
+                      hint={t('expandedSidebar.localSpace.relocatedEmptyHint')}
+                    >
+                      {t('expandedSidebar.localSpace.relocatedEmpty')}
+                    </TipSpan>
+                  )}
+                </div>
+              </div>
             </>
           );
           return (
@@ -1079,7 +1217,7 @@ export function ExpandedChartSidebar({
                 // The dual modifier stacks the pane's children in a column —
                 // needed whenever more than one wheel renders, so the horizon
                 // dial lands BELOW the wheel(s) rather than beside them.
-                className={`es-wheel-pane${showDual || lsWheel ? ' es-wheel-pane-dual' : ''}`}
+                className={`es-wheel-pane${showDual || lsPair ? ' es-wheel-pane-dual' : ''}`}
                 ref={wheelPaneRef}
               >
                 {frame ? (
@@ -1118,7 +1256,7 @@ export function ExpandedChartSidebar({
                         readouts={fixedFullWidth}
                         interactive
                       />
-                      {lsWheel}
+                      {lsPair}
                     </>
                   ) : (
                     <>
@@ -1141,7 +1279,7 @@ export function ExpandedChartSidebar({
                         interactive
                         planetsOnly={planetsOnly && !angles}
                       />
-                      {lsWheel}
+                      {lsPair}
                     </>
                   )
                 ) : noChart ? (
@@ -1783,7 +1921,11 @@ export function ExpandedChartSidebar({
                     )}
                     {header(
                       'ls',
-                      t('expandedSidebar.localSpace.lsCol'),
+                      t(
+                        localSpaceRelocated
+                          ? 'expandedSidebar.localSpace.lsColReloc'
+                          : 'expandedSidebar.localSpace.lsColNatal',
+                      ),
                       t('expandedSidebar.localSpace.lsColHint'),
                     )}
                     {header(

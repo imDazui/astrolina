@@ -176,6 +176,28 @@ export const expandedSidebar = {
   // and the aspect list's frame-status badges (Local Space view on).
   localSpace: {
     caption: 'Local space',
+    // Planet hover tip on the horizon globe: the body's compass bearing + height at
+    // the origin, on two fixed lines so the tip never reflows (not zodiac keywords).
+    azTip: 'Azimuth {az}',
+    altTip: 'Altitude {alt}',
+    // Accessible label / affordance hint for the draggable horizon globe.
+    dragHint: 'Local-space globe — drag to rotate, double-click to reset',
+    // Flat/3D dial toggle beside the "Local space" caption. Default is the 3D globe
+    // (toggle off); turning it on switches the dials to the flat 2D compass.
+    flat: 'Flatten',
+    flatTip: 'Flat compass',
+    flatHint:
+      'Show the two local-space dials as flat 2D compasses (azimuth around a ring) instead of the default rotatable 3D globes (which also show each body’s altitude).',
+    // The two dials of the local-space pair: birthplace (left) vs relocated (right).
+    natalWheel: 'Natal',
+    natalWheelHint:
+      'Local space at the birthplace — the bodies’ compass bearings (azimuths) and heights (altitudes) at the place and moment of birth.',
+    relocatedWheel: 'Relocated',
+    relocatedWheelHint:
+      'Local space at the placed pin — the same moment seen from the relocated place, so each body’s bearing and height shift with the new horizon.',
+    relocatedEmpty: 'Same as natal',
+    relocatedEmptyHint:
+      'The relocated dial appears here once you pin a place away from the birthplace; on the birthplace its local space just repeats the natal one.',
     lost: 'Broken in local space',
     lostHint: 'This natal aspect does not hold between the bodies’ compass bearings (azimuths) at the local-space origin.',
     only: 'Local space only',
@@ -189,8 +211,9 @@ export const expandedSidebar = {
     pairColHint: 'The two bodies. Sort to group rows by planet.',
     natalCol: 'Natal',
     natalColHint: 'The pair’s aspect by ecliptic longitude in the natal chart, with its orb. Sorts by orb.',
-    lsCol: 'Local space',
-    lsColHint: 'The pair’s aspect between compass bearings (azimuths) at the local-space origin, with its orb. Sorts by orb.',
+    lsColNatal: 'Local space · natal',
+    lsColReloc: 'Local space · relocated',
+    lsColHint: 'The pair’s aspect between compass bearings (azimuths) at the local-space origin — the birthplace (natal) or the placed pin (relocated), matching whichever dial is active. Sorts by orb.',
     deltaCol: 'Δ orb',
     deltaColHint: 'How the orb changes from natal to local space — negative means closer to exact (tighter), positive further (wider).',
     statusCol: 'Status',
