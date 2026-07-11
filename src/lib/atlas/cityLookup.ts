@@ -18,13 +18,16 @@ import countriesJson from './data/countries.json';
 // imported), so it stays off the first-paint critical path. Mirrors countryOf's
 // lazy, pure-function, no-network style.
 //
-// rows: [name, asciiname, lat, lng, countryCode, admin1Code, population],
-// sorted by population DESC (see scripts/build-cities.mjs). resolveJsonModule
-// infers loose/literal types from the generated files, so pin them to the
-// shapes the build script emits. asciiname is 0 (not a string) when it equals
-// name — the build script dedupes the ~80% of rows whose name is plain ASCII
-// to keep the dataset small; `r[1] || r[0]` below restores the folding source.
-type Row = [string, string | 0, number, number, string, string, number];
+// rows: [name, asciiname, lat, lng, countryCode, admin1Code, population,
+// geonameid, capital], sorted by population DESC (see scripts/build-cities.mjs).
+// resolveJsonModule infers loose/literal types from the generated files, so pin
+// them to the shapes the build script emits. asciiname is 0 (not a string) when
+// it equals name — the build script dedupes the ~80% of rows whose name is
+// plain ASCII to keep the dataset small; `r[1] || r[0]` below restores the
+// folding source. geonameid is the record's stable cross-regen identity and
+// capital marks a seat of government — neither is used by the lookups here,
+// but consumers that persist or rank rows read them positionally.
+type Row = [string, string | 0, number, number, string, string, number, number, 0 | 1];
 const rows = rowsJson as unknown as Row[];
 const admin1: Record<string, string> = admin1Json;
 const countries: Record<string, string> = countriesJson;
@@ -33,7 +36,7 @@ const N = rows.length;
 
 // A canonical sample row used when checking label formatting in dev; kept out of
 // `rows` above, so it never appears in search or reverse-geocode results.
-export const SAMPLE_ROW: Row = ['Ellinbridge', 0, 52.417, -1.831, 'GB', 'GB.CALDWICK', 18240];
+export const SAMPLE_ROW: Row = ['Ellinbridge', 0, 52.417, -1.831, 'GB', 'GB.CALDWICK', 18240, 0, 0];
 
 // Accent-folded, lowercased name per row — drives accent-insensitive forward
 // search ("sao" and "são" both match "São Paulo"). The GeoNames asciiname is

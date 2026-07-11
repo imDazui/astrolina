@@ -20,12 +20,20 @@
 //
 // Outputs (committed to the repo, like world-atlas ships its one JSON):
 //   src/lib/atlas/data/cities15000.json — positional rows, population desc:
-//       [name, asciiname, lat, lng, countryCode, admin1Code, population]
+//       [name, asciiname, lat, lng, countryCode, admin1Code, population,
+//        geonameid, capital]
 //       where asciiname is 0 when it equals name (~80% of rows — most place
 //       names are plain ASCII; the read side falls back r[1] || r[0]), and
 //       lat/lng carry 3 decimals (~110 m), plenty for a city centroid.
+//       geonameid is GeoNames' persistent record id — the stable identity a
+//       row keeps across dataset refreshes (array position does NOT survive a
+//       regen; anything persisted must key on this instead). capital is 1 for
+//       a country's seat of government (feature code PPLC), else 0.
 //   src/lib/atlas/data/admin1.json      — { "US.CA": "California", ... }
 //   src/lib/atlas/data/countries.json   — { "US": "United States", ... }
+//   src/lib/atlas/data/countryNum.json  — { "US": 840, ... } ISO-3166 numeric
+//       ids, the join key to world-atlas country polygons (whose features are
+//       keyed by the numeric code as a string).
 //
 // GeoNames data is CC-BY 4.0 (commercial use allowed, attribution required).
 // This is a one-time / refresh tool, not a build step.
@@ -101,17 +109,20 @@ async function main() {
     if (c.length >= 2 && c[0]) admin1[c[0]] = c[1];
   }
 
-  // countryInfo (# comment lines skipped): col 0 ISO code, col 4 country name.
+  // countryInfo (# comment lines skipped): col 0 ISO code, col 2 ISO numeric,
+  // col 4 country name. The numeric id doubles as the world-atlas polygon key.
   const countries = {};
+  const countryNum = {};
   for (const line of countryTxt.split('\n')) {
     if (!line || line.startsWith('#')) continue;
     const c = line.split('\t');
     if (c[0] && c[4]) countries[c[0]] = c[4];
+    if (c[0] && c[2] && Number(c[2])) countryNum[c[0]] = Number(c[2]);
   }
 
   // cities15000.txt columns (tab-separated, see GeoNames readme):
-  //  1 name · 2 asciiname · 4 lat · 5 lng · 7 featureCode · 8 country
-  //  10 admin1 · 14 population
+  //  0 geonameid · 1 name · 2 asciiname · 4 lat · 5 lng · 7 featureCode
+  //  8 country · 10 admin1 · 14 population
   const citiesTxt = unzipEntry(Buffer.from(citiesZip), 'cities15000.txt');
   const rows = [];
   for (const line of citiesTxt.split('\n')) {
@@ -138,6 +149,8 @@ async function main() {
       c[8], // country code
       c[10], // admin1 code
       Number(c[14]) || 0, // population
+      Number(c[0]) || 0, // geonameid — stable across regens (position is not)
+      c[7] === 'PPLC' ? 1 : 0, // capital (seat of government)
     ]);
   }
   // Sort by population desc so the typeahead surfaces major cities first.
@@ -147,10 +160,14 @@ async function main() {
   await writeFile(join(outDir, 'cities15000.json'), JSON.stringify(rows));
   await writeFile(join(outDir, 'admin1.json'), JSON.stringify(admin1));
   await writeFile(join(outDir, 'countries.json'), JSON.stringify(countries));
+  await writeFile(join(outDir, 'countryNum.json'), JSON.stringify(countryNum));
 
+  const capitals = rows.reduce((n, r) => n + (r[8] ? 1 : 0), 0);
   console.log(
-    `Wrote ${rows.length} cities, ${Object.keys(admin1).length} regions, ` +
-      `${Object.keys(countries).length} countries to`,
+    `Wrote ${rows.length} cities (${capitals} capitals), ` +
+      `${Object.keys(admin1).length} regions, ` +
+      `${Object.keys(countries).length} countries ` +
+      `(${Object.keys(countryNum).length} with numeric ids) to`,
   );
   console.log(`  ${outDir}`);
 }

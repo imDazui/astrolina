@@ -4,7 +4,7 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import type { HTMLAttributes } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 import { useT } from '../../i18n';
 import { useHoverTip } from './useHoverTip';
 import { HoverTip, TipButton } from './HoverTip';
@@ -21,6 +21,7 @@ import './HudHeader.css';
 // the tool / turn the view off. (Teleport keeps its own header — it has only a close, no eye.)
 export function HudHeader({
   title,
+  adornment,
   handleProps,
   dragging,
   collapsed,
@@ -29,7 +30,11 @@ export function HudHeader({
   closeLabel,
   closeHint,
 }: {
-  title: string;
+  /** Usually a plain string; a node lets a window compose its name inline. */
+  title: ReactNode;
+  /** Small transient indicator (e.g. a busy spinner) rendered AFTER the collapse
+   *  eye — past every fixed element, so its appearance never shifts the layout. */
+  adornment?: ReactNode;
   /** Drag props from useMovableHud, spread onto the grip. */
   handleProps: Pick<
     HTMLAttributes<HTMLDivElement>,
@@ -94,6 +99,7 @@ export function HudHeader({
       >
         <EyeIcon open={!collapsed} className="location-ls-eye" size={14} />
       </TipButton>
+      {adornment}
       {/* The empty stretch between the eye and the X is ALSO a drag handle (shares the grip's
           pointer handlers), so the whole bar — everything but the eye/X buttons — drags, matching
           Teleport / Guides. It also pushes the close X to the far corner. */}

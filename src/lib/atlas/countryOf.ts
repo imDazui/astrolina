@@ -18,6 +18,10 @@ import topo from 'world-atlas/countries-110m.json';
 
 interface Country {
   name: string;
+  /** The source feature's id (ISO-3166 numeric as a string) — the stable key for
+   *  joining against other country-coded datasets. Null for the few disputed
+   *  territories Natural Earth ships without one. */
+  id: string | null;
   // [polygon][ring][point]; ring[0] is the outer ring, the rest are holes; each
   // point is [lng, lat].
   polys: number[][][][];
@@ -56,6 +60,7 @@ function build(): Country[] {
     }
     out.push({
       name: f.properties?.name ?? 'Unknown',
+      id: f.id != null ? String(f.id) : null,
       polys,
       bbox: [minX, minY, maxX, maxY],
     });
@@ -87,11 +92,7 @@ function inPolygon(x: number, y: number, poly: number[][][]): boolean {
   return true;
 }
 
-/**
- * The country containing (lat, lng), or null for ocean / unclaimed points. The
- * polygon set is decoded lazily on first use.
- */
-export function countryOf(lat: number, lng: number): string | null {
+function find(lat: number, lng: number): Country | null {
   if (!countries) countries = build();
   for (const c of countries) {
     if (
@@ -103,8 +104,30 @@ export function countryOf(lat: number, lng: number): string | null {
       continue;
     }
     for (const poly of c.polys) {
-      if (inPolygon(lng, lat, poly)) return c.name;
+      if (inPolygon(lng, lat, poly)) return c;
     }
   }
   return null;
+}
+
+/**
+ * The country containing (lat, lng), or null for ocean / unclaimed points. The
+ * polygon set is decoded lazily on first use.
+ */
+export function countryOf(lat: number, lng: number): string | null {
+  return find(lat, lng)?.name ?? null;
+}
+
+export interface CountryHit {
+  /** ISO-3166 numeric code as a string, or null where the source has none. */
+  id: string | null;
+  name: string;
+}
+
+/** Like countryOf, but keyed for joins: the hit carries the polygon's ISO
+ *  numeric id alongside the display name. Same lazy decode, same accuracy
+ *  caveats (110m coastlines). */
+export function countryHitOf(lat: number, lng: number): CountryHit | null {
+  const c = find(lat, lng);
+  return c ? { id: c.id, name: c.name } : null;
 }

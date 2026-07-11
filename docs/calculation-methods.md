@@ -61,6 +61,25 @@ Local-space lines are compass bearings: each body's line leaves the **origin** �
 
 Local space always uses each body's **true** sky position (actual RA and declination), regardless of the **In Zodiaco** / **Mundane** projection toggle — it is inherently a true-sky technique, so it doesn't inherit the ecliptic projection the rest of the linework applies. (Projecting an off-ecliptic body onto the ecliptic first would skew its bearing — roughly 3.7° for high-latitude Pluto.) The map lines and the Advanced table's azimuth column therefore agree. All azimuth readouts — the compass dial's degree ring, the line labels, and the coordinate table — quote **geographic azimuth**: 0° at North, clockwise (E = 90°, S = 180°, W = 270°). (Some chart-wheel traditions instead count the horizon like a zodiac, East = 0° counter-clockwise; positions are identical either way — only the printed numbers differ.) Local space is **not drawn in Mundane (Geodetic) mode**: that mode is time-independent while local space needs the specific birth moment, so the two are incompatible (Solar Maps withholds local space in geodetic mode for the same reason); switching to Mundane closes the Local Space view.
 
+### Bearing alignment
+
+Because a local-space line is a **direction**, not a zone of influence, distance to it carries no interpretive meaning — a point 5 km off a bearing 8,000 km from the origin is astrologically nowhere near it. The meaningful question is angular: **does a place lie along one of the chart's bearings?** The test compares the initial great-circle bearing from the origin to the place against each body's azimuth, in **degrees of azimuth** (default orb 3°, adjustable), and works identically for a move across town and across the world. Because the drawn lines are great circles seeded at those azimuths, a place exactly on a drawn line matches its azimuth exactly; both halves count, with the reciprocal (inbound) half labelled as such. A body's azimuth from any origin equals the bearing to its sub-point, so the alignment can be asked from origins other than the drawn lines' own — the birthplace, the placed pin, or a saved home location — without recomputing the sky (this equality is asserted by the verification harness). Within roughly 5 km of the origin the bearing is undefined (every line passes through the origin), and alignment strength reads as the same orb fractions as the class orbs below.
+
+## Orbs of influence by line class
+
+Surfaces that rank line proximity group every drawn line into a **class**, each with its own default **orb of influence** (user-adjustable); a line only lists within its class orb, and its **strength is the distance as a fraction of that orb — never the raw distance**. This is the working astrocartographer's ranking: a planetary line at 50 km (12% of its orb) reads stronger than a minor line at 30 km (27% of its own), whatever the raw kilometres say.
+
+| Class | Contents | Default orb |
+|---|---|---|
+| Planetary lines | MC/IC/ASC/DSC (and Vertex-axis) lines of the Sun through Pluto | 400 km (~250 mi) |
+| Points | The same line geometry for nodes, asteroids (Chiron, Ceres, Pallas, Juno, Vesta), Lilith, and Fortune | 240 km (~150 mi) |
+| Parans | Latitude-band contacts | 112 km (the classical 1° band) |
+| Aspect lines | Body square/trine/sextile to an angle | 160 km (~100 mi) |
+| Midpoint lines | Two-body midpoints on angles | 112 km |
+| Fixed stars | The drawn star lines (bright catalog) | 112 km |
+
+Strength tiers are fixed fractions of the governing orb: within **25%** = *on the line*, within **60%** = *close*, inside the orb = *within orb*; beyond the orb a line does not list. The local-space bearing alignment uses the same fractions in its own unit (degrees of the bearing orb). Classification is by **body** for the angular families (a planet's Vertex-axis line classes with the planet), and star × planet parans count as parans (latitude contacts) — the *Fixed stars* class is the drawn star lines. The class list is ordered and open: future line kinds (e.g. line-intersection points) slot in without renumbering.
+
 ## Zodiac mode (Tropical vs Sidereal)
 
 The **Advanced ▸ Zodiac** setting reads the chart in the **tropical** zodiac

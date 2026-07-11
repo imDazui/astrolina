@@ -19,6 +19,9 @@ declare module 'topojson-client' {
     object: unknown,
   ): {
     features: Array<{
+      /** The source geometry's id (world-atlas: ISO-3166 numeric as a string);
+       *  absent on the few territories Natural Earth ships without one. */
+      id?: string | number;
       properties: { name?: string } | null;
       geometry: { type: string; coordinates: unknown } | null;
     }>;

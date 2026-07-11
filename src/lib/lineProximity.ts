@@ -37,6 +37,19 @@ export const len = (a: Vec3) => Math.hypot(a[0], a[1], a[2]);
 // separations, where the dot product alone saturates toward 1.
 export const vecDistKm = (a: Vec3, b: Vec3) => Math.atan2(len(cross(a, b)), dot(a, b)) * R_KM;
 
+/** Initial great-circle bearing from (lat1,lng1) toward (lat2,lng2): degrees 0–360,
+ *  clockwise from geographic north — the navigation azimuth of the geodesic at its
+ *  starting point. Same convention as the local-space azimuths, so a point lying ON
+ *  a local-space line yields exactly that line's azimuth from its origin. */
+export function initialBearingDeg(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const p1 = lat1 * D2R;
+  const p2 = lat2 * D2R;
+  const dl = (lng2 - lng1) * D2R;
+  const y = Math.sin(dl) * Math.cos(p2);
+  const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return (((Math.atan2(y, x) / D2R) % 360) + 360) % 360;
+}
+
 // Min distance from point P to the great-circle ARC a→b (all unit vectors). Cross-track
 // distance when P's foot lies within the arc, else the nearer endpoint. The two sign tests
 // check the foot sits forward of `a` and behind `b` along the arc's travel direction

@@ -323,11 +323,12 @@ function lsBadgeRadius(zoom: number): number {
   );
   return LS_BADGE_RADIUS_PX * (1 + (LS_RADIUS_MAX_SCALE - 1) * t);
 }
-// Nominal half-extents of an LS pill — a FLOOR for the de-overlap (the measured DOM box, when
-// available, can only widen it). The 'in' pill is just "LS + glyph"; the 'out' pill ALSO prints a
-// bearing, so it runs roughly 2.5× as wide — give it its own, much larger floor so the de-overlap
-// pushes the long 'out' pills fully clear of each other (they crowd the ring at close azimuths,
-// and a capture still can't be panned to disambiguate them).
+// Nominal half-extents of an LS pill for the de-overlap. A pill that prints its bearing keeps
+// the wide value as a FLOOR even once measured (the long faces crowd the ring at close azimuths,
+// and a capture still can't be panned to disambiguate them — so they get pushed fully clear);
+// a blank-faced pill uses the narrow value only UNTIL measured, then its real box is the truth
+// (a permanent floor would space a bare glyph as if it still carried its optional name label,
+// shoving badges off their lines with nothing visibly crowding them).
 const LS_BADGE_HALF_W = 34;
 const LS_BADGE_OUT_HALF_W = 66;
 const LS_BADGE_HALF_H = 11;
@@ -2981,7 +2982,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         // the LIVE marker's screen rect, in the current state colours (gold custom / green
         // natal) read off the live SVG. The animated glow ring is transient decoration, so
         // the still export omits it. Pure 2D ops — can't taint or abort the overlay.
-        const pinBody = frameEl.querySelector('.map-pin-body');
+        // The transparent (local-space) export omits the pin entirely: the rose's lines
+        // already converge on the origin, and the overlay is meant to sit on someone
+        // else's backdrop — a teardrop marker there is clutter, not information.
+        const pinBody = lsTransparentRef.current
+          ? null
+          : frameEl.querySelector('.map-pin-body');
         const pinShape = pinBody?.querySelector('.map-pin-shape');
         if (pinBody && pinShape) {
           const br = pinBody.getBoundingClientRect();
@@ -3412,6 +3418,33 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         }
         return outermost;
       };
+      // Where this half-line's ACTUAL projected arc first crosses the mask rim, walking
+      // from the pin outward. A great circle curves off the straight bearing ray — the
+      // farther the rim reaches geographically (low zoom), the more — so anchoring on
+      // the ray parks the badge BESIDE its line. Null when no crossing is found (e.g.
+      // the arc leaves via the globe's far side); the caller falls back to the ray.
+      const lsRimCrossing = (coords: number[][]): { x: number; y: number } | null => {
+        let prev: { x: number; y: number } | null = null;
+        for (let i = 0; i < coords.length; i++) {
+          const c = coords[i];
+          const cur = isOccluded(map, c[0], c[1]) ? null : map.project([c[0], c[1]]);
+          if (prev && cur) {
+            const dPrev = Math.hypot(prev.x - oc.x, prev.y - oc.y);
+            const dCur = Math.hypot(cur.x - oc.x, cur.y - oc.y);
+            if (dPrev <= maskR && dCur > maskR) {
+              // Interpolate the crossing on the chord — segments are short enough that
+              // the radial distance is near-linear across one.
+              const t = (maskR - dPrev) / (dCur - dPrev);
+              return {
+                x: prev.x + (cur.x - prev.x) * t,
+                y: prev.y + (cur.y - prev.y) * t,
+              };
+            }
+          }
+          prev = cur;
+        }
+        return null;
+      };
       // Capture ▸ "Standard labels": anchor every LS badge at its line's outermost
       // visible point (edge-hugging, like the ACG badges) and blank the bearing off
       // its face, so LS lines read exactly like the rest of the chart's linework.
@@ -3451,8 +3484,12 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           p.y <= h - BADGE_INSET;
         let placed: { x: number; y: number } | null;
         if (maskActive) {
-          // On the mask rim: where this line's ray meets the clip circle.
-          placed = { x: oc.x + maskR * Math.sin(angle), y: oc.y - maskR * Math.cos(angle) };
+          // On the mask rim, ON the line: where its projected arc crosses the clip
+          // circle — falling back to the straight bearing ray only if no crossing shows.
+          placed = lsRimCrossing(f.geometry.coordinates) ?? {
+            x: oc.x + maskR * Math.sin(angle),
+            y: oc.y - maskR * Math.cos(angle),
+          };
         } else if (edgeMode) {
           placed = lsOutermostVisible(f.geometry.coordinates);
         } else if (inView(ringPt)) {
@@ -3490,6 +3527,9 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         frameRef.current
           ?.querySelectorAll<HTMLElement>('.acg-badge[data-lskey]')
           .forEach((el) => {
+            // A zero box means the pill isn't laid out yet — that's "no measurement",
+            // not "zero size"; recording it would let badges pile up on each other.
+            if (!el.offsetWidth || !el.offsetHeight) return;
             lsSizes.set(el.dataset.lskey as string, {
               hw: el.offsetWidth / 2,
               hh: el.offsetHeight / 2,
@@ -3500,12 +3540,23 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // a sensible centre, so the edge-hugged anchors stand as-is.
       const ocOnScreen = oc.x >= 0 && oc.x <= w && oc.y >= 0 && oc.y <= h;
       if (ocOnScreen && lsbadges.length > 1) {
-        // Per-badge half-extents: a pill printing its bearing is much wider (standard-labels/mask
-        // mode blanks it, so those floors stay narrow); the measured box (capture) can only WIDEN
-        // it. + LS_BADGE_GAP so neighbours clear by a hair.
+        // Per-badge half-extents. A pill that PRINTS its bearing keeps the deliberately
+        // over-wide floor even when measured — the long faces crowd at close azimuths and
+        // must land fully clear of each other in a still (which also rides out the one
+        // render where a face was measured before its bearing span re-appeared). A blank-
+        // faced pill instead trusts its measured box: flooring it too would space a
+        // glyph-only pill (name toggle off) as if it still carried its name, pushing
+        // badges off their lines with no visible crowding to justify it — the narrow
+        // floor only stands in while unmeasured. + LS_BADGE_GAP so neighbours clear by
+        // a hair.
         const sized = lsbadges.map((b) => {
           const s = lsSizes.get(b.key);
-          const hw = Math.max(s?.hw ?? 0, b.azLabel ? LS_BADGE_OUT_HALF_W : LS_BADGE_HALF_W) + LS_BADGE_GAP;
+          const hw =
+            (b.out && b.azLabel
+              ? Math.max(s?.hw ?? 0, LS_BADGE_OUT_HALF_W)
+              : s
+                ? s.hw
+                : LS_BADGE_HALF_W) + LS_BADGE_GAP;
           const hh = (s?.hh ?? LS_BADGE_HALF_H) + LS_BADGE_GAP;
           return { b, hw, hh };
         });
@@ -3903,11 +3954,16 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // recompute the badges right away to apply / clear the clip + re-place the rim badges (a DIRECT
   // computeBadges, like the lsEdgeLabels effect — a deferred scheduleBadges rAF can be skipped /
   // cancelled, which is why the flip looked delayed). computeBadges reads lsTransparentRef, synced
-  // by the commit effect that runs before this one.
+  // by the commit effect that runs before this one. The trailing scheduleBadges settles the layout
+  // one frame later: the direct pass measures pill faces that still show the PREVIOUS badge state
+  // (the bearing span renders from that state, which the pass itself replaces), so a second pass
+  // over the re-rendered faces is needed — sizes are content-driven, so it's a fixed point, and
+  // without it the layout would only correct itself on the next camera move.
   useEffect(() => {
     if (!mapRef.current) return;
     if (!lsTransparent) mapRef.current.getCanvas().style.removeProperty('clip-path');
     computeBadgesRef.current();
+    scheduleBadgesRef.current();
   }, [lsTransparent]);
 
   // Toggling the transparent "Label Name" changes each badge pill's width, so recompute the
@@ -5144,10 +5200,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // computeBadges reads the mode through lsEdgeLabelsRef (synced by the commit
   // effect above, which runs before this one), so a recompute is all it takes.
   // computeBadges is safe at any readiness (projection probes are guarded), so
-  // no style gate — one would drop flips made during tile/source churn.
+  // no style gate — one would drop flips made during tile/source churn. The
+  // trailing scheduleBadges settles the layout over the re-rendered pill faces
+  // (the direct pass measures boxes whose bearing spans still show the previous
+  // badge state) — see the transparent-mode effect for the full story.
   useEffect(() => {
     if (!mapRef.current) return;
     computeBadgesRef.current();
+    scheduleBadgesRef.current();
   }, [lsEdgeLabels]);
 
   useEffect(() => {
