@@ -1107,6 +1107,23 @@
   }
 }
 
+/* LANDSCAPE phones (short viewport, not caught by the width rule above): the panel stays
+   resizable, but its cap — 70% of an already-short viewport — sits under the 640px
+   Azimuth/Altitude cutoff, so dragging can never reveal those columns. The TSX forces them
+   on for phones in EITHER orientation (usePhone); mirror the portrait table treatment so
+   the extra columns overflow into .es-adv-scroll's sideways scroll instead of clipping.
+   max-height ≤ 600 excludes tablets (both of their dimensions sit well above 600). */
+@media (pointer: coarse) and (max-height: 600px) {
+  .es-adv-table {
+    width: max-content;
+  }
+  /* And as in the portrait rule: a sideways-scrolling table has room for the full
+     body/angle names beside their glyphs, so undo the compact-mode hide there. */
+  .expanded-sidebar.es-compact .es-adv-point .es-name {
+    display: inline;
+  }
+}
+
 .es-drag-handle:hover,
 .es-drag-handle:active {
   background: rgba(var(--accent-rgb), 0.1);

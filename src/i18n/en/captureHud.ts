@@ -102,6 +102,14 @@ export const captureHud = {
     title: 'Copy link',
     hint: 'Copy a link that opens this chart and view — the birth details travel in the link, so only share it with people who may see them.',
     done: 'Link copied',
+    // First-use privacy heads-up, shown before the first copy (and until
+    // "don't remind me again" is checked through a confirm).
+    warnAria: 'Share-link privacy notice',
+    warnBody:
+      'NOTE: This link carries the chart’s full birth details (date, time and place).',
+    warnSuppress: 'Don’t remind me again',
+    warnConfirm: 'Copy link',
+    warnCancel: 'Cancel',
   },
   busy: 'Rendering…',
   failed: 'Export failed — please try again.',

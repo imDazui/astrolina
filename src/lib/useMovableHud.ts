@@ -11,6 +11,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from 'react';
+import { getReservedLeftInset, subscribeReservedLeftInset } from './leftDock';
 
 // Shared movable-HUD behavior for the bottom overlay bars (timeline + synastry).
 // They occupy the same bottom-centre slot, so they share ONE saved position: grab
@@ -25,16 +26,17 @@ const DOCK_BOTTOM = 16;
 const TOP_MARGIN = 26;
 
 // The effective horizontal screen centre: shifted right a quarter of the expanded
-// sidebar's width (matching the CSS `left: calc(50% + --es-width/4)` the nav and
-// timeline bars use). Shared so every centred surface agrees on one centre — the
-// docked bottom bars' snap point, the floating Location window's home spot, and
-// the map's Zoom-out button (which mirrors this in CSS).
+// sidebar's width (matching the CSS `left: calc(50% + --es-width/4 + --es-reserved/4)`
+// the nav and timeline bars use — a RESERVING dock adds the second quarter, landing
+// on the true centre of the remaining map column). Shared so every centred surface
+// agrees on one centre — the docked bottom bars' snap point, the floating Location
+// window's home spot, and the map's Zoom-out button (which mirrors this in CSS).
 export function effectiveCenterX(): number {
   const es =
     parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue('--es-width'),
     ) || 0;
-  return window.innerWidth / 2 + es / 4;
+  return window.innerWidth / 2 + es / 4 + getReservedLeftInset() / 4;
 }
 
 // A reserved LAYOUT band along the viewport bottom (the sky band — see
@@ -53,8 +55,13 @@ function bottomReserve(): number {
 // notes in TopNav.css / LocationHud.css / the overlay-bar CSS), so a HUD parked over the bar keeps
 // a grabbable grip. Dropping the below-the-nav rule also lets a HUD use the FULL viewport height,
 // including the band behind the nav — instead of being forced under the readout.
+// The LEFT floor honours a RESERVING dock (lib/leftDock) the same way the bottom
+// honours the reserved band: that column belongs to the docked panel, so windows
+// can be neither dragged into it nor restored/stranded under it. An OVERLAYING
+// panel (the expanded chart sidebar) reserves nothing and clamps like before.
 function clampPos(x: number, y: number, w: number, h: number): { x: number; y: number } {
-  const cx = Math.min(Math.max(x, 4), Math.max(4, window.innerWidth - w - 4));
+  const left = getReservedLeftInset() + 4;
+  const cx = Math.min(Math.max(x, left), Math.max(left, window.innerWidth - w - 4));
   const top = TOP_MARGIN;
   const cy = Math.min(
     Math.max(y, top),
@@ -131,7 +138,9 @@ export function useMovableHud(
 
   // Keep a floated bar on-screen — clamped against the CURRENT viewport on mount
   // (a position saved on a larger/other screen may now be off-screen, and the grip
-  // is the only way to recover it) and on resize.
+  // is the only way to recover it), on resize, and whenever a docked panel's
+  // RESERVED column changes (its open/close/resize re-clamps every floated window
+  // into the remaining map column, like the anchored chrome shifting with it).
   const docked = pos === null;
   useEffect(() => {
     if (docked) return;
@@ -147,7 +156,11 @@ export function useMovableHud(
     };
     onResize();
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    const unsubscribe = subscribeReservedLeftInset(onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      unsubscribe();
+    };
   }, [docked, barRef]);
 
   const onPointerDown = (e: ReactPointerEvent) => {

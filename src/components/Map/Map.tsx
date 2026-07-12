@@ -52,7 +52,7 @@ import {
   screenAngleOfNorth,
 } from '../../lib/mapProjection';
 import { ensureGlyphImages, STAR_MARK_IMAGE, ZENITH_GLYPH_PREFIX, NADIR_GLYPH_PREFIX } from './glyphImages';
-import { applyDetailToggles } from './basemapStyle';
+import { applyDetailToggles, applyLabelContrast } from './basemapStyle';
 import { MapOverlayHost } from './MapOverlayHost';
 import {
   MAP_CLICK_EVENT,
@@ -3816,6 +3816,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         themeRef.current,
       );
       applyDetailToggles(map, detailRef.current);
+      applyLabelContrast(map, themeRef.current);
       setupCustomLayers(
         map,
         LABEL_HALO_COLORS[themeRef.current],
@@ -3925,6 +3926,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       applyProjection(map, projectionRef.current); // setStyle reset it; re-apply first
       await ensureGlyphImages(map, theme === 'dark' ? '' : LABEL_HALO_COLORS[theme], ZENITH_DISC_COLORS[theme], theme);
       applyDetailToggles(map, detailRef.current);
+      applyLabelContrast(map, theme);
       setupCustomLayers(map, LABEL_HALO_COLORS[theme], measureColorRef.current, ZENITH_DISC_COLORS[theme], ECLIPSE_LABEL_HALO[theme]);
       applyLsArrowVisibility(map, hideLsArrowsRef.current);
       pushData(map, dataRef.current, true, lsTransparentRef.current);

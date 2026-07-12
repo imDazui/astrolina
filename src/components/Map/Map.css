@@ -343,8 +343,9 @@
   /* Centre on the effective viewport centre — shifted right a quarter of the
      expanded sidebar's width (--es-width), matching the nav + timeline bars (and
      useMovableHud's effectiveCenterX) so the button tracks the same centre when
-     the sidebar is open. 0 when it's closed. */
-  left: calc(50% + var(--es-width, 0px) / 4);
+     the sidebar is open. 0 when it's closed. A RESERVING dock (--es-reserved)
+     adds the second quarter — the remaining map column's true centre. */
+  left: calc(50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4);
   /* Rest 160px up, but lift to clear a TALLER bar: max() raises the chip to the bar's top
      (its --edge bottom offset + the bar's live height/gap) whenever that exceeds 160px. The
      --zoom-out-clearance is added inside the calc (not outside the max) so desktop's no-bar rest
@@ -982,15 +983,23 @@
     float: none !important;
     width: 100%;
     margin-right: 0 !important; /* drop the right gutter so the bar reaches both screen edges */
+    /* Flush to the physical bottom edge — the inset padding below owns the gap. (The base
+       chip keeps its --edge bottom margin; a full-bleed bar must not.) */
+    margin-bottom: 0 !important;
     box-sizing: border-box;
     text-align: center; /* centre the credit text */
     border-radius: 0 !important; /* full-bleed bar: square the corners at the screen edges */
     /* When the app draws edge-to-edge (installed standalone on a notched phone), grow the bar
        into the home-indicator inset: its background fills the strip while the credit links stay
-       above the indicator, tappable. 0 everywhere else — and 0 again while a reserved bottom
+       above the indicator, tappable. ~0 everywhere else — and ~0 again while a reserved bottom
        band is up: the whole map frame (this footer included) lifts above the band, which
-       already clears the indicator itself, so the padding would only hollow out the bar. */
-    padding-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--sky-band-h, 0px)));
+       already clears the indicator itself, so the padding would only hollow out the bar.
+       !important is LOAD-BEARING: the base chip declares `padding: 2px 8px !important`, and an
+       important declaration outranks any normal one — without it this rule silently loses and
+       the footer stays a thin strip at the physical bottom while everything lifted above it
+       (bottom-left profile strip, info-bar) clears the FULL inset, opening an inset-sized gap.
+       The 2px floor preserves the chip's own bottom padding when there's no inset to fill. */
+    padding-bottom: max(2px, calc(env(safe-area-inset-bottom, 0px) - var(--sky-band-h, 0px))) !important;
   }
 }
 

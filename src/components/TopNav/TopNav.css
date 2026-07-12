@@ -15,7 +15,9 @@
 .topnav-stack {
   position: absolute;
   top: max(var(--edge, 10px), env(safe-area-inset-top));
-  left: calc(50% + var(--es-width, 0px) / 4);
+  /* Quarter-shift past an overlaying sidebar; a RESERVING dock (--es-reserved)
+     adds the second quarter so the bar centres on the remaining map column. */
+  left: calc(50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4);
   transform: translateX(-50%);
   /* The movable HUD windows + overlay bars deliberately layer ABOVE this nav now (windows at 27,
      overlay bars at 26, plugin HUDs at 40) so one dragged over the bar is never stuck behind it —

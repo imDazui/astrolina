@@ -506,7 +506,11 @@ body,
    each panel opts back in. */
 .top-left-stack {
   position: absolute;
-  top: max(var(--edge, 16px), env(safe-area-inset-top));
+  /* --topnav-clear: set (in px, inline) by the app when a docked left panel
+     pushes this stack right into the re-centred top bars' footprint — the stack
+     then drops below the nav stack (whose rect includes the tool-readout bar)
+     instead of sliding underneath it. Unset when the two don't meet. */
+  top: max(var(--edge, 16px), env(safe-area-inset-top), var(--topnav-clear, 0px));
   /* Clears a reserved left column (a docked panel that shrinks the map — lib/leftDock
      `--es-width`), so the coords readout + profile ride into the visible map area
      instead of hiding under the dock; --edge from the map's own left edge otherwise. */
@@ -516,6 +520,8 @@ body,
   flex-direction: column;
   gap: 12px;
   pointer-events: none;
+  /* The drop below the bars eases the same way the bars re-centre. */
+  transition: top 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .top-left-stack > * {
   pointer-events: auto;

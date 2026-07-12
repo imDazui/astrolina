@@ -31,6 +31,9 @@ import './CaptureHud.css';
 
 // Its own saved position, independent of the other floating windows.
 const POS_KEY = 'astro:capture-pos:v1';
+// '1' once the share-link privacy notice has been acknowledged with "don't
+// remind me again" — the first-use heads-up stands down from then on.
+const LINK_WARN_KEY = 'astro:share-link-notice:v1';
 
 // The capture-frame aspect presets (width / height). Kept as exact constants so the
 // active-state comparison against App's stored ratio is a near-equality check.
@@ -424,8 +427,7 @@ export function CaptureHud({
 
   // Copy the shareable chart URL (plain text — no capture involved). The link is
   // built lazily so it carries the camera as it is at the click.
-  const onCopyLink = useCallback(async () => {
-    if (divertIfLocked()) return;
+  const copyShareLink = useCallback(async () => {
     if (!shareLink) return;
     setFailed(false);
     try {
@@ -435,7 +437,41 @@ export function CaptureHud({
     } catch {
       setFailed(true);
     }
-  }, [shareLink, divertIfLocked]);
+  }, [shareLink]);
+
+  // First-use heads-up before the copy: the link carries the chart's FULL birth
+  // details (that's what makes it reopenable), which the hover hint explains but
+  // a first-time user may never have read. Shown until "don't remind me again"
+  // is checked through a confirm; cancelling (or confirming unchecked) keeps the
+  // reminder for next time. Per-device, like every other UI preference.
+  const [linkWarnOpen, setLinkWarnOpen] = useState(false);
+  const [linkWarnSuppress, setLinkWarnSuppress] = useState(false);
+  const onCopyLink = useCallback(async () => {
+    if (divertIfLocked()) return;
+    if (!shareLink) return;
+    let acknowledged = false;
+    try {
+      acknowledged = localStorage.getItem(LINK_WARN_KEY) === '1';
+    } catch {
+      /* storage blocked — treat as not acknowledged; the notice still works */
+    }
+    if (!acknowledged) {
+      setLinkWarnOpen(true);
+      return;
+    }
+    await copyShareLink();
+  }, [shareLink, divertIfLocked, copyShareLink]);
+  const onLinkWarnConfirm = useCallback(async () => {
+    if (linkWarnSuppress) {
+      try {
+        localStorage.setItem(LINK_WARN_KEY, '1');
+      } catch {
+        /* storage blocked — the notice just shows again next session */
+      }
+    }
+    setLinkWarnOpen(false);
+    await copyShareLink();
+  }, [linkWarnSuppress, copyShareLink]);
 
   const onShare = useCallback(async () => {
     if (divertIfLocked()) return;
@@ -780,6 +816,40 @@ export function CaptureHud({
             </TipBtn>
           )}
         </div>
+        {/* First-use privacy heads-up for the share link (see onCopyLink). */}
+        {linkWarnOpen && (
+          <div
+            className="capture-link-warn"
+            role="alertdialog"
+            aria-label={t('captureHud.link.warnAria')}
+          >
+            <p className="capture-link-warn-text">{t('captureHud.link.warnBody')}</p>
+            <label className="capture-link-warn-suppress">
+              <input
+                type="checkbox"
+                checked={linkWarnSuppress}
+                onChange={() => setLinkWarnSuppress((v) => !v)}
+              />
+              {t('captureHud.link.warnSuppress')}
+            </label>
+            <div className="capture-link-warn-actions">
+              <button
+                type="button"
+                className="capture-link-warn-btn is-primary"
+                onClick={onLinkWarnConfirm}
+              >
+                {t('captureHud.link.warnConfirm')}
+              </button>
+              <button
+                type="button"
+                className="capture-link-warn-btn"
+                onClick={() => setLinkWarnOpen(false)}
+              >
+                {t('captureHud.link.warnCancel')}
+              </button>
+            </div>
+          </div>
+        )}
         {(busy || failed) && (
           <div className="capture-hud-status" role="status">
             {busy ? t('captureHud.busy') : t('captureHud.failed')}

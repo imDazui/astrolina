@@ -28,10 +28,15 @@ const widths = new Map<string, number>();
 const reserved = new Map<string, number>();
 const reservedListeners = new Set<() => void>();
 
+// Two vars: `--es-width` (the widest dock of ANY kind — what the chrome shifts
+// by) and `--es-reserved` (the widest RESERVING dock — the map column really
+// starts there, so centred chrome adds a second quarter-shift to sit on the
+// TRUE remaining centre; see the `50% + --es-width/4 + --es-reserved/4` rules).
 function applyChrome(): void {
   let max = 0;
   for (const w of widths.values()) if (w > max) max = w;
   document.documentElement.style.setProperty('--es-width', `${max}px`);
+  document.documentElement.style.setProperty('--es-reserved', `${reservedMax()}px`);
 }
 
 function reservedMax(): number {
@@ -49,7 +54,6 @@ function emitReserved(): void {
  *  column) rather than overlay it; omit to overlay (chrome shift only). */
 export function publishLeftDock(id: string, px: number, opts?: { reserve?: boolean }): void {
   widths.set(id, px);
-  applyChrome();
   const wasReserved = reserved.has(id);
   if (opts?.reserve) {
     if (reserved.get(id) !== px) {
@@ -60,13 +64,16 @@ export function publishLeftDock(id: string, px: number, opts?: { reserve?: boole
     reserved.delete(id);
     emitReserved();
   }
+  // After the reserved map settles — both vars publish from one place.
+  applyChrome();
 }
 
 /** Retire a docked panel (its unmount cleanup). Recomputes both maxes. */
 export function retireLeftDock(id: string): void {
   widths.delete(id);
+  const wasReserved = reserved.delete(id);
   applyChrome();
-  if (reserved.delete(id)) emitReserved();
+  if (wasReserved) emitReserved();
 }
 
 /** The widest RESERVED width (0 if none) — the inset a host feeds the map so it

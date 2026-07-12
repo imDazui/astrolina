@@ -5,10 +5,11 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 // Post-load adjustments to the remote vector basemap: global road / river layer
-// visibility toggles, plus a whole-basemap blank (Local Space ▸ "Hide map"). We
-// mutate the already-loaded style's layers rather than shipping custom style JSON,
-// so it tracks whatever OpenFreeMap serves.
+// visibility toggles, a whole-basemap blank (Local Space ▸ "Hide map"), and a
+// per-theme place-name contrast lift. We mutate the already-loaded style's layers
+// rather than shipping custom style JSON, so it tracks whatever OpenFreeMap serves.
 import type { Map as MlMap, LayerSpecification, StyleSpecification } from 'maplibre-gl';
+import { LABEL_CONTRAST, type Theme } from '../../lib/theme';
 
 const ROAD_RE = /(highway|motorway|trunk|primary|secondary|street|road|transport|bridge|tunnel)/i;
 const RIVER_RE = /(waterway|river|stream|canal)/i;
@@ -137,6 +138,34 @@ export function applyDetailToggles(map: MlMap, t: DetailToggles): void {
     if (hidden) hiddenBasemapLayers.set(map, hidden);
   } else {
     hiddenBasemapLayers.delete(map);
+  }
+}
+
+/** Lift the basemap's PLACE-NAME contrast where the theme asks for it
+ *  (lib/theme LABEL_CONTRAST; currently the dark style, whose dim slate names
+ *  are hard to read on the near-black ground). Only the `place` source-layer —
+ *  country/state/city/town names, the labels people read to orient — is
+ *  touched; POI / water / housenumber keep the style's own quieter paint. The
+ *  constant color deliberately replaces the style's per-class expressions:
+ *  size and weight still carry the settlement hierarchy. Call after each style
+ *  load (setPaintProperty needs only a parsed style, like the toggles above). */
+export function applyLabelContrast(map: MlMap, theme: Theme): void {
+  const c = LABEL_CONTRAST[theme];
+  if (!c) return;
+  let style: StyleSpecification | undefined;
+  try {
+    style = map.getStyle();
+  } catch {
+    return;
+  }
+  if (!style) return;
+  const sources = style.sources ?? {};
+  for (const l of style.layers ?? []) {
+    if (l.type !== 'symbol' || sourceLayer(l) !== 'place') continue;
+    if (!isBasemapLayer(l, sources)) continue;
+    safe(() => map.setPaintProperty(l.id, 'text-color', c.color));
+    safe(() => map.setPaintProperty(l.id, 'text-halo-color', c.halo));
+    safe(() => map.setPaintProperty(l.id, 'text-halo-width', c.haloWidth));
   }
 }
 

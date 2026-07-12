@@ -23,7 +23,7 @@ import {
   type RelocatedAngles,
 } from '../../lib/ephemeris';
 import type { StoredChart } from '../../lib/chartLibrary';
-import { isTouchLayout, useNarrowNav } from '../../lib/touch';
+import { isTouchLayout, useNarrowNav, usePhone } from '../../lib/touch';
 import type { LineType } from '../../lib/astro/lines';
 import { ASPECT_GLYPHS } from '../../lib/astro/glyphChars';
 import { fmtLat, fmtLng } from '../../lib/coordFormat';
@@ -628,6 +628,11 @@ export function ExpandedChartSidebar({
   // .es-adv-table to max-content there so it overflows into the existing .es-adv-scroll).
   const narrow = useNarrowNav();
   const fixedFullWidth = isTouchLayout() && narrow;
+  // A LANDSCAPE phone has the same problem by a different route: the panel stays resizable, but
+  // its cap (70% of an already-short viewport) sits under the 640px column cutoff, so dragging can
+  // never reveal Azimuth/Altitude either. usePhone() catches a phone in BOTH orientations (and no
+  // tablets) — the columns force on and the table scrolls sideways there too (matching CSS).
+  const phone = usePhone();
 
   useEffect(() => {
     localStorage.setItem(WIDTH_KEY, String(width));
@@ -1388,9 +1393,11 @@ export function ExpandedChartSidebar({
         // form; past the second, the Azimuth + Altitude columns also fit. Below a
         // cutoff the heavier content drops back so a narrow panel still fits.
         const advFullSign = width >= 530;
-        // Past 640px the Azimuth + Altitude columns fit; OR force them when the panel is pinned
-        // full-width in portrait (can't be widened), where the table scrolls sideways instead.
-        const advExtraCols = width >= 640 || fixedFullWidth;
+        // Past 640px the Azimuth + Altitude columns fit; OR force them on phones — portrait pins
+        // the panel full-width, landscape caps it at 70% of a short viewport, so NEITHER can reach
+        // the cutoff by dragging — where the table scrolls sideways instead (usePhone also covers
+        // fixedFullWidth's portrait case).
+        const advExtraCols = width >= 640 || phone;
         // Advanced view: one planet per row across labelled coordinate columns.
         // Geocentric columns come straight off the body; RA/Azimuth/Altitude come
         // from advancedCoords (computed for the relocated observer).

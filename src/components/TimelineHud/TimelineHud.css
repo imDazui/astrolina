@@ -24,8 +24,10 @@
      --es-width narrowed the box below its (non-wrapping) content on smaller screens,
      so the content overflowed the box and the top nub no longer stayed centred on it.
      The bar is freely movable, so the user can nudge it over if the shifted bar still
-     overlaps the sidebar. --es-width is 0 when the sidebar is closed. */
-  left: calc(50% + var(--es-width, 0px) / 4);
+     overlaps the sidebar. --es-width is 0 when the sidebar is closed. A RESERVING
+     dock (lib/leftDock --es-reserved) owns its column outright, so it adds the
+     second quarter — landing the bar on the remaining map column's true centre. */
+  left: calc(50% + var(--es-width, 0px) / 4 + var(--es-reserved, 0px) / 4);
   transform: translateX(-50%);
   z-index: 12;
   max-width: calc(100vw - 360px);
@@ -63,6 +65,22 @@
    reports (29), and sidebar (30). */
 .timeline-hud.thud-bar {
   z-index: 26;
+}
+
+/* Floating tool/view WINDOWS — every one is .location-hud (core: Capture, Aspect Lines,
+   Local Space, Teleport) or .cityreport-hud (the add-on windows) on the .timeline-hud
+   base; the docked bars (.thud-bar and the eclipse/synastry bars) are not. On
+   height-starved viewports (a landscape phone leaves ~350px) a window's content can
+   outgrow the screen, and without this its lower controls were simply unreachable —
+   cap every window to the viewport and let the WINDOW scroll its content instead.
+   Tall enough screens never hit the cap, so nothing changes there. dvh: the app pins
+   its own viewport, so dynamic-toolbar churn is already accounted for. */
+.timeline-hud.location-hud,
+.timeline-hud.cityreport-hud {
+  max-height: calc(100dvh - 72px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 /* Touch: the overlay bar is widened to fill the screen — that rule lives at the END of this

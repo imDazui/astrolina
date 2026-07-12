@@ -1616,6 +1616,64 @@ export default function App() {
   // rather than overlaying. Read into state (not the --es-width var) so the map's
   // inset arrives as a prop on the same commit as its resize (see lib/leftDock).
   const reservedLeftInset = useSyncExternalStore(subscribeReservedLeftInset, getReservedLeftInset);
+
+  // Keep the top-left stack (profile strip + coordinates readout) clear of the
+  // top bars: a docked left panel shifts the stack right (--es-width) while the
+  // nav re-centres on the remaining map — on narrower remainders the two meet,
+  // and the nav (z 25) would cover the stack (z 20). When their footprints
+  // overlap HORIZONTALLY, drop the stack below the nav stack's bottom edge —
+  // which includes the tool-readout bar (it lives inside .topnav-stack, so one
+  // rect covers both). Written as a CSS var the stylesheet max()es into `top`,
+  // so the coarse-pointer bottom-corner rules (top:auto) stay untouched.
+  const topLeftStackRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const stack = topLeftStackRef.current;
+    if (!stack) return;
+    const nav = document.querySelector<HTMLElement>('.topnav-stack');
+    let raf = 0;
+    const measure = () => {
+      raf = 0;
+      const navRect = nav?.getBoundingClientRect();
+      const stackRect = stack.getBoundingClientRect();
+      // Horizontal-interval test only — the clearance moves the stack DOWN,
+      // which must not feed back into its own trigger.
+      const overlaps =
+        !!navRect &&
+        navRect.width > 0 &&
+        stackRect.width > 0 &&
+        stackRect.right + 12 > navRect.left &&
+        stackRect.left < navRect.right;
+      const next = overlaps && navRect ? `${Math.round(navRect.bottom + 12)}px` : '';
+      if (stack.style.getPropertyValue('--topnav-clear') !== next) {
+        if (next) stack.style.setProperty('--topnav-clear', next);
+        else stack.style.removeProperty('--topnav-clear');
+      }
+    };
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(measure);
+    };
+    // Triggers: either box resizing (readout bar appearing, coords toggling,
+    // menu labels), the window, and the nav's left-recentre transition settling
+    // (a dock change moves it over 0.32s — the rect is only final at the end).
+    const ro = new ResizeObserver(schedule);
+    ro.observe(stack);
+    if (nav) ro.observe(nav);
+    const onNavSettled = (e: TransitionEvent) => {
+      if (e.propertyName === 'left') schedule();
+    };
+    nav?.addEventListener('transitionend', onNavSettled);
+    window.addEventListener('resize', schedule);
+    schedule();
+    return () => {
+      ro.disconnect();
+      nav?.removeEventListener('transitionend', onNavSettled);
+      window.removeEventListener('resize', schedule);
+      if (raf) cancelAnimationFrame(raf);
+    };
+    // reservedLeftInset: a dock opening/closing/resizing moves both boxes.
+    // wheelExpanded: the stack unmounts/remounts around the expanded sidebar.
+  }, [reservedLeftInset, wheelExpanded]);
+
   useEffect(() => {
     localStorage.setItem('astro:view-local-space:v1', showLocalSpace ? '1' : '0');
   }, [showLocalSpace]);
@@ -4303,7 +4361,7 @@ export default function App() {
       />
       <div className="map-edge-glow" data-state={coordSource} aria-hidden="true" />
       {!wheelExpanded && (
-        <div className="top-left-stack">
+        <div className="top-left-stack" ref={topLeftStackRef}>
           <ProfileWindow
             advancedWheel={advancedWheel}
             setAdvancedWheel={setAdvancedMode}

@@ -62,6 +62,21 @@ export const LABEL_HALO_COLORS: Record<Theme, string> = {
   vintage: 'rgba(28, 20, 12, 0.95)',
 };
 
+// Basemap PLACE-NAME contrast override, applied post-load (basemapStyle's
+// applyLabelContrast — the same mutate-the-served-style discipline as the detail
+// toggles). OpenFreeMap's stock dark style paints place names in a dim slate
+// that's hard to read against the near-black ground; lift them to a soft light
+// gray over a deeper halo. Null = the style's own label paint reads fine
+// (glass/vintage), so it isn't touched.
+export const LABEL_CONTRAST: Record<
+  Theme,
+  { color: string; halo: string; haloWidth: number } | null
+> = {
+  dark: { color: '#c5cad4', halo: 'rgba(8, 10, 15, 0.92)', haloWidth: 1.15 },
+  glass: null,
+  vintage: null,
+};
+
 // Inner-fill color for the zenith stamps' disc. Mirrors the glyph halo for dark, but
 // glass is frosted-translucent (matching the theme's glass surfaces) and vintage uses
 // a warm parchment instead of its near-black halo, so neither reads as a flat solid
