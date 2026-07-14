@@ -47,13 +47,15 @@ export const skyTimes = {
     tipHide: 'Back to the inline list',
     hint: 'The four angle moments as rows, one column per body. Scroll or drag the row if it runs past the edge.',
   },
-  // Follow-the-cursor toggle in the context column (desktop only): the band reads live
-  // under the cursor as it moves over the map; a plain map click parks it on that spot.
+  // "Time Stamp" toggle in the context column: read the sky at a chosen spot, marked
+  // by the map beacon. On desktop the band reads live under the cursor and a click parks
+  // it; on touch there's no cursor, so a tap places (and moves) the stamp — the held half.
   follow: {
-    label: 'Cursor',
-    tipOn: 'Follow the cursor',
-    tipOff: 'Stop following the cursor',
+    label: 'Time Stamp',
+    tipOn: 'Read the sky at a chosen spot',
+    tipOff: 'Stop — back to the pin',
     hint: 'Read the sky clock live under the cursor as it moves across the map. Click the map to hold a spot; click again to resume. Turn off to return to the pin or birthplace.',
     hintHeld: 'Held at the clicked spot — click the map again to resume following, or turn this off to return to the pin or birthplace.',
+    hintTouch: 'Tap a spot on the map to read its sky clock there; tap again to move the stamp. Turn off to return to the pin or birthplace.',
   },
 } as const;

@@ -1152,6 +1152,7 @@ export function ExpandedChartSidebar({
                   role="switch"
                   aria-checked={!ls3d}
                   placement="left"
+                  gated
                   tip={t('expandedSidebar.localSpace.flatTip')}
                   hint={t('expandedSidebar.localSpace.flatHint')}
                 >
@@ -1220,9 +1221,28 @@ export function ExpandedChartSidebar({
                     {wheelTitle}
                   </span>
                   {frame.fallback && (
-                    <span className="es-house-fallback">
+                    <TipSpan
+                      className="es-house-fallback es-house-fallback-info"
+                      tip={t('expandedSidebar.houseFallback')}
+                      hint={t('expandedSidebar.houseFallbackHint')}
+                      tapReveal
+                    >
                       {t('expandedSidebar.houseFallback')}
-                    </span>
+                      <svg
+                        className="es-info-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="M12 11v4.5" />
+                        <path d="M12 7.75h.01" />
+                      </svg>
+                    </TipSpan>
                   )}
                   {planetsOnly && !angles && (
                     <span className="es-house-fallback">
@@ -1234,7 +1254,7 @@ export function ExpandedChartSidebar({
               {frame && overlayName && !showDual && (
                 <div
                   // When the overlay moment is shown it stacks ABOVE the name as a
-                  // left-aligned column (es-overlay-corner); the corner is absolutely
+                  // right-aligned column (es-overlay-corner); the corner is absolutely
                   // positioned over the wheel, so this never adds sidebar height.
                   className={`es-wheel-corner es-wheel-corner-right${
                     momentText ? ' es-overlay-corner' : ''
@@ -2118,6 +2138,7 @@ export function ExpandedChartSidebar({
                   role="switch"
                   aria-checked={splitFrames}
                   placement="bottom"
+                  gated
                   tip={t('expandedSidebar.localSpace.compareTip')}
                   hint={t('expandedSidebar.localSpace.compareHint')}
                 >

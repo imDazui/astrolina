@@ -153,6 +153,9 @@ export interface MapExtensionContext {
    *  SidebarSection id, e.g. 'filters' — typed as plain string so this module
    *  stays free of component types). */
   openSettings: (section?: string) => void;
+  /** Open the credits / licenses dialog — the disclosures behind the map's
+   *  attribution button (data sources, libraries, and their licences). */
+  openCredits: () => void;
   /** Open state of the built-in reference surfaces (the guides card + info chip) —
    *  the read half of {@link setViewFlag}. */
   viewFlags: { guides: boolean; info: boolean };

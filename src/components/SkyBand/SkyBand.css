@@ -339,6 +339,36 @@
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
+/* Entitled gated-tier track — always tinted the gated accent so an entitled user can tell
+   it's a gated feature: full on the ON state, a lighter tone when OFF. (The un-entitled
+   .locked teaser below is unaffected.) */
+.sky-band-track-toggle.gated.on {
+  color: var(--gated);
+  border-color: color-mix(in srgb, var(--gated) 55%, transparent);
+  background: color-mix(in srgb, var(--gated) 10%, transparent);
+}
+.sky-band-track-toggle.gated:not(.on):not(.locked) {
+  color: rgba(var(--gated-rgb), 0.72);
+}
+/* Earth (vintage) has dark-brown panels where the default --gated purple reads muddy —
+   lift it to a lighter lavender here so the gated tint stays legible. */
+:root[data-theme='vintage'] .sky-band-track-toggle.gated {
+  --gated: #c4b2f2;
+  --gated-rgb: 196, 178, 242;
+}
+
+/* Locked teaser (un-entitled but nudged): a gated tint so it reads as a premium feature,
+   while staying clickable (the click opens the account flow). */
+.sky-band-track-toggle.locked {
+  color: var(--gated);
+  border-color: rgba(var(--gated-rgb), 0.4);
+  background: rgba(var(--gated-rgb), 0.08);
+}
+.sky-band-track-toggle.locked:hover {
+  color: var(--gated);
+  border-color: rgba(var(--gated-rgb), 0.6);
+}
+
 /* Leftmost TABLE toggle — the same eye-pill as the track toggle, parked on the
    band's far-left edge (before the body legend). Accent-lit while the legend's
    inline list is laid out as the speculum table instead. */

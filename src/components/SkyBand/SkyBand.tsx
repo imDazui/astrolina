@@ -35,6 +35,7 @@ import {
   isSkyBandTrackEntitled,
   type SkyBandTrackContext,
 } from '../../lib/extensions/skyBandTrack';
+import { shouldShowNudge, nudgeAction } from '../../lib/plan';
 import { getIanaTimezone, offsetHoursAt, zoneLabelAt } from '../../lib/atlas/timezone';
 import { usePhone } from '../../lib/touch';
 import { planetRank } from '../../lib/astro/format';
@@ -151,11 +152,23 @@ export function SkyBand({
   const bandRef = useRef<HTMLDivElement>(null);
   const [narrow, setNarrow] = useState(false);
 
-  // The place's own zone — the whole band reads in LOCAL time there.
-  const zone = useMemo(
-    () => (point ? getIanaTimezone(point.lat, point.lng) : null),
-    [point],
-  );
+  // The place's own zone — the whole band reads in LOCAL time there. getIanaTimezone
+  // (tzlookup) HARD-THROWS on invalid coordinates, so guard: an invalid point (a NaN pin
+  // off a globe click, or a coordinate-less imported chart) degrades to a null zone, which
+  // the band already renders gracefully, rather than crashing the whole component.
+  const zone = useMemo(() => {
+    if (
+      !point ||
+      !Number.isFinite(point.lat) ||
+      !Number.isFinite(point.lng) ||
+      Math.abs(point.lat) > 90
+    ) {
+      return null;
+    }
+    // A world-copy click can hand us a valid place at a longitude outside ±180 — wrap it.
+    const lng = ((((point.lng + 180) % 360) + 360) % 360) - 180;
+    return getIanaTimezone(point.lat, lng);
+  }, [point]);
 
   // Local midnight (start of the shown day) as a UT instant: shift to wall
   // clock, floor to the wall-clock day, shift back. A DST jump inside the day
@@ -259,10 +272,13 @@ export function SkyBand({
       </span>
     );
 
-  // The registered track (a downstream build's expandable center), entitled-only
-  // — NO teaser: without entitlement neither the track nor its toggle exists.
+  // The registered track (a downstream build's expandable center). The track ITSELF is
+  // entitled-only; its TOGGLE also shows as a locked teaser for a user the build nudges
+  // (trackNudge) — a click there opens the account flow instead of expanding.
   const trackExt = getSkyBandTrack();
   const trackAvailable = !!trackExt && isSkyBandTrackEntitled(trackExt);
+  const trackNudge =
+    !!trackExt && trackExt.tier === 'gated' && !trackAvailable && shouldShowNudge('gated');
   const trackVisible = trackAvailable && trackShown && !!point && !!zone && dayStart !== null;
   const trackCtx: SkyBandTrackContext | null =
     trackVisible && point && zone && dayStart !== null
@@ -555,38 +571,45 @@ export function SkyBand({
                   <span>{zone.split('/').pop()?.replace(/_/g, ' ') ?? zone}</span>
                 </TipSpan>
               )}
-              {/* Follow-the-cursor: the band reads live under the moving cursor;
-                  a map click parks it on a spot (click again to resume). Desktop
-                  only — phones have no cursor; the pin remains the touch story. */}
-              {!phone && (
+              {/* "Time Stamp": read the sky at a chosen spot, marked by the map beacon.
+                  Desktop reads live under the cursor and a click parks it; on touch there's
+                  no cursor, so a tap places (and moves) the stamp — the held half only. */}
+              <TipButton
+                type="button"
+                className={`sky-band-follow-toggle${follow !== 'off' ? ' on' : ''}${
+                  follow === 'held' ? ' is-held' : ''
+                }`}
+                placement="top"
+                aria-pressed={follow !== 'off'}
+                tip={t(follow === 'off' ? 'skyTimes.follow.tipOn' : 'skyTimes.follow.tipOff')}
+                hint={t(
+                  phone
+                    ? 'skyTimes.follow.hintTouch'
+                    : follow === 'held'
+                      ? 'skyTimes.follow.hintHeld'
+                      : 'skyTimes.follow.hint',
+                )}
+                onClick={onToggleFollow}
+              >
+                <ClickIcon className="sky-band-follow-cursor" />
+                <span>{t('skyTimes.follow.label')}</span>
+              </TipButton>
+              {/* The track's eye-toggle: for an entitled user it expands the track; for a
+                  nudged (un-entitled) user it's a locked teaser — shown off, gated-tagged,
+                  a click opens the account flow. A gated track carries the gated-tier tag
+                  in its hover tip either way. */}
+              {(trackAvailable || trackNudge) && trackExt && (
                 <TipButton
                   type="button"
-                  className={`sky-band-follow-toggle${follow !== 'off' ? ' on' : ''}${
-                    follow === 'held' ? ' is-held' : ''
-                  }`}
+                  className={`sky-band-track-toggle${trackShown ? ' on' : ''}${
+                    trackNudge ? ' locked' : ''
+                  }${trackExt.tier === 'gated' ? ' gated' : ''}`}
                   placement="top"
-                  aria-pressed={follow !== 'off'}
-                  tip={t(follow === 'off' ? 'skyTimes.follow.tipOn' : 'skyTimes.follow.tipOff')}
-                  hint={t(follow === 'held' ? 'skyTimes.follow.hintHeld' : 'skyTimes.follow.hint')}
-                  onClick={onToggleFollow}
-                >
-                  <ClickIcon className="sky-band-follow-cursor" />
-                  <span>{t('skyTimes.follow.label')}</span>
-                </TipButton>
-              )}
-              {/* The track's eye-toggle (only when a track is registered AND
-                  entitled — no teaser); a gated track carries the gated-tier
-                  tag in its hover tip. */}
-              {trackAvailable && trackExt && (
-                <TipButton
-                  type="button"
-                  className={`sky-band-track-toggle${trackShown ? ' on' : ''}`}
-                  placement="top"
-                  aria-pressed={trackShown}
+                  aria-pressed={trackNudge ? undefined : trackShown}
                   gated={trackExt.tier === 'gated'}
                   tip={trackExt.label}
                   hint={trackShown ? trackExt.onHint : trackExt.offHint}
-                  onClick={onToggleTrack}
+                  onClick={trackNudge ? () => nudgeAction() : onToggleTrack}
                 >
                   <EyeIcon open={trackShown} className="sky-band-track-eye" size={13} />
                   <span>{trackExt.label}</span>

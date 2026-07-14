@@ -702,6 +702,10 @@ export default function App() {
   const [showInfo, setShowInfo] = useState(
     () => localStorage.getItem('astro:view-info:v1') === '1',
   );
+  // The credits / licenses dialog. Opened from the map's "AstroLina" attribution
+  // button and, via the extension context (openCredits), from elsewhere in the app,
+  // so the open state lives here; the Map renders the dialog itself.
+  const [creditsOpen, setCreditsOpen] = useState(false);
   // The movable Teleport window (View ▸ Teleport, hotkey G) — search a place and fly
   // the camera there (no pin/relocate), with a two-deep back/forward. On-demand, so
   // it defaults OFF.
@@ -1580,13 +1584,15 @@ export default function App() {
   }, [skyFollowOn]);
   const [skyHover, setSkyHover] = useState<Point | null>(null);
   const [skyHeld, setSkyHeld] = useState<Point | null>(null);
-  const skyFollowActive = skyBandVisible && skyFollowOn && !phoneLayout;
-  // Read by the (stable) onHover callback: push cursor points only while
-  // following and not parked on a held spot.
+  // Active on desktop AND touch now — "Time Stamp". Touch has no cursor, so it works as
+  // tap-to-place (the held half); the live cursor-follow below stays desktop-only.
+  const skyFollowActive = skyBandVisible && skyFollowOn;
+  // Read by the (stable) onHover callback: push cursor points only while following, not
+  // parked on a held spot, and only on desktop (touch has no hover to follow).
   const skyFollowLiveRef = useRef(false);
   useEffect(() => {
-    skyFollowLiveRef.current = skyFollowActive && !skyHeld;
-  }, [skyFollowActive, skyHeld]);
+    skyFollowLiveRef.current = skyFollowActive && !skyHeld && !phoneLayout;
+  }, [skyFollowActive, skyHeld, phoneLayout]);
   const skyHoverTimerRef = useRef<number | null>(null);
   const skyHoverPendingRef = useRef<Point | null>(null);
   useEffect(() => {
@@ -1607,12 +1613,30 @@ export default function App() {
     const onClick = (e: Event) => {
       if (document.documentElement.hasAttribute('data-map-tool-active')) return;
       const { lat, lng } = (e as CustomEvent<MapClickDetail>).detail;
-      setSkyHeld((h) => (h ? null : { lat, lng }));
+      // Desktop toggles park/resume off each click. Touch has no live-follow to resume to,
+      // so a tap always PLACES (and re-taps MOVE) the stamp; turn the toggle off to clear.
+      setSkyHeld((h) => (phoneLayout ? { lat, lng } : h ? null : { lat, lng }));
     };
     window.addEventListener(MAP_CLICK_EVENT, onClick);
     return () => window.removeEventListener(MAP_CLICK_EVENT, onClick);
-  }, [skyFollowActive]);
+  }, [skyFollowActive, phoneLayout]);
   const skyFollowPoint = skyFollowActive ? (skyHeld ?? skyHover) : null;
+  // The follow-beacon mode shared by the SkyBand's toggle label and the map stamp:
+  // 'live' rides the cursor, 'held' is parked on the clicked spot, 'off' hides it.
+  const skyFollowMode: 'off' | 'live' | 'held' = !skyFollowActive
+    ? 'off'
+    : skyHeld
+      ? 'held'
+      : 'live';
+  // The map beacon's mode. Same as skyFollowMode on desktop; on touch there's no cursor
+  // to ride, so the beacon only appears once a spot is tapped (held), never in live-follow.
+  const skyBeaconMode: 'off' | 'live' | 'held' = !skyFollowActive
+    ? 'off'
+    : phoneLayout
+      ? skyHeld
+        ? 'held'
+        : 'off'
+      : skyFollowMode;
   // The widest RESERVED left dock (lib/leftDock) — a panel claiming its own column
   // rather than overlaying. Read into state (not the --es-width var) so the map's
   // inset arrives as a prop on the same commit as its resize (see lib/leftDock).
@@ -3464,9 +3488,15 @@ export default function App() {
   // always places (no same-spot toggle).
   const onPlacePin = useCallback(
     (lat: number, lng: number) => {
+      // A globe click off the sphere yields non-finite coords; a 2D world-copy click yields a
+      // longitude outside ±180. Drop the former, wrap the latter — so no downstream consumer
+      // (the timezone lookup, which hard-throws; Local Space origin; geocoding; share links)
+      // ever inherits an invalid pin.
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90) return;
+      const wrappedLng = ((((lng + 180) % 360) + 360) % 360) - 180;
       surfaceMissions();
-      setPinned({ lat, lng });
-      setHover({ lat, lng });
+      setPinned({ lat, lng: wrappedLng });
+      setHover({ lat, lng: wrappedLng });
       recordMission('create-pin');
     },
     [surfaceMissions, recordMission],
@@ -4293,6 +4323,7 @@ export default function App() {
       setAdvancedMode,
       openView: openViewById,
       openSettings: openSettingsSection,
+      openCredits: () => setCreditsOpen(true),
       viewFlags: { guides: showGuides, info: showInfo },
       setViewFlag,
       openToolIds: openTools,
@@ -4350,6 +4381,10 @@ export default function App() {
       <Map
         ref={mapRef}
         overlayCtx={extensionCtx}
+        creditsOpen={creditsOpen}
+        setCreditsOpen={setCreditsOpen}
+        skyFollow={skyBeaconMode}
+        skyFollowHeld={skyHeld}
         // Registered-overlay hides apply only while the Capture tool is armed —
         // closing it always restores every overlay, whatever the persisted set says.
         hiddenOverlayIds={
@@ -4643,7 +4678,6 @@ export default function App() {
           frameLocked={noTime}
           openExtensions={openExtensions}
           onToggleExtension={toggleExtension}
-          advanced={advancedWheel}
           showNatal={showNatal}
           setShowNatal={setShowNatal}
           angleProgression={angleProgression}
@@ -4734,7 +4768,7 @@ export default function App() {
           onToggleTrack={() => setSkyBandTrackOn((v) => !v)}
           table={skyBandTable}
           onToggleTable={() => setSkyBandTable((v) => !v)}
-          follow={!skyFollowOn || phoneLayout ? 'off' : skyHeld ? 'held' : 'live'}
+          follow={skyFollowMode}
           onToggleFollow={() => setSkyFollowOn((v) => !v)}
           // While the Slide tool spins the sky, the track's time cursor follows
           // the slid instant — the clock shifts with the spin. And while the

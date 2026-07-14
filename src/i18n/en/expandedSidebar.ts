@@ -38,10 +38,12 @@ export const expandedSidebar = {
     label: 'Hide',
   },
 
-  // Shown under the wheel-state title when the chosen quadrant house system is
-  // undefined at this latitude (above the polar circles) and Porphyry cusps are
-  // drawn instead — so the wheel never silently shows a different system.
-  houseFallback: 'Porphyry cusps — chosen system undefined at this latitude',
+  // Shown under the wheel-state title (with an (i) whose .ui-tip carries the reason) when
+  // the chosen quadrant house system is undefined at this latitude (above the polar circles)
+  // and Porphyry cusps are drawn instead — so the wheel never silently shows a different system.
+  houseFallback: 'Porphyry cusps',
+  houseFallbackHint:
+    'Above the polar circles, quadrant house systems like Placidus become undefined, so the wheel falls back to Porphyry — which trisects the arcs between the angles and stays well-defined at any latitude.',
 
   // Shown under the wheel-state title on a planets-only wheel. Kept terse — the
   // chart form's note carries the full explanation of the degrade.
@@ -175,7 +177,7 @@ export const expandedSidebar = {
   // Local-space amalgamation: the horizon dial's caption below the wheel stack
   // and the aspect list's frame-status badges (Local Space view on).
   localSpace: {
-    caption: 'Local space',
+    caption: 'Local Space',
     // Planet hover tip on the horizon globe: the body's compass bearing + height at
     // the origin, on two fixed lines so the tip never reflows (not zodiac keywords).
     azTip: 'Azimuth {az}',

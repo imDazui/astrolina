@@ -1125,7 +1125,7 @@ export function TopNav({
                       close();
                     }}
                   />
-                  {/* Synastry + Eclipses need the 'adv' tier: filtered out below it (or a disabled
+                  {/* Synastry needs the 'adv' tier: filtered out below it (or a disabled
                       teaser if the build nudges), tier-badged at/above it (see ADVANCED_OVERLAY_MODES). */}
                   {OVERLAY_MODES.filter((mode) => {
                     // Some charts can't carry every overlay — a composite has no real

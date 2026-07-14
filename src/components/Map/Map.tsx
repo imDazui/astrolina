@@ -1376,6 +1376,16 @@ interface MapProps {
    *  cards, zenith fly-to). Once a centre is placed this is false, so clicking a revealed line pops
    *  its interpretation card as usual — the tool only owns the click while placing. */
   spotlightAiming?: boolean;
+  /** Open state + setter for the credits / licenses dialog, lifted out of the map so
+   *  it can be opened both from the attribution button here and from elsewhere in the
+   *  app (see MapExtensionContext.openCredits); the map still renders the dialog. */
+  creditsOpen: boolean;
+  setCreditsOpen: (open: boolean) => void;
+  /** Sky Times "follow the cursor" beacon: 'live' rides the raw pointer (the aura
+   *  hugs the cursor), 'held' anchors on the parked spot, 'off' hides it. */
+  skyFollow?: 'off' | 'live' | 'held';
+  /** The parked spot for `skyFollow === 'held'` (the clicked read point). */
+  skyFollowHeld?: { lat: number; lng: number } | null;
 }
 
 interface MapData {
@@ -2587,6 +2597,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   hiddenOverlayIds,
   spotlightActive,
   spotlightAiming,
+  creditsOpen,
+  setCreditsOpen,
+  skyFollow = 'off',
+  skyFollowHeld,
 }: MapProps, ref) {
   const { t, labels } = useT();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -3036,6 +3050,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // from the GL zenith coins). `eclipseMarkerKey` tracks the rendered point so the
   // effect knows when to replay the finite ping.
   const eclipseMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const skyStampRef = useRef<maplibregl.Marker | null>(null);
   const eclipseMarkerKeyRef = useRef<string | null>(null);
   const onRightClickRef = useRef(onRightClick);
   const dataRef = useRef<MapData>({ lines, angleLines, parans, orbBands, starLines, nightShade, localSpace, localSpaceCross, localSpaceOrigin, zenith, nadir, ecliptic, overlay });
@@ -3661,9 +3676,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
   // so its tip is driven imperatively from the marker effect below — never a
   // native `title=` (which the app has retired in favour of the shared .ui-tip).
   const [pinTip, setPinTip] = useState<{ pos: TipPos; title: string } | null>(null);
-  // The "AstroLina" entry in the map attribution bar opens this credits / license
+  // The "AstroLina" entry in the map attribution bar opens the credits / license
   // dialog (the secondary disclosures that needn't sit on the map at all times).
-  const [creditsOpen, setCreditsOpen] = useState(false);
+  // Open state is lifted to the app (creditsOpen / setCreditsOpen props) so the same
+  // dialog can be opened from elsewhere; the attribution button + dialog stay here.
   // WebGL health. The map is WebGL-only, so probe support once during the initial
   // render (a lazy initializer — runs a single time, never on re-render): start in
   // 'unsupported' when the browser won't grant a context, so the fallback notice
@@ -5288,6 +5304,67 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       setPinTip(null);
     };
   }, [pin, pinType, t]);
+
+  // The Sky Times "follow the cursor" beacon: a clock stamp with a pulsing aura
+  // marking where the sky clock is being read. In 'live' mode it rides the raw
+  // pointer (the halo hugs the cursor, and hides while the cursor is off the map);
+  // in 'held' mode it anchors on the parked spot and auto-tracks pan/zoom. It's
+  // pointer-events:none, so it never intercepts a click/hover meant for the map.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (skyFollow === 'off') {
+      skyStampRef.current?.remove();
+      skyStampRef.current = null;
+      return;
+    }
+    if (!skyStampRef.current) {
+      const el = document.createElement('div');
+      el.className = 'sky-follow-stamp';
+      // Inline (beats MapLibre's own .maplibregl-marker rule regardless of stylesheet
+      // order) so the beacon never swallows the park-click / hover meant for the map.
+      el.style.pointerEvents = 'none';
+      el.innerHTML =
+        '<span class="sky-follow-aura"></span>' +
+        '<span class="sky-follow-disc">' +
+        '<svg class="sky-follow-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></span>';
+      skyStampRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat(map.getCenter())
+        .addTo(map);
+    }
+    const marker = skyStampRef.current;
+    const el = marker.getElement();
+    const held = skyFollow === 'held';
+    el.classList.toggle('is-held', held);
+    if (held) {
+      // Parked: sit on the clicked read point; the Marker keeps it there through pan/zoom.
+      if (skyFollowHeld) {
+        marker.setLngLat([skyFollowHeld.lng, skyFollowHeld.lat]);
+        el.style.visibility = 'visible';
+      } else {
+        el.style.visibility = 'hidden';
+      }
+      return;
+    }
+    // Live: ride the raw pointer. Hidden until the cursor is over the map (and once it leaves),
+    // so the beacon never lingers at a stale spot when following resumes.
+    el.style.visibility = 'hidden';
+    const onMove = (e: maplibregl.MapMouseEvent) => {
+      marker.setLngLat(e.lngLat);
+      el.style.visibility = 'visible';
+    };
+    const onOut = () => {
+      el.style.visibility = 'hidden';
+    };
+    map.on('mousemove', onMove);
+    map.on('mouseout', onOut);
+    return () => {
+      map.off('mousemove', onMove);
+      map.off('mouseout', onOut);
+    };
+  }, [skyFollow, skyFollowHeld]);
 
   // The greatest-eclipse (solar) / sub-lunar (lunar) maximum marker — a styled DOM
   // marker tinted with the eclipse's own colour, with a finite ping that replays

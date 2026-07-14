@@ -98,13 +98,11 @@ export const MOON_LINE_DARK = '#5b6480';
 // PLANET_COLORS. Single source for App's line-colour swap (withThemeLineColors) AND the
 // baked zenith glyph (glyphImages.ensureGlyphImages), so lines + stamps stay in sync.
 //  • Moon — pale gray fails on BOTH light basemaps (Glass + Earth).
-//  • Mercury (light mint) / Uranus (light cyan) — only wash into Earth's warm parchment,
-//    so they get a deeper tint there alone.
 // Dark's basemap is dark, so it needs no overrides.
 export const MAP_LINE_COLOR_OVERRIDES: Record<Theme, Partial<Record<PlanetName, string>>> = {
   dark: {},
   glass: { Moon: MOON_LINE_DARK },
-  vintage: { Moon: MOON_LINE_DARK, Mercury: '#2e9e82', Uranus: '#2489a8' },
+  vintage: { Moon: MOON_LINE_DARK },
 };
 
 // Lilith's muted purple reads fine on the light map basemap but is hard to make out

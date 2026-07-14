@@ -105,10 +105,6 @@ interface TimelineHudProps {
   setPrimaryRate: (r: PrimaryRate) => void;
   userPrimaryRate: number;
   setUserPrimaryRate: (deg: number) => void;
-  /** ADVANCED-ONLY master flag for this bar: when false the right-side display drawer
-   *  (Natal/Zenith toggles) and the Relative/Absolute positioning control are HIDDEN, and
-   *  their values default (App feeds eff* defaults to the map); when true they're restored. */
-  advanced: boolean;
 }
 
 const UNIT_OPTIONS: TimeUnit[] = ['minute', 'hour', 'day', 'week', 'month', 'year'];
@@ -327,7 +323,6 @@ export function TimelineHud({
   setPrimaryRate,
   userPrimaryRate,
   setUserPrimaryRate,
-  advanced,
 }: TimelineHudProps) {
   const { t, fmt, labels } = useT();
   const current = charts.find((c) => c.id === currentId) ?? null;
@@ -445,12 +440,6 @@ export function TimelineHud({
     overlayMode in NUB_LABEL_KEY
       ? t(NUB_LABEL_KEY[overlayMode as keyof typeof NUB_LABEL_KEY])
       : t('timeline.nubFallback');
-  // A guest/basic user (Advanced off) whom the build nudges sees the advanced overlay-bar toggles
-  // as CLICKABLE teasers: rendered with their ADV tag, but a click opens the account flow
-  // (nudgeAction) instead of changing any advanced state. Advanced users get the real toggles;
-  // everyone else (Advanced off, not nudged) sees them hidden, exactly as before.
-  const advNudge = !advanced && shouldShowNudge('adv');
-
   // ── Draggable bar ──────────────────────────────────────────────────────
   // The nub is the move handle. Position is shared with the synastry bar (same
   // bottom slot) via useMovableHud, so flipping overlay modes keeps the bar
@@ -564,11 +553,15 @@ export function TimelineHud({
         .map((ext) => {
           const open = openExtensions.has(ext.id);
           const locked = !isEntitled(ext);
+          // A locked teaser must never READ as on: a defaultOpen ext still sits in
+          // openExtensions, but the feature isn't actually running until entitled — so show
+          // the eye closed + a gated accent, not a misleading "on" state.
+          const shown = open && !locked;
           return (
             <TipButton
               key={ext.id}
               type="button"
-              className={`thud-drawer-toggle ${open ? 'on' : 'off'}`}
+              className={`thud-drawer-toggle ${shown ? 'on' : 'off'}${locked ? ' locked' : ''}${ext.tier === 'gated' ? ' gated' : ''}`}
               placement="top"
               gated={ext.tier === 'gated'}
               tip={ext.label}
@@ -582,7 +575,7 @@ export function TimelineHud({
               onClick={() => (locked ? nudgeAction() : onToggleExtension(ext.id))}
               onPointerDown={(e) => e.stopPropagation()}
             >
-              <EyeIcon open={open} />
+              <EyeIcon open={shown} />
               <span className="thud-drawer-toggle-name">{ext.label}</span>
             </TipButton>
           );
@@ -836,24 +829,23 @@ export function TimelineHud({
           astrocartography — which the tips disclose. */}
       {overlayMode === 'transits' && (
         <div
-          className={`thud-row thud-returns-row${advanced || advNudge ? '' : ' thud-returns-row--solo'}`}
+          className="thud-row thud-returns-row"
         >
           <div className="thud-returns">
             {returnGroup('solar')}
             <span className="thud-mode-label">{t('timeline.returns.label')}</span>
             {returnGroup('lunar')}
           </div>
-          {/* ADVANCED: the positioning frame + its separator. Shown when Advanced is on (works) OR
-              as a nudged-guest teaser (advNudge → click opens the account flow); otherwise hidden
-              (the returns then centre alone via thud-returns-row--solo). ADV-tagged on. */}
-          {(advanced || advNudge) && <span className="thud-returns-divider" aria-hidden="true" />}
+          {/* The positioning frame + its separator — a free control for everyone; the
+              returns and the flip-switch always share the row. */}
+          <span className="thud-returns-divider" aria-hidden="true" />
           {/* Positioning, relocated from Settings: a flip-switch (Relative ↔ Absolute).
               Framing only affects Celestial lines — Mundane/Geodetic key off zodiacal
               longitude — so on those it's shown DISABLED, reading "—" (not the stored
               frame, which would be meaningless here) with a tip explaining why, rather
               than hidden. The button is floored to one width (see .thud-positioning-btn)
               so toggling Relative↔Absolute can't nudge the bar wider. */}
-          {(advanced || advNudge) && (() => {
+          {(() => {
             // frameLocked (no real natal frame — unknown birth time): the frame is
             // forced to Absolute upstream, so show that value disabled with its own
             // explanation rather than the stored (ignored) preference.
@@ -867,9 +859,6 @@ export function TimelineHud({
                   className={`thud-positioning-btn${posEnabled ? '' : ' is-disabled'}`}
                   aria-disabled={!posEnabled}
                   placement="top"
-                  // ADV tag only on "Absolute" (transit-moment) — Relative-to-natal is the
-                  // default, so it isn't flagged as an advanced choice.
-                  advanced={posEnabled && transitFrame === 'transit-moment'}
                   // Enabled: tip names the CURRENT framing + its meaning. Disabled
                   // (non-Celestial lines / locked frame): explain why.
                   tip={
@@ -892,10 +881,6 @@ export function TimelineHud({
                       : t('settings.headings.positioning')
                   }
                   onClick={() => {
-                    if (advNudge) {
-                      nudgeAction(); // teaser → open the account/upgrade flow
-                      return;
-                    }
                     if (posEnabled)
                       setTransitFrame(
                         transitFrame === 'relative-to-natal'

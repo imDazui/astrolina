@@ -12,7 +12,7 @@
 //
 //   • new   — the baseline every user has.
 //   • adv   — Advanced reading mode: OPEN-SOURCE, a free toggle (advancedWheel). Its
-//             features (Slide, Local Space, Synastry, Eclipses, the Advanced settings tab)
+//             features (Slide, Local Space, Synastry, the Advanced settings tab)
 //             are HIDDEN until the user opts in — no upsell, just more depth once enabled.
 //   • gated — the DOWNSTREAM tier: a private build's extra Tools / Overlay / View options +
 //             the 5th settings tab, added through the extension seams and gated by the

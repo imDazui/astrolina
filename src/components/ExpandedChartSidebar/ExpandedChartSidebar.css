@@ -503,6 +503,63 @@
   background: rgba(var(--accent-rgb), 0.7);
 }
 
+/* Gated-tier cue: the Local Space 2D/3D switch drives a gated feature, so it's always tinted
+   the gated accent — full on ON, a lighter tone when OFF. Scoped to .es-ls-head so the sibling
+   Dual-Wheels toggle keeps the neutral accent. */
+.es-ls-head .es-advanced-toggle.on {
+  color: var(--gated);
+}
+.es-ls-head .es-advanced-toggle.on .es-toggle-track {
+  background: rgba(var(--gated-rgb), 0.55);
+}
+.es-ls-head .es-advanced-toggle.on .es-toggle-thumb {
+  background: var(--gated);
+}
+.es-ls-head .es-advanced-toggle.on:hover .es-toggle-track {
+  background: rgba(var(--gated-rgb), 0.7);
+}
+.es-ls-head .es-advanced-toggle.off {
+  color: rgba(var(--gated-rgb), 0.72);
+}
+.es-ls-head .es-advanced-toggle.off .es-toggle-track {
+  background: rgba(var(--gated-rgb), 0.2);
+}
+.es-ls-head .es-advanced-toggle.off .es-toggle-thumb {
+  background: rgba(var(--gated-rgb), 0.62);
+}
+
+/* Gated-tier cue: the aspects Compare switch drives a gated comparison — same always-tinted
+   treatment (full ON, lighter OFF), scoped to .es-frames-toggle so the sibling gated rules
+   above and the neutral Dual-Wheels toggle are untouched. */
+.es-advanced-toggle.es-frames-toggle.on {
+  color: var(--gated);
+}
+.es-advanced-toggle.es-frames-toggle.on .es-toggle-track {
+  background: rgba(var(--gated-rgb), 0.55);
+}
+.es-advanced-toggle.es-frames-toggle.on .es-toggle-thumb {
+  background: var(--gated);
+}
+.es-advanced-toggle.es-frames-toggle.on:hover .es-toggle-track {
+  background: rgba(var(--gated-rgb), 0.7);
+}
+.es-advanced-toggle.es-frames-toggle.off {
+  color: rgba(var(--gated-rgb), 0.72);
+}
+.es-advanced-toggle.es-frames-toggle.off .es-toggle-track {
+  background: rgba(var(--gated-rgb), 0.2);
+}
+.es-advanced-toggle.es-frames-toggle.off .es-toggle-thumb {
+  background: rgba(var(--gated-rgb), 0.62);
+}
+/* Earth (vintage) dark-brown sidebar: lift --gated to a lighter lavender so the gated tint on
+   the Local Space + Compare switches stays legible. */
+:root[data-theme='vintage'] .es-ls-head .es-advanced-toggle,
+:root[data-theme='vintage'] .es-advanced-toggle.es-frames-toggle {
+  --gated: #c4b2f2;
+  --gated-rgb: 196, 178, 242;
+}
+
 .es-planet-list li:last-child {
   border-bottom: none;
 }
@@ -1183,6 +1240,24 @@
   font-size: 10px;
   color: var(--text-muted);
 }
+/* Fallback notice with an (i) whose hover .ui-tip explains the Porphyry fallback. Block-level
+   (so it sits UNDER the wheel-state title, not beside it) but sized to its content, with the
+   label + icon on one row. The wheel corner is pointer-events:none so the wheel stays
+   interactive — re-enable it here so hovering the (i) actually reveals the .ui-tip. */
+.es-house-fallback.es-house-fallback-info {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 3px;
+  cursor: help;
+  pointer-events: auto;
+}
+.es-info-icon {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  opacity: 0.85;
+}
 
 .es-overlay-caption {
   display: inline-flex;
@@ -1218,13 +1293,13 @@
 }
 
 /* Non-dual: the moment stacks ABOVE the name in the top-right corner. Lay the corner out as
-   a left-aligned column so the two lines share a left edge; the corner is absolutely placed
-   over the wheel, so this adds no height to the sidebar before the wheel. */
+   a right-aligned column so the two lines share the right edge (flush to the wheel's corner);
+   the corner is absolutely placed over the wheel, so this adds no height to the sidebar. */
 .es-wheel-corner-right.es-overlay-corner {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
+  align-items: flex-end;
+  text-align: right;
   gap: 1px;
 }
 

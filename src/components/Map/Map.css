@@ -897,6 +897,71 @@
   }
 }
 
+/* Sky Times "follow the cursor" beacon — a clock stamp with a pulsing aura marking
+   where the sky clock is being read (live: rides the cursor; held: parked on a clicked
+   spot). A luminous "sky" cyan that reads on every basemap; the translucent-dark disc
+   keeps the light clock glyph legible over pale tiles. Click-through (see Map.tsx). */
+.sky-follow-stamp {
+  pointer-events: none;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+}
+.sky-follow-aura {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(120, 214, 232, 0.5) 0%,
+    rgba(120, 214, 232, 0.18) 40%,
+    transparent 72%
+  );
+  animation: sky-follow-pulse 1.8s ease-in-out infinite;
+}
+.sky-follow-disc {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(14, 20, 30, 0.55);
+  border: 1.5px solid rgba(150, 226, 240, 0.9);
+  box-shadow: 0 0 9px rgba(120, 214, 232, 0.7), inset 0 0 4px rgba(120, 214, 232, 0.35);
+}
+.sky-follow-clock {
+  width: 13px;
+  height: 13px;
+  color: #eaf7fb;
+}
+@keyframes sky-follow-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+/* Parked ('held'): a slower, steadier breath and a brighter ring so it reads as fixed. */
+.sky-follow-stamp.is-held .sky-follow-aura {
+  animation-duration: 3.4s;
+  opacity: 0.85;
+}
+.sky-follow-stamp.is-held .sky-follow-disc {
+  border-color: rgba(150, 226, 240, 1);
+  box-shadow: 0 0 12px rgba(120, 214, 232, 0.85), inset 0 0 4px rgba(120, 214, 232, 0.4);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sky-follow-aura {
+    animation: none;
+  }
+}
+
 /* MapLibre default-control restyling */
 
 /* Top-right nav (+/-) sits flush against the right gutter; sidebar nests to its left. */
