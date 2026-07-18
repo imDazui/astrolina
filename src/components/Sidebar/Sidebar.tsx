@@ -56,6 +56,7 @@ import {
   isEntitled,
 } from '../../lib/extensions/settingsSection';
 import { useHoverTip } from '../ui/useHoverTip';
+import { HoverTip } from '../ui/HoverTip';
 import { glyphify } from '../ui/glyphify';
 import { useT, LANGUAGES } from '../../i18n';
 import type { Locale } from '../../i18n';
@@ -415,6 +416,7 @@ export function HintMenu<V extends string>({
   note,
   tier,
   locked,
+  triggerTip,
 }: {
   value: V;
   onChange: (v: V) => void;
@@ -427,6 +429,13 @@ export function HintMenu<V extends string>({
     disabled?: boolean;
   }[];
   note?: string;
+  /** Hover tip on the CLOSED trigger (e.g. the current option's description,
+   *  readable without opening). Owned by the menu — not a wrapper — because it
+   *  must suppress itself while the panel is open: the panel is PORTALED, so to
+   *  React's enter/leave logic the pointer never "leaves" an enclosing wrapper
+   *  while browsing options, and a wrapper-owned tip sits stuck over the trigger
+   *  on top of the options' own hints. */
+  triggerTip?: { title: ReactNode; hint?: ReactNode; tipClassName?: string };
   /** The plan tier this WHOLE control belongs to — its badge renders on the
    *  trigger, exactly like the nav menus' plan-gated rows (see lib/plan). */
   tier?: PlanTier;
@@ -440,6 +449,13 @@ export function HintMenu<V extends string>({
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  // The optional trigger tip's anchor shares the trigger element (merged ref below).
+  const {
+    ref: tipRef,
+    pos: tipPos,
+    show: tipShow,
+    hide: tipHide,
+  } = useHoverTip<HTMLButtonElement>('top');
   // The portaled panel is positioned by its top and always clamped fully within
   // the viewport (margins), capped to the room it has so it scrolls rather than
   // spilling off — or, on a screen too short for either side, fills the viewport.
@@ -535,16 +551,28 @@ export function HintMenu<V extends string>({
   return (
     <div className="calc-menu">
       <button
-        ref={triggerRef}
+        ref={(el) => {
+          triggerRef.current = el;
+          tipRef.current = el;
+        }}
         type="button"
         className={`thud-select calc-menu-trigger ${open ? 'open' : ''}`}
         onClick={() => {
+          tipHide(); // opening replaces the trigger tip with the options' own hints
           if (locked) {
             nudgeAction(); // tier-locked teaser → the account/upgrade flow
             return;
           }
           setOpen((v) => !v);
         }}
+        onMouseEnter={() => {
+          if (triggerTip && !open) tipShow();
+        }}
+        onMouseLeave={tipHide}
+        onFocus={() => {
+          if (triggerTip && !open) tipShow();
+        }}
+        onBlur={tipHide}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
@@ -565,6 +593,15 @@ export function HintMenu<V extends string>({
           ▾
         </span>
       </button>
+      {triggerTip && !open && (
+        <HoverTip
+          pos={tipPos}
+          placement="top"
+          title={triggerTip.title}
+          hint={triggerTip.hint}
+          className={triggerTip.tipClassName}
+        />
+      )}
       {open &&
         createPortal(
           <div

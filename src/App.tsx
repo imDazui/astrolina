@@ -4054,9 +4054,10 @@ export default function App() {
   // Generate the COMPLETE, UNFILTERED line set — ignores visiblePlanets / visibleLineTypes AND the
   // Advanced family toggles (aspects/midpoints/parans/stars/local-space), so it's EVERYTHING the
   // chart (+ any active overlay) could draw. Reuses the same generators + framing as the drawn
-  // linework, minus every filter/gate. Expensive (midpoints are quadratic), so it's a callback the
-  // caller runs on demand (once per point query), never a per-render memo.
-  const collectAllLines = useCallback((): AllLines => {
+  // linework, minus every filter/gate. Expensive (midpoints are quadratic), so it runs on demand;
+  // this is the raw builder — callers get the caching wrapper below, and this callback's identity
+  // (it changes exactly when a dependency does) is that cache's invalidation key.
+  const buildAllLines = useCallback((): AllLines => {
     if (!current) {
       return {
         lines: EMPTY_FC,
@@ -4193,6 +4194,65 @@ export default function App() {
     allLocalSpace,
     noTime,
   ]);
+
+  // The caching face of the builder above: the set is computed lazily ONCE per input
+  // state and handed back to every caller — several consumers may each ask for the
+  // complete set (repeated point queries, panels open side by side), and before this
+  // cache each call re-ran every generator. The cache keys on the builder's identity,
+  // so `collectAllLines` still changes identity exactly when the set's inputs do —
+  // callers keep keying their own caches on it. The returned object is shared:
+  // treat it as immutable.
+  const allLinesCacheRef = useRef<{ build: () => AllLines; set: AllLines } | null>(null);
+  const collectAllLines = useCallback((): AllLines => {
+    const cur = allLinesCacheRef.current;
+    if (cur && cur.build === buildAllLines) return cur.set;
+    const set = buildAllLines();
+    allLinesCacheRef.current = { build: buildAllLines, set };
+    return set;
+  }, [buildAllLines]);
+
+  // A compact stamp of the STABLE inputs behind the line set: it changes exactly when the
+  // regenerated geometry/labels/colours would — chart, framing systems, node type, late-loaded
+  // ephemeris data, star catalog, theme, overlay KIND + its rate settings — while deliberately
+  // EXCLUDING the overlay's moving instant (targetDate / an eclipse pick), so a consumer keying
+  // a cache or a recompute effect on it is not re-triggered per animation tick while a timeline
+  // plays. Read `targetDate` alongside it when the frame instant matters. (The local-space
+  // origin is also excluded: a pin drag re-reads on the next real change.)
+  const linesStamp = useMemo(
+    () =>
+      [
+        current?.id ?? '',
+        jd,
+        nodeType,
+        ephemerisEpoch,
+        lineSystem,
+        coordSystem,
+        starSet,
+        theme,
+        overlayMode,
+        overlayAux,
+        partner?.id ?? '',
+        angleProgression,
+        primaryRate,
+        userPrimaryRate,
+      ].join('|'),
+    [
+      current,
+      jd,
+      nodeType,
+      ephemerisEpoch,
+      lineSystem,
+      coordSystem,
+      starSet,
+      theme,
+      overlayMode,
+      overlayAux,
+      partner,
+      angleProgression,
+      primaryRate,
+      userPrimaryRate,
+    ],
+  );
 
   // The line "spotlight": when set, the <Map> dims and draws only the lines
   // within radiusKm of `center` (a null center = aiming: dim + hide all lines); null = the normal
@@ -4345,6 +4405,7 @@ export default function App() {
       openBuiltinTool,
       setLineSpotlight,
       collectAllLines,
+      linesStamp,
       advancedMode: advancedWheel,
       setAdvancedMode,
       openView: openViewById,
@@ -4390,6 +4451,7 @@ export default function App() {
       openCaptureTool,
       openBuiltinTool,
       collectAllLines,
+      linesStamp,
       showNightShade,
       advancedWheel,
       setAdvancedMode,

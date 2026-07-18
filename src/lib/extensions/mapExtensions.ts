@@ -138,6 +138,12 @@ export interface MapExtensionContext {
    *  (e.g. once per point query), never per frame. Pair with `setLineSpotlight({ ..., lines })` to
    *  reveal the full set on the map, and read it for a "which lines are near here" list. */
   collectAllLines: () => AllLines;
+  /** A compact identity of the STABLE inputs behind the line set (chart, framing systems,
+   *  star catalog, theme, overlay kind + rate settings) — it changes exactly when regenerated
+   *  lines would, EXCLUDING the overlay's moving instant, so it stays put while a timeline
+   *  plays. Key caches / recompute effects on this (instead of on object identities) and read
+   *  `targetDate` alongside it when the frame instant matters. */
+  linesStamp: string;
   /** Whether Advanced reading mode is on (the free rung that reveals the advanced
    *  views/overlays). Read it before opening an advanced-gated view, so the menus
    *  stay in step with what's on screen. */
