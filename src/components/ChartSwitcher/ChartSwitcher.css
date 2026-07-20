@@ -154,6 +154,23 @@
   color: var(--text-strong);
 }
 
+/* Tab quick-swap feedback: the arrow on the row just switched to, while the
+   menu is flashed open. */
+.qs-arrow {
+  margin-right: 5px;
+  color: rgb(var(--accent-brand-rgb));
+  font-weight: 700;
+}
+
+/* The trigger tip's Tab line is keyboard-only advice: on a touch device with no
+   hardware keyboard the whole sub-row hides (HoverTip's has-keyboard latch only
+   hides the CHIP, which would strand the rest of the sentence). */
+@media (pointer: coarse) {
+  html:not(.has-keyboard) .ui-tip-sub:has(> .switcher-tab-hint) {
+    display: none;
+  }
+}
+
 .chart-meta {
   font-size: 11px;
   color: var(--text-faint);

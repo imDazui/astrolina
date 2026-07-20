@@ -30,7 +30,7 @@ import { useViewLock } from '../../lib/extensions/viewLock';
 import { isViewRowClaimed } from '../../lib/extensions/viewRowClaims';
 import { type PlanTier, tierMet, tierLabel, tierOfEntitlement, shouldShowNudge, nudgeAction } from '../../lib/plan';
 import type { StoredChart } from '../../lib/chartLibrary';
-import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
+import { ChartSwitcher, type ChartQuickFlash } from '../ChartSwitcher/ChartSwitcher';
 import { CycleHotkey } from '../ui/CycleHotkey';
 import { HoverTip, TipButton, TipSpan } from '../ui/HoverTip';
 import { useHoverTip } from '../ui/useHoverTip';
@@ -168,6 +168,9 @@ interface TopNavProps {
   onNewChart: () => void;
   onEditChart: (id: string) => void;
   onDeleteChart: (id: string) => void;
+  /** Tab quick-swap feedback for the bar's switcher (null while the expanded
+   *  sidebar hosts it, and when idle). */
+  chartFlash: ChartQuickFlash | null;
 
   /** When the expanded chart sidebar is open it already shows the name + DOB, so
    *  the bar's chart switcher fades out. */
@@ -557,6 +560,7 @@ function RadioItem({
         hint={hint}
         hotkey={locked ? undefined : hotkey}
         advanced={tier === 'adv'}
+        gated={tier === 'gated'}
       />
     </>
   );
@@ -628,6 +632,7 @@ function CheckItem({
           // suppress it, since their key does nothing until the tier is reached.
           hotkey={locked ? undefined : hotkey}
           advanced={tier === 'adv'}
+          gated={tier === 'gated'}
         />
       )}
     </>
@@ -721,6 +726,7 @@ function ToolItem({
         hint={hint}
         hotkey={locked ? undefined : hotkey}
         advanced={tier === 'adv'}
+        gated={tier === 'gated'}
       />
     </>
   );
@@ -737,6 +743,7 @@ export function TopNav({
   onNewChart,
   onEditChart,
   onDeleteChart,
+  chartFlash,
   chartExpanded,
   onToggleExpand,
   tool,
@@ -923,6 +930,7 @@ export function TopNav({
                 onEdit={onEditChart}
                 onDelete={onDeleteChart}
                 compact
+                flash={chartFlash}
               />
             </div>
             <TipButton

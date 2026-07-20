@@ -61,6 +61,7 @@ import { LocalSpaceHud } from './components/LocalSpaceHud/LocalSpaceHud';
 import { AspectLinesHud } from './components/AspectLinesHud/AspectLinesHud';
 import { CaptureHud } from './components/CaptureHud/CaptureHud';
 import { TopNav, type MapTool } from './components/TopNav/TopNav';
+import type { ChartQuickFlash } from './components/ChartSwitcher/ChartSwitcher';
 import { ChartWheel } from './components/ChartWheel/ChartWheel';
 import { ExpandedChartSidebar } from './components/ExpandedChartSidebar/ExpandedChartSidebar';
 import { CoordReadout } from './components/CoordReadout/CoordReadout';
@@ -271,6 +272,7 @@ import {
   loadCharts,
   loadCurrentId,
   newChartId,
+  recentShortlist,
   saveCharts,
   saveCurrentId,
   type StoredChart,
@@ -670,6 +672,20 @@ export default function App() {
   // A restored share link re-places its pin (label resolves on the next hover).
   const [pinned, setPinned] = useState<Point | null>(() => sharedBoot?.pin ?? null);
   const [wheelExpanded, setWheelExpanded] = useState(false);
+  // Tab quick-swap feedback: while set, the chart switcher (bar, or expanded
+  // sidebar when open) flashes its menu with an arrow on the row landed on.
+  // The ref is the keydown handler's synchronous copy (the state isn't in the
+  // handler effect's deps): while the flash window is open, further Tab taps
+  // CYCLE the frozen shortlist instead of starting a fresh swap.
+  const [chartFlash, setChartFlash] = useState<ChartQuickFlash | null>(null);
+  const chartFlashRef = useRef<ChartQuickFlash | null>(null);
+  const chartFlashTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (chartFlashTimer.current) window.clearTimeout(chartFlashTimer.current);
+    },
+    [],
+  );
   const [theme, setTheme] = useState<Theme>(() => loadTheme());
   // Flat Mercator ('2d') vs. 3D globe ('3d'); persisted, defaults to 2D.
   const [projection, setProjection] = useState<MapProjectionMode>(loadProjection);
@@ -1262,6 +1278,36 @@ export default function App() {
         return;
       }
       if (isTypingField(el)) return;
+      // Tab → swap to the previous chart; while the ~1s flash window stays
+      // open, each further tap steps DEEPER down the frozen shortlist
+      // (wrapping), so quick taps cycle the recent handful and a lone tap
+      // bounces between the last two. The switcher menu flashes with an arrow
+      // on the row landed on, in whichever host is visible. Claimed only for a
+      // bare forward Tab with focus outside any control — Shift+Tab
+      // everywhere, and Tab from a focused control, keep native traversal.
+      if (e.key === 'Tab') {
+        if (e.shiftKey || isInteractive(el)) return;
+        let session = chartFlashRef.current;
+        if (session) {
+          session = { ids: session.ids, index: (session.index + 1) % session.ids.length };
+        } else {
+          const ids = recentShortlist(charts).map((c) => c.id);
+          if (ids.length < 2) return; // one chart (or none): let Tab be Tab
+          // Start from the active chart's slot (top, having just been used)
+          // and step once — the previous chart.
+          session = { ids, index: (ids.indexOf(current?.id ?? '') + 1) % ids.length };
+        }
+        chartFlashRef.current = session;
+        setChartFlash(session);
+        selectChart(session.ids[session.index]);
+        if (chartFlashTimer.current) window.clearTimeout(chartFlashTimer.current);
+        chartFlashTimer.current = window.setTimeout(() => {
+          chartFlashRef.current = null;
+          setChartFlash(null);
+        }, 1200);
+        e.preventDefault();
+        return;
+      }
       // Shift+letter: Settings toggles (map-filter lines, Appearance details, and
       // projection mode). Kept on Shift so the plain letters stay free for the
       // view/tool hotkeys below; each is mirrored by a "Shift X" pill in the sidebar.
@@ -1398,10 +1444,11 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-    // toggleExtension / toggleTool / nudgeSlide are stable useCallbacks declared later in this
-    // component; the keydown closure reads them lazily (post-commit), so they're intentionally
-    // left out of the deps — listing them here would touch their temporal dead zone during render.
-  }, [current, pinned, toggleSlide, advancedWheel, lineSystem, mapTool, overlayMode]);
+    // toggleExtension / toggleTool / nudgeSlide / selectChart are stable useCallbacks declared
+    // later in this component; the keydown closure reads them lazily (post-commit), so they're
+    // intentionally left out of the deps — listing them here would touch their temporal dead
+    // zone during render.
+  }, [current, charts, pinned, toggleSlide, advancedWheel, lineSystem, mapTool, overlayMode]);
 
   // Optional opt-in seam for the eclipse-time map LINES (off by default). A fork can
   // dispatch `window.dispatchEvent(new CustomEvent('astro:cheat', { detail: { id:
@@ -4703,6 +4750,7 @@ export default function App() {
         onNewChart={() => setCreating(true)}
         onEditChart={(id) => setEditingId(id)}
         onDeleteChart={handleDelete}
+        chartFlash={wheelExpanded ? null : chartFlash}
         chartExpanded={wheelExpanded}
         onToggleExpand={() => setWheelExpanded((v) => !v)}
         tool={mapTool}
@@ -5078,6 +5126,7 @@ export default function App() {
           onNewChart={() => setCreating(true)}
           onEditChart={(id) => setEditingId(id)}
           onDeleteChart={handleDelete}
+          chartFlash={chartFlash}
         />
       ) : (
         showChart &&

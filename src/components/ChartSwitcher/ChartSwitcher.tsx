@@ -6,9 +6,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  chartRecency,
   chartTag,
   displayName,
+  recentShortlist,
   NAME_SOFT_LIMIT,
   NAME_SOFT_LIMIT_STARRED,
   type StoredChart,
@@ -22,9 +22,17 @@ import { useHoverTip } from '../ui/useHoverTip';
 import { useNarrowNav } from '../../lib/touch';
 import './ChartSwitcher.css';
 
-// The dropdown is a quick-switch shortlist; the full searchable list lives in the
-// ChartManager that "Search + Add Name" opens.
-const RECENT_COUNT = 5;
+// The dropdown is a quick-switch shortlist (recentShortlist); the full
+// searchable list lives in the ChartManager that "Search + Add Name" opens.
+
+/** The Tab quick-swap flash: the shortlist order as it stood when the swap
+ *  fired (selection bumps recency, so the live sort would reshuffle mid-flash)
+ *  plus the row just landed on. While set, the menu is held open with an
+ *  arrow on that row. */
+export interface ChartQuickFlash {
+  ids: string[];
+  index: number;
+}
 
 interface ChartSwitcherProps {
   current: StoredChart | null;
@@ -35,6 +43,8 @@ interface ChartSwitcherProps {
   onDelete: (id: string) => void;
   /** Top-bar variant: hide the add-person icon (the expanded sidebar keeps it). */
   compact?: boolean;
+  /** The Tab quick-swap feedback (see ChartQuickFlash); null/absent when idle. */
+  flash?: ChartQuickFlash | null;
 }
 
 // "14 March 1990" — full birth date for the bar's chart label.
@@ -60,6 +70,7 @@ export function ChartSwitcher({
   onEdit,
   onDelete,
   compact = false,
+  flash = null,
 }: ChartSwitcherProps) {
   const { t, fmt } = useT();
   // Portrait top bar (compact + narrow): collapse the label to initials + year only.
@@ -89,12 +100,33 @@ export function ChartSwitcher({
   }, [open]);
 
   // Just the most-recently-used handful — the rest are reachable via search.
-  const recentCharts = useMemo(
+  const recentCharts = useMemo(() => recentShortlist(charts), [charts]);
+
+  // A quick-swap flash holds the menu open on ITS frozen order (ids resolved
+  // against the live set, so an edit mid-flash still shows current names).
+  const flashCharts = useMemo(
     () =>
-      [...charts]
-        .sort((a, b) => chartRecency(b) - chartRecency(a))
-        .slice(0, RECENT_COUNT),
-    [charts],
+      flash
+        ? flash.ids
+            .map((id) => charts.find((c) => c.id === id))
+            .filter((c): c is StoredChart => c !== undefined)
+        : null,
+    [flash, charts],
+  );
+  const list = flashCharts ?? recentCharts;
+  const menuOpen = open || flashCharts !== null;
+
+  // The trigger tip's Tab line, with the {key} token rendered as the shared
+  // yellow key chip so the key name reads like the menu badges. The wrapper
+  // class lets the whole line hide on keyboard-less touch (see the CSS) —
+  // hiding only the chip, like HoverTip does, would leave a broken sentence.
+  const [tabHintPre, tabHintPost] = t('chartSwitcher.tabHint').split('{key}');
+  const tabHint = (
+    <span className="switcher-tab-hint">
+      {tabHintPre}
+      <span className="ui-tip-hotkey">Tab</span>
+      {tabHintPost}
+    </span>
   );
 
   return (
@@ -111,11 +143,11 @@ export function ChartSwitcher({
           hideTip();
         }}
         onMouseEnter={() => {
-          if (!open) showTip();
+          if (!menuOpen) showTip();
         }}
         onMouseLeave={hideTip}
         onFocus={() => {
-          if (!open) showTip();
+          if (!menuOpen) showTip();
         }}
         onBlur={hideTip}
       >
@@ -180,16 +212,17 @@ export function ChartSwitcher({
         pos={tipPos}
         placement={tipPlacement}
         title={t('chartSwitcher.tip')}
+        hint={tabHint}
         hotkey="A"
       />
 
-      {open && (
+      {menuOpen && (
         <div className="switcher-menu">
           <ul>
             {charts.length === 0 && (
               <li className="empty">{t('chartSwitcher.empty')}</li>
             )}
-            {recentCharts.map((c) => (
+            {list.map((c, i) => (
               <li
                 key={c.id}
                 className={c.id === current?.id ? 'active' : ''}
@@ -203,6 +236,12 @@ export function ChartSwitcher({
                   }}
                 >
                   <span className="chart-name">
+                    {/* Quick-swap feedback: the arrow marks the row just landed on. */}
+                    {flash && i === flash.index && (
+                      <span className="qs-arrow" aria-hidden="true">
+                        →
+                      </span>
+                    )}
                     <TagIcon tag={chartTag(c)} className="tag-icon" />
                     {timeUnknown(c) && (
                       <TagIcon tag="unknown" className="tag-icon" />

@@ -3805,6 +3805,10 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     // Start locked flat north-up. applyProjection() (in the load handler) sets the
     // real projection + interaction state once the style is loaded — setProjection
     // throws before then. Keeps 2D identical to before; 3D switches on load.
+    // The `proj-2d` CLASS is pure DOM though, so pre-set it here: waiting for the
+    // load handler left the compass button visible for the style-load beat on
+    // every flat-mode refresh before the CSS could hide it.
+    map.getContainer().classList.toggle('proj-2d', projectionRef.current === '2d');
     map.dragRotate.disable();
     map.touchPitch.disable();
     map.touchZoomRotate.disableRotation();

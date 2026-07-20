@@ -30,7 +30,7 @@ import { fmtLat, fmtLng } from '../../lib/coordFormat';
 import { formatUtcOffset } from '../../lib/atlas/timezone';
 import { planTierFor, tierName } from '../../lib/plan';
 import { getProfileSection } from '../../lib/extensions/profileSection';
-import { ChartSwitcher } from '../ChartSwitcher/ChartSwitcher';
+import { ChartSwitcher, type ChartQuickFlash } from '../ChartSwitcher/ChartSwitcher';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ZodiacGlyph } from '../ZodiacGlyph/ZodiacGlyph';
 import {
@@ -238,6 +238,8 @@ interface ExpandedChartSidebarProps {
   onNewChart: () => void;
   onEditChart: (id: string) => void;
   onDeleteChart: (id: string) => void;
+  /** Tab quick-swap feedback for the panel's switcher (null when idle). */
+  chartFlash?: ChartQuickFlash | null;
 }
 
 const WIDTH_KEY = 'astro:expanded-sidebar-width:v1';
@@ -620,6 +622,7 @@ export function ExpandedChartSidebar({
   onNewChart,
   onEditChart,
   onDeleteChart,
+  chartFlash = null,
 }: ExpandedChartSidebarProps) {
   const { t, fmt, labels } = useT();
   const [width, setWidth] = useState(() => {
@@ -944,6 +947,7 @@ export function ExpandedChartSidebar({
               onNew={onNewChart}
               onEdit={onEditChart}
               onDelete={onDeleteChart}
+              flash={chartFlash}
             />
           </div>
           <div className="es-header-actions">

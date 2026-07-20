@@ -8,6 +8,8 @@
 export const chartSwitcher = {
   noChart: 'No chart selected',
   tip: 'Switch, edit, or add a chart',
+  // {key} renders as the yellow Tab key pill in the trigger's hover tip.
+  tabHint: '{key} swaps to your previous chart — keep tapping to cycle the recent five.',
   empty: 'No saved charts yet.',
   deleteConfirm: 'Delete "{name}"?',
   searchAdd: 'Search + Add Name',

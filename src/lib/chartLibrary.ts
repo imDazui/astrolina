@@ -50,6 +50,18 @@ export function chartRecency(c: StoredChart): number {
   return c.lastUsedAt ?? c.createdAt;
 }
 
+/** How many charts the quick-switch shortlist holds — the switcher dropdown and
+ *  the Tab quick-swap read the same handful; the rest live in the manager's
+ *  searchable list. */
+export const RECENT_COUNT = 5;
+
+/** The quick-switch shortlist: the most recently used handful, newest first. */
+export function recentShortlist(charts: readonly StoredChart[]): StoredChart[] {
+  return [...charts]
+    .sort((a, b) => chartRecency(b) - chartRecency(a))
+    .slice(0, RECENT_COUNT);
+}
+
 /** A chart's tag, defaulting an absent field to 'none' (back-compat for old records). */
 export function chartTag(c: StoredChart): ChartTag {
   return c.tag ?? 'none';
