@@ -478,10 +478,10 @@ export interface OverlayData {
   localSpace: FeatureCollection<LineString, LocalSpaceProps>;
   /** Sub-planetary (zenith) point per overlay body. Drawn as stamps (and used as
    *  the overlay labels' click-to-fly target, like natal) only when the overlay's
-   *  Zenith/Nadirs toggle is on; the App feeds this empty otherwise. */
+   *  Zeniths/Nadirs toggle is on; the App feeds this empty otherwise. */
   zenith: FeatureCollection<Point, ZenithProps>;
   /** The antipodal nadir (underfoot) stamps for the overlay bodies — the overlay's
-   *  twin of the natal `nadir`, on the IC line. Shares the overlay Zenith/Nadirs
+   *  twin of the natal `nadir`, on the IC line. Shares the overlay Zeniths/Nadirs
    *  toggle (empty when off). */
   nadir: FeatureCollection<Point, ZenithProps>;
   /** The overlay's ecliptic (zodiac) line — a dotted companion to the solid
@@ -1212,7 +1212,7 @@ interface MapProps {
   /** Planet-glyph stamps at each body's zenith (sub-planetary) point, on its MC line. */
   zenith: FeatureCollection<Point, ZenithProps>;
   /** The antipodal nadir stamps (sub-anti-planetary points, on the IC line) — the
-   *  same coins, softened; display-only. Empty unless the Zenith/Nadirs filter is on. */
+   *  same coins, softened; display-only. Empty unless the Zeniths/Nadirs filter is on. */
   nadir: FeatureCollection<Point, ZenithProps>;
   /** The ecliptic great circle (zodiac) projected to its sub-points — a subtle
    *  bright-yellow reference line that threads through the Sun's zenith. */
@@ -2270,7 +2270,7 @@ function setupCustomLayers(
   // The overlay bodies' nadir (underfoot) stamps — the overlay twin of the natal
   // nadir layer below: the DIAMOND coin (NADIR_GLYPH_PREFIX), softer at rest and
   // brightening on hover, hit-tested (ZENITH_HIT_LAYERS) so it hovers + flies like a
-  // zenith. Shares the overlay Zenith/Nadirs toggle. Tucked BENEATH the overlay
+  // zenith. Shares the overlay Zeniths/Nadirs toggle. Tucked BENEATH the overlay
   // zenith disc so a nadir coinciding with another overlay body's zenith draws under.
   map.addSource('acg-nadir-ov', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });
   map.addLayer(
@@ -2345,7 +2345,7 @@ function setupCustomLayers(
   // shape from the zenith's circle. Softer at rest, BRIGHTENING on hover (a
   // feature-state cue, like the zenith disc's hover bloom); it's hit-tested too
   // (ZENITH_HIT_LAYERS), so a nadir hovers + flies-to-on-click like a zenith. Empty
-  // unless the Zenith/Nadirs filter is on. Inserted BENEATH the natal zenith stamps
+  // unless the Zeniths/Nadirs filter is on. Inserted BENEATH the natal zenith stamps
   // (beforeId): a body's nadir is 180° from its OWN zenith, but it CAN coincide with
   // another body's zenith (an opposition) — drawing under keeps the zenith on top.
   map.addSource('acg-nadir', { type: 'geojson', data: EMPTY_FC(), ...LINE_SOURCE_OPTS });

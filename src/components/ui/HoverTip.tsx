@@ -5,20 +5,21 @@
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
 import {
-  useLayoutEffect,
-  useRef,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { useHoverTip, type TipPlacement, type TipPos } from './useHoverTip';
+import {
+  useHoverTip,
+  useTipEdgeNudge,
+  type TipPlacement,
+  type TipPos,
+} from './useHoverTip';
 import { glyphify } from './glyphify';
+import { tipMaxWidthStyle } from './tipWidth';
 import { tierLabel } from '../../lib/plan';
 import './HoverTip.css';
-
-// Margin kept between a tip and the viewport edge when nudging it back on-screen.
-const EDGE_MARGIN = 8;
 
 // The shared .ui-tip card (chrome from index.css), portaled to <body> so no
 // panel overflow can clip it. A hotkey, if given, renders as a distinct yellow
@@ -49,28 +50,7 @@ export function HoverTip({
    *  re-skin its tips to match its own chrome instead of the shared card. */
   className?: string;
 }) {
-  const cardRef = useRef<HTMLSpanElement>(null);
-
-  // Edge-collision avoidance: after the card is placed (anchor + the placement
-  // transform), measure it and, if any side spills past the viewport, nudge it back in
-  // with the CSS `translate` property — which composes WITH the placement `transform`,
-  // so this works for every placement without per-placement flip logic. Done in a
-  // layout effect (before paint, so there's no visible jump) and imperatively (no
-  // setState → no extra render). Runs on each new position.
-  useLayoutEffect(() => {
-    const el = cardRef.current;
-    if (!el || !pos) return;
-    el.style.translate = ''; // measure the natural placement, free of a prior nudge
-    const r = el.getBoundingClientRect();
-    const m = EDGE_MARGIN;
-    let dx = 0;
-    let dy = 0;
-    if (r.left < m) dx = m - r.left;
-    else if (r.right > window.innerWidth - m) dx = window.innerWidth - m - r.right;
-    if (r.top < m) dy = m - r.top;
-    else if (r.bottom > window.innerHeight - m) dy = window.innerHeight - m - r.bottom;
-    if (dx || dy) el.style.translate = `${dx}px ${dy}px`;
-  }, [pos]);
+  const cardRef = useTipEdgeNudge<HTMLSpanElement>(pos);
 
   if (!pos) return null;
   const hasHint = hint != null && hint !== '';
@@ -79,7 +59,9 @@ export function HoverTip({
     <span
       ref={cardRef}
       className={`ui-tip-box ui-tip hover-tip hover-tip-${placement}${className ? ` ${className}` : ''}`}
-      style={{ left: pos.left, top: pos.top }}
+      // Width scales with the copy (see tipWidth) — a long hint would otherwise
+      // wrap into a tall skinny column at the old flat cap.
+      style={{ left: pos.left, top: pos.top, ...tipMaxWidthStyle(title, hint) }}
       aria-hidden="true"
     >
       <span className="ui-tip-headline">

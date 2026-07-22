@@ -729,7 +729,7 @@ export default function App() {
   // button and, via the extension context (openCredits), from elsewhere in the app,
   // so the open state lives here; the Map renders the dialog itself.
   const [creditsOpen, setCreditsOpen] = useState(false);
-  // The movable Teleport window (View ▸ Teleport, hotkey G) — search a place and fly
+  // The movable Teleport window (View ▸ Teleport, hotkey T) — search a place and fly
   // the camera there (no pin/relocate), with a two-deep back/forward. On-demand, so
   // it defaults OFF.
   const [showTeleport, setShowTeleport] = useState(
@@ -781,7 +781,7 @@ export default function App() {
     () => localStorage.getItem('astro:show-timeline:v1') !== '0',
   );
   const toggleOverlayExpanded = () => setOverlayExpanded((v) => !v);
-  // Appearance ▸ Details ▸ Zenith/Nadirs: draw the NATAL bodies' zenith (overhead)
+  // Appearance ▸ Details ▸ Zeniths/Nadirs: draw the NATAL bodies' zenith (overhead)
   // stamps, their antipodal nadir (underfoot) stamps, and the ecliptic reference
   // curve through the Sun's zenith. On by default. This ONE toggle also governs the
   // active overlay's own zenith/nadir stamps + ecliptic — they ride the overlay's
@@ -1020,72 +1020,8 @@ export default function App() {
     parts.push(labels.nodeType(nodeType));
     return parts.join(' · ');
   }, [labels, t, lineSystem, coordSystem, houseSystem, zodiacMode, nodeType, advancedWheel]);
-  // The formatted value of every caption field, computed once. The caption joins the
-  // ENABLED ones (below) and the download filename reuses the same values, so the two can
-  // never drift. Date/time are formatted in UTC so the birth clock time isn't shifted by
-  // the viewer's zone. Null with no chart.
-  const captureFields = useMemo(() => {
-    if (!current) return null;
-    const dt = new Date(
-      Date.UTC(current.year, current.month - 1, current.day, current.hour, current.minute),
-    );
-    return {
-      name: displayName(current.name),
-      date: new Intl.DateTimeFormat('en', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        timeZone: 'UTC',
-      }).format(dt),
-      time: new Intl.DateTimeFormat('en', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hourCycle: 'h23',
-        timeZone: 'UTC',
-      }).format(dt),
-      // The birth-moment UTC offset (DST-aware), shown next to the time in the caption.
-      tzLabel: formatUtcOffset(current.tzOffset),
-      location: current.birthplace.label,
-      // The birthplace's full latitude + longitude (DMS, same format as the corner readout).
-      coordinates: `${fmtLat(current.birthplace.lat)} ${fmtLng(current.birthplace.lng)}`,
-      calculations: captureCalcText,
-    };
-  }, [current, captureCalcText]);
-  // Caption fields — only the enabled ones, in display order. The footer joins them into one
-  // line; the Transparent export stacks them one-per-line in the frame's top-left. Empty with no
-  // chart or no fields enabled (the footer then reserves no band, the top-left renders nothing).
-  const captureCaptionLines = useMemo(() => {
-    if (!captureFields) return [] as string[];
-    return (['name', 'date', 'time', 'location', 'coordinates', 'calculations'] as const)
-      .filter((k) => captureCaptionFields[k])
-      // The time field carries its UTC offset alongside it (e.g. "09:30 UTC-04:00"); every
-      // other field renders as-is. The offset is appended only here, so the filename — which
-      // reads the bare value from captureFields — never picks it up.
-      .map((k) => (k === 'time' ? `${captureFields.time} ${captureFields.tzLabel}` : captureFields[k]));
-  }, [captureFields, captureCaptionFields]);
-  // The footer's single-line form: the enabled fields joined.
-  const captureCaptionText = useMemo(
-    () => captureCaptionLines.join('  ·  '),
-    [captureCaptionLines],
-  );
-  // Download / share filename: track the FIRST shown caption field, walking the priority
-  // order name → date → time → location (calculations is intentionally skipped — too verbose
-  // for a filename). Keep walking past any field that slugs to nothing (e.g. a non-Latin
-  // name); if none of the four are shown or yield a usable slug, use a generic name.
-  const captureFileName = useMemo(() => {
-    let slug = '';
-    if (captureFields) {
-      for (const k of ['name', 'date', 'time', 'location'] as const) {
-        if (!captureCaptionFields[k]) continue;
-        slug = captureFields[k]
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '');
-        if (slug) break;
-      }
-    }
-    return `astrolina-${slug || 'capture'}.png`;
-  }, [captureFields, captureCaptionFields]);
+  // (The capture caption's fields are built further down, once the pin state they
+  // name exists — see captureFields near the coordinates readout.)
   const [measure, setMeasure] = useState<MeasureInfo | null>(null);
   const [measureSnap, setMeasureSnap] = useState(false);
   // Whether the Slide tool can run right now (kept in a ref so the early-declared
@@ -1373,16 +1309,16 @@ export default function App() {
         }
       }
       switch (e.key.toLowerCase()) {
-        // View-menu windows ride the DIGIT row (matching their menu badges); they
-        // stand down while a registered surface owns the viewport (viewLock) —
-        // Settings ('3') stays, so users can keep tuning what the owning
-        // surface shows.
+        // View-menu windows, on the digit row and on mnemonic letters (their menu
+        // badges mirror these exactly). They stand down while a registered surface
+        // owns the viewport (viewLock) — Settings ('3') stays, so users can keep
+        // tuning what the owning surface shows.
         case '1': if (!getViewLock()) setShowCoords((v) => !v); break;
         case '2': if (!getViewLock()) setShowChart((v) => !v); break;
         case '3': setShowSettings((v) => !v); break;
-        case '4': if (!getViewLock()) setShowTeleport((v) => !v); break;
+        case 't': if (!getViewLock()) setShowTeleport((v) => !v); break;
         // Sky Times is an 'adv'-tier view (matches its View-menu row).
-        case 't': if (advancedWheel && !getViewLock()) setShowSkyTimes((v) => !v); break;
+        case 's': if (advancedWheel && !getViewLock()) setShowSkyTimes((v) => !v); break;
         case 'l':
           // Local space isn't shown in Mundane (geodetic); opening it returns to the
           // celestial frame (matches the View-menu toggle + the slide tool).
@@ -1406,7 +1342,7 @@ export default function App() {
         case 'm': setMapTool((tl) => (tl === 'measure' ? 'off' : 'measure')); break;
         // Slide spins the globe under the fixed lines; toggleSlide switches into the
         // 3D globe / celestial frame first if the user isn't already there.
-        case 's': if (advancedWheel) toggleSlide(); break;
+        case 'e': if (advancedWheel) toggleSlide(); break;
         // Capture — ungated, so no advanced-mode gate (unlike Slide).
         case 'c': setMapTool((tl) => (tl === 'capture' ? 'off' : 'capture')); break;
         case 'a': setCreating(true); break;
@@ -2334,7 +2270,7 @@ export default function App() {
   );
   // The nadir (sub-anti-planetary) stamps: the antipodes of the zeniths, on the IC
   // line — so they follow the IC toggle (the zeniths follow MC). Shown together with
-  // the zeniths under the one Zenith/Nadirs filter (showZenith), gated at the Map prop.
+  // the zeniths under the one Zeniths/Nadirs filter (showZenith), gated at the Map prop.
   const nadir = useMemo(
     () =>
       withThemeLineColors(
@@ -2875,7 +2811,7 @@ export default function App() {
             theme,
           )
         : EMPTY_FC,
-      // Zenith points for the overlay bodies. When the (shared) Zenith/Nadirs toggle is
+      // Zenith points for the overlay bodies. When the (shared) Zeniths/Nadirs toggle is
       // on these are drawn as stamps AND each overlay label flies to its zenith on click
       // (same MC gating as natal). When off we feed no points: the stamps vanish and,
       // with no fly target, the overlay labels become non-clickable.
@@ -2894,7 +2830,7 @@ export default function App() {
         : EMPTY_FC,
       // The antipodal nadir stamps — antipodes of the overlay zeniths, filtered to the
       // IC line (so they follow the IC toggle, as natal nadirs do). Same overlay
-      // Zenith/Nadirs gate as the zeniths above.
+      // Zeniths/Nadirs gate as the zeniths above.
       nadir: effShowZenith
         ? tagZeniths(
             withThemeLineColors(
@@ -3176,6 +3112,117 @@ export default function App() {
     : pinned
       ? (pinnedLabel ?? hoverLabel)
       : (locationLabel ?? (coordSource === 'natal' ? (current?.birthplace.label ?? null) : null));
+
+  // ── Capture caption ────────────────────────────────────────────────────────
+  // Declared HERE, below the pin state, because the caption names the place the
+  // captured chart is actually cast for — which a placed pin relocates.
+  //
+  // The place the caption speaks for. A pin relocates the chart, and the captured
+  // wheel is drawn for the relocated angles, so a caption still naming the
+  // birthplace would caption a chart that isn't in the image. A natal pin (or no
+  // pin) IS the birthplace, so both collapse to the same thing.
+  //
+  // Follows the PIN only, never `hover` — even though the wheel's own activePoint is
+  // `pinned ?? hover`. Two reasons, and the second is what makes this exact rather
+  // than merely reasonable:
+  //   • A caption is a fixed statement about an exported image; it must not rewrite
+  //     itself as the cursor drifts across the map.
+  //   • At the moment of export it CANNOT disagree with the wheel anyway. Reaching
+  //     the export control means leaving the map canvas, which fires onLeave →
+  //     setHover(null) (hover is only held frozen while a pin is placed), so by the
+  //     time the image is taken activePoint has collapsed to exactly `pinned`.
+  const captionPlace = useMemo(() => {
+    if (!current) return null;
+    if (pinned && !isNatalPin) {
+      return {
+        // pinnedLabel keeps resolving under a map tool (that's why the Coordinates
+        // window can still name a pin mid-measure), so it is available during a
+        // capture; hoverLabel is the frozen stand-in until it lands, and the raw
+        // coordinates are the last resort so the field is never blank.
+        label: pinnedLabel ?? hoverLabel ?? `${fmtLat(pinned.lat)} ${fmtLng(pinned.lng)}`,
+        lat: pinned.lat,
+        lng: pinned.lng,
+        relocated: true,
+      };
+    }
+    return {
+      label: current.birthplace.label,
+      lat: current.birthplace.lat,
+      lng: current.birthplace.lng,
+      relocated: false,
+    };
+  }, [current, pinned, isNatalPin, pinnedLabel, hoverLabel]);
+
+  // The formatted value of every caption field, computed once. The caption joins the
+  // ENABLED ones (below) and the download filename reuses the same values, so the two can
+  // never drift. Date/time are formatted in UTC so the birth clock time isn't shifted by
+  // the viewer's zone. Null with no chart.
+  const captureFields = useMemo(() => {
+    if (!current || !captionPlace) return null;
+    const dt = new Date(
+      Date.UTC(current.year, current.month - 1, current.day, current.hour, current.minute),
+    );
+    return {
+      name: displayName(current.name),
+      date: new Intl.DateTimeFormat('en', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(dt),
+      time: new Intl.DateTimeFormat('en', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+        timeZone: 'UTC',
+      }).format(dt),
+      // The birth-moment UTC offset (DST-aware), shown next to the time in the caption.
+      // Stays the BIRTH offset even when relocated: the date and time are the birth
+      // moment, and that moment's clock reading doesn't change by looking from
+      // elsewhere. Only the place fields below follow the pin.
+      tzLabel: formatUtcOffset(current.tzOffset),
+      location: captionPlace.label,
+      // The captioned place's full latitude + longitude (DMS, same format as the
+      // corner readout).
+      coordinates: `${fmtLat(captionPlace.lat)} ${fmtLng(captionPlace.lng)}`,
+      calculations: captureCalcText,
+    };
+  }, [current, captionPlace, captureCalcText]);
+  // Caption fields — only the enabled ones, in display order. The footer joins them into one
+  // line; the Transparent export stacks them one-per-line in the frame's top-left. Empty with no
+  // chart or no fields enabled (the footer then reserves no band, the top-left renders nothing).
+  const captureCaptionLines = useMemo(() => {
+    if (!captureFields) return [] as string[];
+    return (['name', 'date', 'time', 'location', 'coordinates', 'calculations'] as const)
+      .filter((k) => captureCaptionFields[k])
+      // The time field carries its UTC offset alongside it (e.g. "09:30 UTC-04:00"); every
+      // other field renders as-is. The offset is appended only here, so the filename — which
+      // reads the bare value from captureFields — never picks it up.
+      .map((k) => (k === 'time' ? `${captureFields.time} ${captureFields.tzLabel}` : captureFields[k]));
+  }, [captureFields, captureCaptionFields]);
+  // The footer's single-line form: the enabled fields joined.
+  const captureCaptionText = useMemo(
+    () => captureCaptionLines.join('  ·  '),
+    [captureCaptionLines],
+  );
+  // Download / share filename: track the FIRST shown caption field, walking the priority
+  // order name → date → time → location (calculations is intentionally skipped — too verbose
+  // for a filename). Keep walking past any field that slugs to nothing (e.g. a non-Latin
+  // name); if none of the four are shown or yield a usable slug, use a generic name.
+  const captureFileName = useMemo(() => {
+    let slug = '';
+    if (captureFields) {
+      for (const k of ['name', 'date', 'time', 'location'] as const) {
+        if (!captureCaptionFields[k]) continue;
+        slug = captureFields[k]
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+        if (slug) break;
+      }
+    }
+    return `astrolina-${slug || 'capture'}.png`;
+  }, [captureFields, captureCaptionFields]);
 
   // Publish the pin state to <html> so the single --map-accent source (index.css)
   // recolors the map chrome, and resolve that accent to a concrete color for the

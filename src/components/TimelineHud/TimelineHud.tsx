@@ -87,7 +87,7 @@ interface TimelineHudProps {
   /** The Natal-linework display toggle, relocated from Settings ▸ Display into the
    *  bar's right-side drawer. (Synastry/eclipses don't render this HUD, so they keep
    *  their own UI.) The active overlay's zenith stamps now follow the shared
-   *  Zenith/Nadirs toggle, so they need no separate control here. */
+   *  Zeniths/Nadirs toggle, so they need no separate control here. */
   showNatal: boolean;
   setShowNatal: (v: boolean) => void;
   /** Registered map extensions surfaced in THIS bar's display drawer
@@ -536,7 +536,7 @@ export function TimelineHud({
         <EyeIcon open={showNatal} />
         <span className="thud-drawer-toggle-name">{t('settings.natal.title')}</span>
       </TipButton>
-      {/* The active overlay's zenith stamps now ride the shared Zenith/Nadirs toggle
+      {/* The active overlay's zenith stamps now ride the shared Zeniths/Nadirs toggle
           (Appearance ▸ Details), so this drawer no longer carries an overlay-Zenith
           toggle — just the Natal toggle above and any drawer extensions below. */}
       {/* Extensions surfaced in this drawer (surface 'timeline-drawer') — e.g. a

@@ -12,6 +12,15 @@
    and the yellow hotkey pill. */
 .hover-tip {
   position: fixed;
+  /* REQUIRED, not cosmetic — see the matching note on .choice-tip. An abspos box with
+     `left` set and `width: auto` sizes shrink-to-fit, whose available width is
+     (containing block − left): a tip anchored to something near the right of the
+     screen gets only the strip beyond it, and that, not max-width, decides how wide
+     it can be. max-content opts out and hands control back to max-width. */
+  width: max-content;
+  /* Fallback only — the card sets its real cap inline, scaled to the length of its
+     copy (components/ui/tipWidth.ts). This value is what a card with no measurable
+     string copy (an element-valued hint) falls back to. */
   max-width: 240px;
   white-space: normal;
   pointer-events: none;
@@ -120,6 +129,25 @@
   html:not(.has-keyboard) .ui-tip-hotkey:not(.mg-gesture) {
     display: none;
   }
+}
+
+/* Grey "unavailable" badge on a tip headline — the standard marker for a control the
+   CURRENT settings have switched off: it can't be clicked, and the tip's note line says
+   which setting to change. It REPLACES the hotkey chip rather than sitting beside it (a
+   key pill on a control that won't respond is a lie), so it takes the same slot and the
+   same pill geometry — only grey, since it announces an absence rather than an action.
+   Pair it with the .ui-inert dashed outline on the control itself (see index.css). */
+.ui-hover {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(var(--tint), 0.12);
+  border: 1px solid rgba(var(--tint), 0.2);
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 /* "ADV" / gated-tier tag on a tip headline — marks the trigger as a tier-gated control.

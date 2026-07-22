@@ -14,10 +14,9 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ASTEROID_NAMES,
-  NODE_NAMES,
+  MINOR_BODIES,
   PLANET_COLORS,
-  POINTS,
+  POINT_BODIES,
   TRADITIONAL_PLANETS,
   type CoordSystem,
   type FortuneFormula,
@@ -55,18 +54,20 @@ import {
   getSettingsSections,
   isEntitled,
 } from '../../lib/extensions/settingsSection';
-import { useHoverTip } from '../ui/useHoverTip';
+import { useHoverTip, useTipEdgeNudge } from '../ui/useHoverTip';
 import { HoverTip } from '../ui/HoverTip';
+import { tipMaxWidthStyle } from '../ui/tipWidth';
 import { glyphify } from '../ui/glyphify';
 import { useT, LANGUAGES } from '../../i18n';
 import type { Locale } from '../../i18n';
 import { useTouchLayout } from '../../lib/touch';
 import './Sidebar.css';
 
-// The "Planets" filter group: the ten bodies + the two lunar nodes. Asteroids get
-// their own section (and their own independent show/hide-all). The per-body display
-// name + one-line theme now resolve from the catalog (planets.* via labels.*).
-const PLANET_FILTERS: PlanetName[] = [...TRADITIONAL_PLANETS, ...NODE_NAMES];
+// The body filter groups are the shared classes from lib/ephemeris —
+// TRADITIONAL_PLANETS / POINT_BODIES / MINOR_BODIES — so this panel groups bodies
+// the same way every other body-grouping surface does. Each section carries its own
+// independent show/hide-all (shift-click). The per-body display name + one-line
+// theme resolve from the catalog (planets.* via labels.*).
 
 interface SidebarProps {
   /** Touch only: dismiss the settings takeover (there's no `S` hotkey on a touch screen). */
@@ -233,22 +234,39 @@ function ChoiceTip({
   pos,
   title,
   hint,
+  note,
   hotkey,
   advanced,
+  unavailable,
 }: {
   pos: { left: number; top: number } | null;
   title: ReactNode;
   hint: string;
+  /** A second line under the hint — why an unavailable control is unavailable
+   *  (see .ui-inert), which ADDS to the control's normal explanation rather than
+   *  replacing it. */
+  note?: string;
   hotkey?: ReactNode;
   /** Show the "ADV" tag on the headline — marks the control as Advanced-only. */
   advanced?: boolean;
+  /** The control can't be clicked under the current settings: swap the hotkey
+   *  chip for the grey .ui-hover badge. A key pill on a control that won't
+   *  respond would be a lie, so the two never show together. */
+  unavailable?: boolean;
 }) {
+  // Same edge-nudge every other tip card gets — the sidebar is docked right and
+  // these cards pop LEFT, so a wide one near a narrow window's edge would other-
+  // wise hang off it. (Hook first: it must run on every render, tip or no tip.)
+  const cardRef = useTipEdgeNudge<HTMLSpanElement>(pos);
   if (!pos) return null;
-  const hasHeadlineExtras = hotkey != null || advanced;
+  const hasHeadlineExtras = hotkey != null || advanced || unavailable;
   return createPortal(
     <span
+      ref={cardRef}
       className="ui-tip-box ui-tip choice-tip"
-      style={{ left: pos.left, top: pos.top }}
+      // Width scales with the copy (see tipWidth) — the settings hints run from
+      // three words to a full paragraph, and one flat cap can't serve both.
+      style={{ left: pos.left, top: pos.top, ...tipMaxWidthStyle(title, hint, note) }}
       aria-hidden="true"
     >
       {hasHeadlineExtras ? (
@@ -257,13 +275,18 @@ function ChoiceTip({
         <span className="ui-tip-headline">
           <span className="ui-tip-title">{title}</span>
           {advanced && <span className="ui-tip-adv">ADV</span>}
-          {hotkey != null && <span className="ui-tip-hotkey">{hotkey}</span>}
+          {unavailable ? (
+            <span className="ui-hover">N/A</span>
+          ) : (
+            hotkey != null && <span className="ui-tip-hotkey">{hotkey}</span>
+          )}
         </span>
       ) : (
         <span className="ui-tip-title">{title}</span>
       )}
       {/* Astro symbols in the hint copy render with the bundled glyph font. */}
       <span className="ui-tip-sub">{glyphify(hint)}</span>
+      {note && <span className="ui-tip-sub ui-tip-note">{glyphify(note)}</span>}
     </span>,
     document.body,
   );
@@ -281,6 +304,7 @@ function TipToggle({
   ariaPressed,
   disabled = false,
   disabledHint,
+  advanced,
   children,
 }: {
   className: string;
@@ -292,11 +316,15 @@ function TipToggle({
   /** Optional keyboard shortcut, shown as the yellow pill in the tip. */
   hotkey?: ReactNode;
   ariaPressed?: boolean;
-  /** Grayed, non-toggling state that KEEPS its hover tip (aria-disabled, not the
-   *  native attribute, so the tip still fires) — used to explain via `disabledHint`
-   *  why a family is unavailable under the active overlay. */
+  /** THE standard unavailable state (see the .ui-inert utility): the current
+   *  settings have switched this control off, so it can't be clicked. Dimmed +
+   *  dashed, aria-disabled rather than natively disabled so the hover tip still
+   *  fires, with `disabledHint` naming the setting to change and the grey N/A
+   *  badge replacing the hotkey chip. */
   disabled?: boolean;
   disabledHint?: string;
+  /** Tag the tip's headline "ADV" (the control needs Advanced reading mode). */
+  advanced?: boolean;
   children: ReactNode;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
@@ -305,7 +333,7 @@ function TipToggle({
       <button
         ref={ref}
         type="button"
-        className={disabled ? `${className} disabled` : className}
+        className={disabled ? `${className} disabled ui-inert` : className}
         onClick={(e) =>
           disabled ? undefined : e.shiftKey && onShiftClick ? onShiftClick() : onClick()
         }
@@ -321,8 +349,11 @@ function TipToggle({
       <ChoiceTip
         pos={pos}
         title={title}
-        hint={disabled && disabledHint ? disabledHint : hint}
-        hotkey={disabled ? undefined : hotkey}
+        hint={hint}
+        note={disabled ? disabledHint : undefined}
+        hotkey={hotkey}
+        advanced={advanced}
+        unavailable={disabled}
       />
     </li>
   );
@@ -825,6 +856,9 @@ function PlanetToggle({
   onToggle,
   onShiftClick,
   theme,
+  disabled = false,
+  disabledHint,
+  advanced,
 }: {
   planet: PlanetName;
   on: boolean;
@@ -832,6 +866,15 @@ function PlanetToggle({
   /** Shift+click handler — used for "show / hide all planets". */
   onShiftClick?: () => void;
   theme: Theme;
+  /** The standard unavailable state (see .ui-inert and TipToggle's `disabled`):
+   *  the current calculation settings can't place this body, so the switch can't
+   *  be flipped either way — dimmed + dashed, with `disabledHint` naming the
+   *  setting to change. The stored preference is untouched, so it returns exactly
+   *  as the user had it once that setting changes. */
+  disabled?: boolean;
+  disabledHint?: string;
+  /** Tag the tip's headline "ADV" — the body needs Advanced reading mode. */
+  advanced?: boolean;
 }) {
   const { ref, pos, show, hide } = useHoverTip<HTMLButtonElement>();
   const { labels } = useT();
@@ -847,8 +890,11 @@ function PlanetToggle({
       <button
         ref={ref}
         type="button"
-        className={`planet-toggle ${on ? 'on' : 'off'}`}
-        onClick={(e) => (e.shiftKey && onShiftClick ? onShiftClick() : onToggle())}
+        className={`planet-toggle ${on ? 'on' : 'off'}${disabled ? ' ui-inert' : ''}`}
+        onClick={(e) =>
+          disabled ? undefined : e.shiftKey && onShiftClick ? onShiftClick() : onToggle()
+        }
+        aria-disabled={disabled || undefined}
         onMouseEnter={show}
         onMouseLeave={hide}
         onFocus={show}
@@ -871,7 +917,12 @@ function PlanetToggle({
           </span>
         }
         hint={labels.planetTheme(planet)}
+        note={disabled ? disabledHint : undefined}
+        // Shift+click can't "toggle all" through a dead switch either, so the
+        // pill gives way to the grey N/A badge.
         hotkey={<ShiftTapTag />}
+        advanced={advanced}
+        unavailable={disabled}
       />
     </li>
   );
@@ -982,13 +1033,9 @@ export function Sidebar({
   // orb editor those gate. Rows that shape what the owner drapes (planets/angles
   // filters, Fortune formula, calculation choices) stay.
   const viewParked = useViewLock() !== null;
-  // The Advanced tab under that lock: Display, Lines and Aspect orbs all park,
-  // leaving only the Fortune-formula choice — which exists in zodiacal frames
-  // alone. When nothing at all would show, the TAB parks, heading included (the
-  // empty-section rule, one level up). Keep in sync with the section conditions
-  // in the tab body below.
-  const advancedTabParked =
-    viewParked && !(lineSystem === 'geodetic' || coordSystem === 'zodiaco');
+  // (The Advanced tab itself never parks whole: Display, Lines and Aspect orbs
+  // park under the lock, but the Fortune-formula choice always stays — it shapes
+  // what the owner drapes — so the tab is never left empty.)
 
   // The plan tier, derived from the Advanced flag exactly as App derives it (a
   // downstream resolver may lift it further — see lib/plan). Gates the Calculation
@@ -999,6 +1046,20 @@ export function Sidebar({
   const gatedUnlocked = tierMet(planTier, 'gated');
   // The gated rung's compact badge — '' in builds that set no label, so guard renders.
   const gatedBadge = tierLabel('gated');
+
+  // Why the Part of Fortune filter is unavailable right now — or undefined when
+  // it works. A Lot is a point on the ecliptic with no position in the sky, so
+  // only a zodiacal frame can place it; and it belongs to Advanced reading mode,
+  // which App's own gate enforces. Either way the switch goes dead rather than
+  // pretending, while the stored preference is untouched (App parks the Lot out
+  // of the EFFECTIVE visible set, never out of the pref) — so it comes back
+  // exactly as set the moment the blocking setting changes. The standard
+  // unavailable treatment: see the .ui-inert utility.
+  const fortuneBlocked = !advUnlocked
+    ? t('settings.inert.fortuneAdvanced')
+    : lineSystem !== 'geodetic' && coordSystem !== 'zodiaco'
+      ? t('settings.inert.fortuneMundo')
+      : undefined;
 
   return (
     <aside
@@ -1141,69 +1202,68 @@ export function Sidebar({
         <div className="sidebar-section">
           <h2>{t('settings.headings.planets')}</h2>
           <ul className="planet-grid">
-            {PLANET_FILTERS.map((p) => (
+            {TRADITIONAL_PLANETS.map((p) => (
               <PlanetToggle
                 key={p}
                 planet={p}
                 on={visiblePlanets.has(p)}
                 onToggle={() => togglePlanet(p)}
                 onShiftClick={() =>
-                  setAllPlanets(PLANET_FILTERS, !visiblePlanets.has(p))
+                  setAllPlanets(TRADITIONAL_PLANETS, !visiblePlanets.has(p))
                 }
                 theme={theme}
               />
             ))}
           </ul>
 
-          <h2>{t('settings.headings.asteroids')}</h2>
+          {/* Points — the calculated positions: the lunar nodes, the lunar apogee,
+              and the Lots. The section is unconditional: every option stays listed
+              whatever the calculation settings are, and an option those settings
+              can't place goes dead-but-visible instead of vanishing (see
+              fortuneBlocked above and the .ui-inert utility). A filter list that
+              silently loses rows leaves nothing to explain the absence. */}
+          <h2>{t('settings.headings.points')}</h2>
           <ul className="planet-grid">
-            {ASTEROID_NAMES.map((p) => (
+            {POINT_BODIES.map((p) => (
+              <PlanetToggle
+                key={p}
+                planet={p}
+                on={visiblePlanets.has(p)}
+                onToggle={() => togglePlanet(p)}
+                // "Toggle all" skips a body the settings have switched off — a
+                // bulk action mustn't reach through a dead switch and rewrite the
+                // preference its own row refuses to change.
+                onShiftClick={() =>
+                  setAllPlanets(
+                    fortuneBlocked
+                      ? POINT_BODIES.filter((b) => b !== 'Fortune')
+                      : POINT_BODIES,
+                    !visiblePlanets.has(p),
+                  )
+                }
+                theme={theme}
+                disabled={p === 'Fortune' && fortuneBlocked != null}
+                disabledHint={p === 'Fortune' ? fortuneBlocked : undefined}
+                advanced={p === 'Fortune' && !advUnlocked}
+              />
+            ))}
+          </ul>
+
+          <h2>{t('settings.headings.minorBodies')}</h2>
+          <ul className="planet-grid">
+            {MINOR_BODIES.map((p) => (
               <PlanetToggle
                 key={p}
                 planet={p}
                 on={visiblePlanets.has(p)}
                 onToggle={() => togglePlanet(p)}
                 onShiftClick={() =>
-                  setAllPlanets(ASTEROID_NAMES, !visiblePlanets.has(p))
+                  setAllPlanets(MINOR_BODIES, !visiblePlanets.has(p))
                 }
                 theme={theme}
               />
             ))}
           </ul>
-
-          {/* Points (the Part of Fortune) — an advanced calculated Lot that draws
-              lines only In-Zodiaco (and geodetic, which also projects onto the
-              ecliptic). A Lot has no sky position, so In-Mundo can't place it —
-              there the whole section (heading included) is hidden, keeping the
-              filter list to what the current projection can actually draw. Because
-              the section only appears where Fortune DOES draw, its (i) hint needn't
-              explain the projection at all — just the Lot and its relocation.
-              It's also part of Advanced reading mode, so the section hides while that's
-              off (matching App's fortuneDay gate, which won't draw the Lot otherwise). */}
-          {advUnlocked && (lineSystem === 'geodetic' || coordSystem === 'zodiaco') && (
-            <>
-              <h2 className="info-heading">
-                {t('settings.headings.points')}
-                <InfoTip
-                  title={t('settings.headings.points')}
-                  hint={t('settings.points.hint')}
-                  advanced
-                />
-              </h2>
-              <ul className="planet-grid">
-                {POINTS.map((p) => (
-                  <PlanetToggle
-                    key={p}
-                    planet={p}
-                    on={visiblePlanets.has(p)}
-                    onToggle={() => togglePlanet(p)}
-                    onShiftClick={() => setAllPlanets(POINTS, !visiblePlanets.has(p))}
-                    theme={theme}
-                  />
-                ))}
-              </ul>
-            </>
-          )}
 
           <h2>{t('settings.headings.angles')}</h2>
           <ul className="line-type-grid">
@@ -1342,7 +1402,7 @@ export function Sidebar({
           frame moved to the Calculation tab, where the sidereal frames tease the
           ADV rung instead of hiding.) It appears whenever Advanced mode is on
           (showAdvancedTab), regardless of whether the expanded chart sidebar is open. */}
-      {showAdvancedTab && !advancedTabParked && (
+      {showAdvancedTab && (
         <button
           type="button"
           className="sidebar-header sidebar-header-accent sidebar-accent-advanced"
@@ -1354,7 +1414,7 @@ export function Sidebar({
         </button>
       )}
 
-      {showAdvancedTab && !advancedTabParked && openSection === 'advanced' && (
+      {showAdvancedTab && openSection === 'advanced' && (
         <div className="sidebar-section sidebar-section-accent sidebar-accent-advanced">
           {/* Display + Lines overlay toggles, consolidated into Advanced from
               the Appearance and Map-filter sections. Their Shift-key shortcuts
@@ -1536,24 +1596,31 @@ export function Sidebar({
           {/* Part of Fortune formula: the sect-based (day/night) default vs the
               fixed Ptolemaic convention — a genuine historical divide whose two
               results can land on different continents, so the choice is explicit.
-              Shown only where Fortune draws (In-Zodiaco / geodetic), matching its
-              Points filter section, so it's absent when the Lot itself is. */}
-          {(lineSystem === 'geodetic' || coordSystem === 'zodiaco') && (
-            <>
-              <h2>{t('settings.headings.fortuneFormula')}</h2>
-              <ul className="theme-list">
-                {FORTUNE_FORMULA_VALUES.map((value) => (
-                  <HintOption
-                    key={value}
-                    selected={fortuneFormula === value}
-                    onSelect={() => setFortuneFormula(value)}
-                    label={labels.fortuneFormula(value)}
-                    hint={labels.fortuneFormulaHint(value)}
-                  />
-                ))}
-              </ul>
-            </>
-          )}
+              Always shown, like its Points filter row: the convention is a stored
+              preference worth setting whether or not the current frame draws the
+              Lot. Its (i) carries what the Lot IS, how relocation treats it, and
+              which frames place it — the one explanation for both surfaces. */}
+          {/* No ADV tag on this (i): the whole tab is Advanced, so it would state the
+              obvious. The tag earns its place on the Map-filters Fortune row, which
+              sits in a tab that is NOT Advanced-only. */}
+          <h2 className="info-heading">
+            {t('settings.headings.fortuneFormula')}
+            <InfoTip
+              title={t('settings.headings.fortuneFormula')}
+              hint={t('settings.fortuneFormula.hint')}
+            />
+          </h2>
+          <ul className="theme-list">
+            {FORTUNE_FORMULA_VALUES.map((value) => (
+              <HintOption
+                key={value}
+                selected={fortuneFormula === value}
+                onSelect={() => setFortuneFormula(value)}
+                label={labels.fortuneFormula(value)}
+                hint={labels.fortuneFormulaHint(value)}
+              />
+            ))}
+          </ul>
 
           {/* The compact orb editor stands down while the Aspects window is actually
               MOUNTED (toggle on + tier reached + open) — that window lays every orb

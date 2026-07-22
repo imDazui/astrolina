@@ -447,9 +447,12 @@ html[data-mapstate='natal-pinned'] .sidebar {
 
 /* A family toggle grayed out because it isn't coherent under the active overlay
    (e.g. parans / midpoints under Cyclocartography). Non-interactive, but keeps its
-   hover tip — which explains why — since it's aria-disabled, not natively disabled. */
+   hover tip — which explains why — since it's aria-disabled, not natively disabled.
+   Dimming is deliberately NOT set here: TipToggle pairs this class with .ui-inert
+   (index.css), which owns the opacity + dashed edge so every unavailable control in
+   the app dims by the same amount. Cursor and background ARE re-stated, because at
+   equal specificity this lazily-loaded sheet outranks the shared utility. */
 .tech-toggle.disabled {
-  opacity: 0.4;
   cursor: default;
   border-color: rgba(var(--tint), 0.08);
   background: transparent;
@@ -674,7 +677,18 @@ html[data-mapstate='natal-pinned'] .sidebar {
 .choice-tip {
   position: fixed;
   transform: translate(-100%, -50%);
-  max-width: 220px;
+  /* REQUIRED, not cosmetic. This card is absolutely positioned with `left` set and
+     `width: auto`, which makes its used width shrink-to-fit — and for an abspos box
+     the "available" width in that calculation is (containing block − left), i.e. the
+     gap between the anchor and the RIGHT edge of the viewport. The sidebar is docked
+     right, so that gap is only ~250-300px and it, not max-width, was deciding how
+     wide every settings tip could be. (The card is transformed leftwards for display,
+     but the transform doesn't move the layout box the calculation uses.) Sizing to
+     max-content opts out of shrink-to-fit entirely, leaving max-width in charge. */
+  width: max-content;
+  /* Fallback only — the card sets its real cap inline, scaled to the length of its
+     copy (components/ui/tipWidth.ts). */
+  max-width: 240px;
   white-space: normal;
   pointer-events: none;
   z-index: 1000;
@@ -718,6 +732,52 @@ html[data-mapstate='natal-pinned'] .sidebar {
 
 .planet-toggle:hover {
   background: rgba(var(--tint), 0.05);
+}
+
+/* Unavailable under the current settings (.ui-inert, index.css): no pointer, no
+   hover lift, and the label struck out — the row still reveals its tip, which
+   explains itself. Cursor/background are re-stated HERE because this stylesheet
+   is a lazily-loaded chunk landing after index.css, so at equal specificity
+   `.planet-toggle`'s own values would win the cascade. */
+.planet-toggle.ui-inert,
+.tech-toggle.ui-inert {
+  cursor: default;
+}
+.planet-toggle.ui-inert:hover {
+  background: transparent;
+}
+/* The strike, shown only while the row is hovered — at rest the dimming carries
+   the state, and a permanent rule through every blocked label made the panel look
+   damaged. It is drawn as a ruled pseudo-element rather than with
+   `text-decoration: line-through`, because that decoration is positioned from the
+   font's own OS/2 strikeout metric: in the UI stack (Segoe UI on Windows) that sits
+   high, up near the top of the lowercase, so the line crossed the words rather than
+   striking through them, and CSS gives no way to move it.
+
+   --ui-strike-pos is the one number to tune by eye: a share of the label's line box
+   measured from its top. The lowercase optical middle sits BELOW the box's midpoint
+   (the box carries the ascent above it), so this is >50%.
+
+   `.name` and `.label` are the two label conventions in this panel; a host that
+   labels its rows some other way has to add itself here to get a strike. */
+.planet-toggle.ui-inert .name,
+.planet-toggle.ui-inert .label,
+.tech-toggle.ui-inert .name,
+.tech-toggle.ui-inert .label {
+  position: relative;
+}
+.planet-toggle.ui-inert:hover .name::after,
+.planet-toggle.ui-inert:hover .label::after,
+.tech-toggle.ui-inert:hover .name::after,
+.tech-toggle.ui-inert:hover .label::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--ui-strike-pos, 58%);
+  height: 1px;
+  background: currentColor;
+  pointer-events: none;
 }
 
 /* Shift-clicking a toggle (show/hide all) makes the browser treat the click as a

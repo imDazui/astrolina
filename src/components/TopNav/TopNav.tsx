@@ -809,14 +809,14 @@ export function TopNav({
     /** One-line description shown in the row's hover .ui-tip, like the Tools/Overlay menus. */
     hint?: string;
   }[] = [
-    // The built-in windows ride the DIGIT row (1-4), keeping the letter pool for
-    // tools and add-ons; the letters that remain are mnemonic (T = Sky Times,
-    // L = Local Space). Badges mirror App's keydown switch exactly.
+    // Built-in windows, on the digit row (1-3) and on mnemonic letters
+    // (T = Teleport, S = Sky Times, L = Local Space). Badges mirror App's
+    // keydown switch exactly.
     { id: 'coordinates', label: t('topNav.view.coordinates'), hint: t('topNav.view.coordinatesHint'), hotkey: '1', checked: showCoords, onToggle: () => setShowCoords(!showCoords) },
     { id: 'minimap', label: t('topNav.view.minimap'), hint: t('topNav.view.minimapHint'), hotkey: '2', checked: showChart, onToggle: () => setShowChart(!showChart) },
     { id: 'settings', label: t('topNav.view.settings'), hint: t('topNav.view.settingsHint'), hotkey: '3', checked: showSettings, onToggle: () => setShowSettings(!showSettings) },
-    { id: 'teleport', label: t('topNav.view.teleport'), hint: t('topNav.view.teleportHint'), hotkey: '4', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
-    { id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'T', tier: 'adv', checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) },
+    { id: 'teleport', label: t('topNav.view.teleport'), hint: t('topNav.view.teleportHint'), hotkey: 'T', checked: showTeleport, onToggle: () => setShowTeleport(!showTeleport) },
+    { id: 'skyTimes', label: t('topNav.view.skyTimes'), hint: t('topNav.view.skyTimesHint'), hotkey: 'S', tier: 'adv', checked: showSkyTimes, onToggle: () => setShowSkyTimes(!showSkyTimes) },
     { id: 'localSpace', label: t('topNav.view.localSpace'), hint: t('topNav.view.localSpaceHint'), hotkey: 'L', tier: 'adv', checked: showLocalSpace, onToggle: () => setShowLocalSpace(!showLocalSpace) },
     { id: 'guides', label: t('topNav.view.guides'), hint: t('topNav.view.guidesHint'), checked: showGuides, onToggle: () => setShowGuides(!showGuides) },
     { id: 'info', label: t('topNav.view.info'), hint: t('topNav.view.infoHint'), checked: showInfo, onToggle: () => setShowInfo(!showInfo) },
@@ -1061,7 +1061,7 @@ export function TopNav({
                           ? t('topNav.tools.slideHint')
                           : t('topNav.tools.slideUnavailable')
                       }
-                      hotkey="S"
+                      hotkey="E"
                       tier="adv"
                       checked={sliding}
                       disabled={!tierMet(planTier, 'adv') || !slideEnabled}

@@ -73,12 +73,12 @@ export const TRADITIONAL_PLANETS: PlanetName[] = [
   'Pluto',
 ];
 
-// Lunar nodes — points, grouped with the planets (not the asteroids) in the UI.
+// Lunar nodes — calculated points (see POINT_BODIES for the UI grouping).
 export const NODE_NAMES: PlanetName[] = ['NorthNode', 'SouthNode'];
 
-// Asteroids, plus Black Moon Lilith (a lunar apogee, grouped here with the
-// asteroids for display and listed LAST). Shown as their own "Asteroids" filter
-// section; this is also the canonical display order everywhere bodies are listed.
+// Asteroids, plus Black Moon Lilith (a lunar apogee, sampled alongside them and
+// listed LAST). This is the canonical DISPLAY order everywhere bodies are listed;
+// the filter UIs group by class instead (MINOR_BODIES / POINT_BODIES below).
 export const ASTEROID_NAMES: PlanetName[] = [
   'Chiron',
   'Ceres',
@@ -96,6 +96,19 @@ export const EXTRA_BODIES: PlanetName[] = [...NODE_NAMES, ...ASTEROID_NAMES];
 // aspected. Listed LAST in the canonical order. Extensible: further Lots join
 // here on the same plumbing.
 export const POINTS: PlanetName[] = ['Fortune'];
+
+// The body CLASSES the filter surfaces group by — physical planets
+// (TRADITIONAL_PLANETS), calculated points, physical minor bodies. Defined once
+// here so every surface that groups bodies groups them identically.
+//
+// Calculated points: the lunar nodes, Black Moon Lilith (the lunar apogee — a
+// computed point, not a body, which is why it groups here rather than with the
+// asteroids it's sampled with) and the Lots.
+export const POINT_BODIES: PlanetName[] = [...NODE_NAMES, 'Lilith', ...POINTS];
+
+// The physical minor bodies. Derived rather than listed, so a future centaur or
+// TNO joining ASTEROID_NAMES lands here on its own.
+export const MINOR_BODIES: PlanetName[] = ASTEROID_NAMES.filter((b) => b !== 'Lilith');
 
 export const PLANET_NAMES: PlanetName[] = [
   ...TRADITIONAL_PLANETS,

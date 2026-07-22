@@ -21,8 +21,8 @@ export const settings = {
     projection: 'Projection',
     language: 'Language',
     planets: 'Planets',
-    asteroids: 'Asteroids',
     points: 'Points',
+    minorBodies: 'Minor bodies',
     angles: 'Angles',
     lines: 'Lines',
     lineSystem: 'Line system',
@@ -50,7 +50,7 @@ export const settings = {
   },
   shiftTag: 'Shift',
   // The Natal-linework show/hide toggle in the timeline bar's display drawer. (The
-  // overlay's zenith stamps now ride the shared Zenith/Nadirs toggle, so there's no
+  // overlay's zenith stamps now ride the shared Zeniths/Nadirs toggle, so there's no
   // separate overlay-zenith key here anymore.)
   natal: {
     title: 'Natal Chart',
@@ -85,7 +85,7 @@ export const settings = {
       'A midpoint here would average a progressed and a transiting body into one point — incoherent across two epochs.',
   },
   zenithNadir: {
-    title: 'Zenith/Nadirs',
+    title: 'Zeniths/Nadirs',
     hint: 'Marks where each body is directly overhead (zenith — a circle on the MC line) and underfoot (nadir — a diamond on the IC line). Hover to identify, click to fly there.',
   },
   aspectOrbs: {
@@ -169,10 +169,12 @@ export const settings = {
     },
   },
 
-  // The Part of Fortune's formula (Advanced ▸ Part of Fortune). Its relocation
-  // caveat lives in the Points heading's (i) hint (points.hint), not as an inline
-  // note; the In-Mundo case needs no words — the whole Points section is hidden there.
+  // The Part of Fortune's formula (Advanced ▸ Part of Fortune). Its own heading (i)
+  // carries the ONE explanation of the Lot for the whole app — what it is, how
+  // relocation treats it, and which frames can place it — so the Points filter row
+  // needs no (i) of its own (it marks itself inert instead; see inert.fortuneMundo).
   fortuneFormula: {
+    hint: 'The Part of Fortune is a calculated Lot of vitality and worldly ease — a point on the ecliptic, not a body in the sky, so only a zodiacal frame can place it: its map lines need Line projection set to In Zodiaco (or the Mundane line system). Relocating the map pin recomputes it on the chart wheel for that place, while the map lines keep your natal Fortune.',
     sect: {
       label: 'Sect-based (day/night)',
       hint: 'Day births use Ascendant + Moon − Sun; night births flip to Ascendant + Sun − Moon. The traditional convention.',
@@ -182,8 +184,17 @@ export const settings = {
       hint: 'Ascendant + Moon − Sun for every chart, day or night. The alternative historical convention.',
     },
   },
-  points: {
-    hint: 'The Part of Fortune — a calculated Lot of vitality and worldly ease. Relocating the map pin recomputes it on the chart wheel for that place, while the map lines keep your natal Fortune.',
+  // "The current settings have switched this off" — the shared vocabulary for an
+  // unavailable control (the .ui-inert dashed look + the grey .ui-hover badge in
+  // its tip). The control can't be clicked and any stored preference is left
+  // alone; these strings say why, and NAME THE SETTING to change — a dead control
+  // that doesn't tell you what to do about it is just a dead control. Add a
+  // reason here when a new filter needs one.
+  inert: {
+    fortuneMundo:
+      'A Lot is a point on the ecliptic with no position in the sky, so In Mundo has nowhere to place it. To see this line, set the projection to In Zodiaco (Calculation).',
+    fortuneAdvanced:
+      'The Part of Fortune is an Advanced reading — turn Advanced on to use it.',
   },
 
   nodeType: {

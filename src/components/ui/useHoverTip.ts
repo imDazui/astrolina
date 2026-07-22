@@ -4,7 +4,7 @@
 // Licensed under the GNU AGPL v3.0 with an additional attribution term under
 // AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 // Touch has no hover, so a press-and-hold is the closest analog to "intent to
 // inspect": hold a trigger this long (ms) and its tip appears; release or scroll
@@ -46,6 +46,37 @@ export function tipPosFor(r: DOMRect, placement: TipPlacement): TipPos {
     return { left: r.left + r.width / 2, top: r.top - 8 };
   }
   return { left: r.left - 8, top: r.top + r.height / 2 };
+}
+
+// Margin kept between a tip card and the viewport edge when nudging it back in.
+const EDGE_MARGIN = 8;
+
+/** Edge-collision avoidance for a placed tip card. Attach the returned ref to the
+ *  card: once it's positioned (anchor + the placement transform), it's measured and,
+ *  if any side spills past the viewport, nudged back in via the CSS `translate`
+ *  PROPERTY — which composes with the placement `transform` rather than replacing
+ *  it, so one rule covers every placement with no per-placement flip logic.
+ *
+ *  Runs in a layout effect (before paint, so there's no visible jump) and works
+ *  imperatively (no setState → no extra render). Shared by every tip card, so a
+ *  wide card can't hang off-screen on one surface and behave on another. */
+export function useTipEdgeNudge<T extends HTMLElement>(pos: TipPos | null) {
+  const ref = useRef<T>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !pos) return;
+    el.style.translate = ''; // measure the natural placement, free of a prior nudge
+    const r = el.getBoundingClientRect();
+    const m = EDGE_MARGIN;
+    let dx = 0;
+    let dy = 0;
+    if (r.left < m) dx = m - r.left;
+    else if (r.right > window.innerWidth - m) dx = window.innerWidth - m - r.right;
+    if (r.top < m) dy = m - r.top;
+    else if (r.bottom > window.innerHeight - m) dy = window.innerHeight - m - r.bottom;
+    if (dx || dy) el.style.translate = `${dx}px ${dy}px`;
+  }, [pos]);
+  return ref;
 }
 
 // Bind "hold to reveal" tip behavior to a DOM element — the shared touch kernel for

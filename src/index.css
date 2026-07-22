@@ -597,6 +597,26 @@ body,
   }
 }
 
+/* ── Inert utility ──────────────────────────────────────────────────────────
+   The standard "the current settings have switched this off" state: a control
+   that can't be clicked because something else has to change first. At rest the
+   dimming alone carries it — no border or outline, which at this control size read
+   as clutter rather than as a state. Hovering adds a strike through the label and
+   raises the tip that does the real explaining: the grey .ui-hover badge in place
+   of the hotkey chip (see HoverTip.css) and a note line naming the setting to
+   change. A stored preference underneath is left alone — turning the blocking
+   setting back on returns the control as it was.
+
+   Carries the DIMMING only: the host does the rest — stop the click and set
+   aria-disabled (see TipToggle / PlanetToggle in Sidebar.tsx), and draw the
+   hover strike on its own label element (`.planet-toggle.ui-inert` in Sidebar.css,
+   which also explains why the strike is a ruled pseudo-element rather than
+   `text-decoration: line-through`). */
+.ui-inert {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* The permanent top-left column: the profile strip, then the coordinates
    readout beneath it when shown. The wrapper owns the screen position, so the
    two panels stack with a gap and the column collapses when coordinates are off.
@@ -746,6 +766,14 @@ html[data-mapstate='natal-pinned'] .app-header {
 .ui-tip-sub {
   font-size: 10px;
   color: var(--text-muted);
+}
+/* An added-on second line beneath the body text — used for the reason an inert
+   control is unavailable (see .ui-inert). Set apart from the explanation it
+   follows rather than replacing it. Sits after .ui-tip-sub so it wins the colour. */
+.ui-tip-note {
+  margin-top: 5px;
+  color: var(--text-faint);
+  font-style: italic;
 }
 
 /* Dotted grab handle shared by the movable HUD bars (the timeline nub + the
