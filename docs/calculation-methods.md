@@ -176,40 +176,47 @@ Conventions:
 
 ## Rulerships (traditional vs modern)
 
-**Settings ▸ Calculation ▸ Rulerships** decides which table the **essential
-dignity** read under the chart wheel's *Balance* panel uses — the only consumer
-of rulership in the app. Advanced only, like the dignity list itself.
+**Settings ▸ Calculation ▸ Rulerships** decides which rulership table the
+**essential dignity** read under the chart wheel's *Balance* panel uses — the only
+consumer of rulership in the app. Advanced only, like the dignity list itself.
+Two values, stored in `astro:rulership:v1`: `modern` (the default) and
+`traditional`.
 
-The two schools agree about nine signs and split over three:
+**The modern scheme ADDS; it does not replace.** Three signs gain a second ruler,
+and the classical one keeps its claim:
 
-| Sign | Traditional | Modern |
+| Sign | Classical ruler | Modern ruler |
 |---|---|---|
-| Scorpio | Mars | Pluto |
-| Aquarius | Saturn | Uranus |
-| Pisces | Jupiter | Neptune |
+| Scorpio | Mars | *and* Pluto |
+| Aquarius | Saturn | *and* Uranus |
+| Pisces | Jupiter | *and* Neptune |
 
 Conventions:
 
-- **Detriment follows rulership, so the choice moves it too.** This is the half
-  that surprises people. Traditional Mars rules Scorpio, so it is in detriment in
-  **Taurus** as well as Libra; modern Mars rules Aries alone and Taurus costs it
-  nothing — the detriment there is Pluto's. The same holds for Saturn/Uranus in
-  Leo and Jupiter/Neptune in Virgo.
-- **Under Traditional the outer three have no essential dignity at all** and drop
-  out of the list, rather than appearing in it undignified.
-- **Both** is the union of the two tables, and is the default — it is what the
-  app did when the tables were merged and the scheme was not a choice, so an
-  existing install's reading does not move on upgrade. A rulership or detriment
-  that only ONE school grants is labelled with that school in the list; where the
-  two agree (Mars in Aries, Mars in Libra) nothing is appended, because naming a
-  school there would imply a choice that was not made.
-- **Exaltations are the seven classical ones under every scheme.** The moderns
-  assign the outer planets no exaltation, so Modern is deliberately lopsided:
-  Uranus, Neptune and Pluto can hold rulership and detriment but never exaltation
-  or fall.
-- **Independent of the zodiac mode.** Sidereal shifts which sign a body is in,
-  not which planet rules that sign, and sidereal + modern rulers is unusual rather
-  than invalid — so the two settings are not coupled.
+- **Detriment does not move with the choice.** Detriment is the sign opposite one
+  the planet rules, so *both* rulers of a shared sign are in detriment opposite it:
+  Mars **and** Pluto in Taurus, Saturn **and** Uranus in Leo, Jupiter **and**
+  Neptune in Virgo. Mars is in detriment in Taurus under either scheme, because
+  Mars rules Scorpio under either scheme.
+- **Traditional only ever REMOVES the outer three's rows.** No classical planet's
+  dignity differs between the two schemes — verified exhaustively over all seven
+  classical bodies × twelve signs. That is the whole difference, and it is why
+  there are two values here and not three.
+- **`modern` is the default** because it is what the app did when the scheme was
+  not a choice: the table that shipped was the classical seven plus the outer
+  three, which is precisely this. No existing install's reading moves.
+- **Rows on the three shared signs name their era** (`rulership (traditional)` /
+  `rulership (modern)`) so Mars and Pluto in Scorpio can be told apart. Only under
+  `modern`, and only where the sign genuinely has a ruler from each era — for a
+  detriment that test is on the sign actually RULED, so Venus in Scorpio stays
+  unlabelled (it is in detriment there for ruling Taurus, which no outer planet
+  claims, and has nothing to do with the Mars/Pluto pair).
+- **Exaltations are the seven classical ones under both schemes**, and the setting
+  does not touch them. The moderns assign the outer planets no exaltation, so those
+  three can hold rulership and detriment but never exaltation or fall.
+- **Independent of the zodiac mode.** Sidereal shifts which sign a body is in, not
+  which planet rules that sign, and sidereal + modern rulers is unusual rather than
+  invalid — so the two settings are not coupled.
 
 ## Relationship charts (Davison & Composite)
 

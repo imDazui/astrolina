@@ -240,9 +240,9 @@ interface ExpandedChartSidebarProps {
   localSpaceGated?: boolean;
   /** Per-aspect orb limits (Advanced ▸ Aspect orbs) for the grid + wheel lines. */
   aspectOrbs: AspectOrbs;
-  /** Which school's rulerships the essential-dignity list reads (Settings ▸
-   *  Calculation ▸ Rulerships). Under 'both' a dignity granted by only one of
-   *  the two tables is labelled with that school — see the list below. */
+  /** Which rulership table the essential-dignity list reads (Settings ▸ Calculation
+   *  ▸ Rulerships). Under 'modern' the three signs with a ruler from each era label
+   *  their rows with the era — see the list below. */
   rulershipScheme: RulershipScheme;
   /** The Advanced reading mode (degree rim, aspect grid, coordinate tables). The
    *  NEW/ADV cue below the Hide button toggles it (the profile plan tag does too). */
@@ -2140,8 +2140,8 @@ export function ExpandedChartSidebar({
               }))
               .filter((x): x is typeof x & { d: DignityResult } => x.d !== null)
           : [];
-        // Only the Both scheme can attribute a dignity to one school, and only then
-        // do the rows need the extra width for the suffix.
+        // Only Modern can attribute a row to an era (Traditional has no modern claim
+        // to distinguish it from), and only then do the rows need the extra width.
         const attributed = dignified.some((x) => x.d.from !== null);
         const elementSegs = (['fire', 'earth', 'air', 'water'] as const).map(
           (e) => ({

@@ -30,15 +30,21 @@ export function HoverTip({
   placement = 'left',
   title,
   hint,
+  note,
   hotkey,
   advanced,
   gated,
+  unavailable,
   className,
 }: {
   pos: TipPos | null;
   placement?: TipPlacement;
   title: ReactNode;
   hint?: ReactNode;
+  /** A second line under the hint — why an unavailable control is unavailable (see
+   *  .ui-inert), which ADDS to the control's normal explanation rather than
+   *  replacing it. Name the setting to change, not just the fact of the block. */
+  note?: ReactNode;
   hotkey?: ReactNode;
   /** Show an "ADV" tag on the headline — marks the trigger as an Advanced-only control. */
   advanced?: boolean;
@@ -46,6 +52,10 @@ export function HoverTip({
    *  its top rung via setGatedTierLabel — see lib/plan) — marks the trigger as a
    *  gated-tier control. */
   gated?: boolean;
+  /** The control can't be clicked under the current settings: swap the hotkey chip
+   *  for the grey .ui-hover badge. A key pill on a control that won't respond would
+   *  be a lie, so the two never show together. */
+  unavailable?: boolean;
   /** Extra class on the card — a themed surface (e.g. a dark viewport bar) can
    *  re-skin its tips to match its own chrome instead of the shared card. */
   className?: string;
@@ -55,13 +65,14 @@ export function HoverTip({
   if (!pos) return null;
   const hasHint = hint != null && hint !== '';
   const hasHotkey = hotkey != null && hotkey !== '';
+  const hasNote = note != null && note !== '';
   return createPortal(
     <span
       ref={cardRef}
       className={`ui-tip-box ui-tip hover-tip hover-tip-${placement}${className ? ` ${className}` : ''}`}
       // Width scales with the copy (see tipWidth) — a long hint would otherwise
       // wrap into a tall skinny column at the old flat cap.
-      style={{ left: pos.left, top: pos.top, ...tipMaxWidthStyle(title, hint) }}
+      style={{ left: pos.left, top: pos.top, ...tipMaxWidthStyle(title, hint, note) }}
       aria-hidden="true"
     >
       <span className="ui-tip-headline">
@@ -72,12 +83,21 @@ export function HoverTip({
         {gated && shouldShowTierBadge('gated') && (
           <span className="ui-tip-gated">{tierLabel('gated')}</span>
         )}
-        {hasHotkey && <span className="ui-tip-hotkey">{hotkey}</span>}
+        {unavailable ? (
+          <span className="ui-hover">N/A</span>
+        ) : (
+          hasHotkey && <span className="ui-tip-hotkey">{hotkey}</span>
+        )}
       </span>
       {/* String hints get their astro symbols re-rendered in the glyph font. */}
       {hasHint && (
         <span className="ui-tip-sub">
           {typeof hint === 'string' ? glyphify(hint) : hint}
+        </span>
+      )}
+      {hasNote && (
+        <span className="ui-tip-sub ui-tip-note">
+          {typeof note === 'string' ? glyphify(note) : note}
         </span>
       )}
     </span>,
@@ -91,9 +111,11 @@ export function HoverTip({
 export function TipButton({
   tip,
   hint,
+  note,
   hotkey,
   advanced,
   gated,
+  unavailable,
   placement = 'bottom',
   tipClassName,
   children,
@@ -101,9 +123,15 @@ export function TipButton({
 }: {
   tip: ReactNode;
   hint?: ReactNode;
-  hotkey?: string;
+  /** The unavailable-state second line — see HoverTip's `note`. */
+  note?: ReactNode;
+  /** ReactNode, not string: a cycling control's chip is a component (ui/CycleHotkey),
+   *  and the card has always accepted one. */
+  hotkey?: ReactNode;
   advanced?: boolean;
   gated?: boolean;
+  /** Swap the hotkey chip for the grey N/A badge — see HoverTip's `unavailable`. */
+  unavailable?: boolean;
   placement?: TipPlacement;
   /** Forwarded to the card (HoverTip className) — lets a themed surface skin its tips. */
   tipClassName?: string;
@@ -127,9 +155,11 @@ export function TipButton({
         placement={placement}
         title={tip}
         hint={hint}
+        note={note}
         hotkey={hotkey}
         advanced={advanced}
         gated={gated}
+        unavailable={unavailable}
         className={tipClassName}
       />
     </>

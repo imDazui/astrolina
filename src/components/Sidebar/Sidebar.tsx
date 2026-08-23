@@ -49,6 +49,7 @@ import { planTierFor, tierMet, tierLabel, shouldShowTierBadge, shouldShowNudge, 
 import { EyeIcon } from '../ui/EyeIcon';
 import { SpyIcon } from '../ui/SpyIcon';
 import { CycleHotkey } from '../ui/CycleHotkey';
+import { SplitSelect } from '../ui/SplitSelect';
 import {
   getSettingsSections,
   isEntitled,
@@ -205,9 +206,9 @@ const HOUSE_SYSTEM_VALUES: HouseSystem[] = [
 
 const NODE_TYPE_VALUES: NodeType[] = ['true', 'mean'];
 
-// Single schools first, the union last: 'both' is the default, but it is the
-// compound answer and reads as one only after the two it compounds.
-const RULERSHIP_SCHEME_VALUES: RulershipScheme[] = ['traditional', 'modern', 'both'];
+// Oldest first, which is also narrowest first: Modern is the classical table
+// plus the outer three, so it reads as an extension of the row above it.
+const RULERSHIP_SCHEME_VALUES: RulershipScheme[] = ['traditional', 'modern'];
 
 // (The arc/angle and Pri.-directions Rate orderings used to live here and be exported,
 // from when this panel drew those dropdowns. All three controls are on the timeline bar
@@ -1246,18 +1247,18 @@ export function Sidebar({
                   hint={t('settings.projection.hint')}
                 />
               </h2>
-              <ul className="theme-list">
-                {PROJECTION_VALUES.map((value) => (
-                  <HintOption
-                    key={value}
-                    selected={projection === value}
-                    onSelect={() => setProjection(value)}
-                    label={labels.projection(value)}
-                    hint={labels.projectionHint(value)}
-                    hotkey={<CycleHotkey label="Shift F" />}
-                  />
-                ))}
-              </ul>
+              <SplitSelect
+                ariaLabel={t('settings.headings.projection')}
+                value={projection}
+                onSelect={setProjection}
+                options={PROJECTION_VALUES.map((value) => ({
+                  value,
+                  label: labels.projection(value),
+                  tip: labels.projection(value),
+                  hint: labels.projectionHint(value),
+                  hotkey: <CycleHotkey label="Shift F" />,
+                }))}
+              />
             </>
           )}
 
@@ -1420,27 +1421,34 @@ export function Sidebar({
           {/* Named so the auto-flip notice can point here when it reports a line-system
               change and this panel happens to be open (lib/autoFlipNotice). A styling
               hook would be wrong — this is an identity, and it must survive a reskin. */}
-          <ul className="theme-list" data-autoflip="line-system">
-            {/* Geodetic (Mundane) is tropical-only, so a sidereal zodiac makes it
-                unavailable — shown INERT rather than filtered out. Removing it left a
-                user who had Mundane selected watching it vanish with nothing to read
-                and no way back; the disabled row names the setting to change, and the
-                stored choice is only masked, so reverting to tropical restores it. */}
-            {LINE_SYSTEM_VALUES.map((value) => {
+          {/* Geodetic (Mundane) is tropical-only, so a sidereal zodiac makes it
+              unavailable — shown INERT rather than filtered out. Removing it left a
+              user who had Mundane selected watching it vanish with nothing to read
+              and no way back; the dimmed half names the setting to change, and the
+              stored choice is only masked, so reverting to tropical restores it.
+              (The half never reads as SELECTED while blocked: `lineSystem` here is
+              the derived value, which is already 'celestial' under sidereal.) */}
+          <SplitSelect
+            // Named so the auto-flip notice can point here when it reports a
+            // line-system change and this panel happens to be open (lib/autoFlipNotice).
+            data-autoflip="line-system"
+            ariaLabel={t('settings.headings.lineSystem')}
+            value={lineSystem}
+            onSelect={setLineSystem}
+            options={LINE_SYSTEM_VALUES.map((value) => {
               const unavailable = value === 'geodetic' && siderealActive;
-              return (
-                <HintOption
-                  key={value}
-                  selected={lineSystem === value}
-                  onSelect={() => setLineSystem(value)}
-                  label={labels.lineSystem(value)}
-                  hint={labels.lineSystemHint(value)}
-                  disabled={unavailable}
-                  disabledHint={unavailable ? t('settings.inert.geodeticSidereal') : undefined}
-                />
-              );
+              return {
+                value,
+                label: labels.lineSystem(value),
+                tip: labels.lineSystem(value),
+                hint: labels.lineSystemHint(value),
+                disabled: unavailable,
+                disabledHint: unavailable
+                  ? t('settings.inert.geodeticSidereal')
+                  : undefined,
+              };
             })}
-          </ul>
+          />
 
           {lineSystem === 'celestial' && (
             <>
@@ -1511,9 +1519,12 @@ export function Sidebar({
             </>
           )}
 
-          {/* Rulerships: which school owns Scorpio, Aquarius and Pisces. It belongs
-              on this tab because that is what it is — a school, like the house system
-              above it — but it does NOT tease the ADV rung the way those two do. Its
+          {/* Rulerships: whether the outer three are read as rulers of Scorpio,
+              Aquarius and Pisces beside the classical seven. An ordinary two-row
+              list, like Lunar node above it — the capsule is reserved for elsewhere.
+              It belongs on this tab because that is what it is — a school, like the
+              house system above it — but it does NOT tease the ADV rung the way
+              those two do. Its
               only consumer is the essential-dignity list in the expanded wheel, which
               isn't drawn below that rung at all, so a nudge here would advertise a
               control whose effect the reader still couldn't see after taking it. The

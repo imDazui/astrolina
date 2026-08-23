@@ -137,7 +137,7 @@ export const expandedSidebar = {
 
   // Balance section: element/modality glyph constellations (always shown) +
   // essential dignities (Advanced) over the bodies the map filter shows. The
-  // dignities read whichever rulership school Settings ▸ Calculation is set to.
+  // dignities read whichever rulership table Settings ▸ Calculation is set to.
   balanceHeading: 'Balance',
   balanceTip: 'Chart balance',
   balanceHint: 'How the shown bodies spread across the four elements (fire, earth, air, water) and three modalities (cardinal, fixed, mutable) — a quick read of where the chart’s emphasis lies.',

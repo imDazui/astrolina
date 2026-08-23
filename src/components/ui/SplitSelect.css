@@ -1,0 +1,144 @@
+/* AstroLina: web-based astrocartography for curious minds.
+   Copyright (C) 2026 AstroLina <https://astrolina.org>
+   SPDX-License-Identifier: AGPL-3.0-only
+   Licensed under the GNU AGPL v3.0 with an additional attribution term under
+   AGPL section 7(b). See the LICENSE and NOTICE files; this notice must be kept. */
+
+/* One capsule, divided by the bubble itself — a recessed track with a raised half.
+   No drawn divider: with a bubble on one side and a flat, quieter half on the
+   other, a hairline between them was one mark more than the shape needed.
+   The track is PADDED so the bubble never reaches the outer edge; that inset is
+   the whole illusion, and it is why the track does not clip its children (a
+   bubble's shadow has to escape its box). */
+.split-select {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  width: 100%;
+  padding: 2px;
+  border: 1px solid rgba(var(--tint), 0.2);
+  border-radius: 999px;
+  background: rgba(var(--tint), 0.06);
+}
+
+.split-select-seg {
+  flex: 1 1 0;
+  min-width: 0; /* let a long label ellipsize rather than widen its half */
+  height: 24px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background var(--dur-quick), color var(--dur-quick),
+    box-shadow var(--dur-quick), transform var(--dur-quick) var(--ease-settle);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Background only, exactly as .theme-option:hover does it. Lifting the TEXT here
+   was tried and rejected against the real render: it pushed the UNSELECTED half to
+   the same weight as the live one beside it, which is the one thing this control
+   must never say. */
+.split-select-seg:hover {
+  background: rgba(var(--tint), 0.07);
+}
+
+/* Live: a raised bubble. The text goes to --text-strong rather than the accent —
+   the FILL carries which half is chosen, so the label is free to stay at full
+   legibility (and --text-strong is the theme's own foreground, so this reads white
+   on the dark themes and dark on the light one, not a hardcoded white). The shadow
+   pair is what lifts it: a cast shadow below, a hairline highlight along the top.
+
+   The fill sits at 0.44 rather than the 0.28 it started at: at the lower value the
+   gold went muddy-olive against the dark themes' near-black instead of reading as a
+   lit surface. Raising it costs some label contrast — the text is light and so is
+   the fill — which is why it stops here rather than going further; past about 0.5
+   the fill starts competing with the word sitting on it.
+
+   The highlight is a literal white, NOT rgba(var(--tint), …). --tint is the theme's
+   contrast ink, and on the light theme it is a dark slate — so the "highlight" drew
+   a dark line along the top edge there, which is a shadow, not a light. White is
+   what a top edge catching the light actually is, and it simply goes invisible on a
+   pale fill rather than inverting. */
+.split-select-seg.is-on {
+  color: var(--text-strong);
+  background: rgba(var(--accent-rgb), 0.44);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.split-select-seg.is-on:hover {
+  background: rgba(var(--accent-rgb), 0.54);
+}
+
+/* The press itself — the bubble squashes under the finger and springs back on
+   --ease-settle. Both halves get it: pressing the live one is as much a press. */
+.split-select-seg:active {
+  transform: scale(0.94);
+}
+
+/* Unavailable (.ui-inert carries the dimming; this stops the control REACTING).
+   Both are needed: a half that lights up under the cursor and then does nothing
+   reads as a broken button rather than a blocked one. */
+.split-select-seg.ui-inert,
+.split-select-seg.ui-inert:hover {
+  background: transparent;
+  cursor: default;
+}
+
+.split-select-seg.ui-inert.is-on,
+.split-select-seg.ui-inert.is-on:hover {
+  background: rgba(var(--accent-rgb), 0.44);
+}
+
+.split-select-seg.ui-inert:active {
+  transform: none;
+}
+
+/* The strike, shown only while the blocked half is hovered — at rest the dimming
+   carries the state, exactly as it does on the sidebar's rows, and a permanent rule
+   through a blocked label makes a panel look damaged rather than blocked.
+   A ruled pseudo-element rather than `text-decoration: line-through`, for the reason
+   spelled out at .planet-toggle.ui-inert in Sidebar.css: that decoration is placed
+   from the font's own strikeout metric, which in the UI stack sits high enough to
+   cross the words instead of striking them. Same --ui-strike-pos hook, same default,
+   so every struck label in the app moves together. */
+.split-select-seg.ui-inert .split-select-label {
+  position: relative;
+}
+
+.split-select-seg.ui-inert:hover .split-select-label::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--ui-strike-pos, 58%);
+  height: 1px;
+  background: currentColor;
+  pointer-events: none;
+}
+
+/* Inset so the ring isn't lost against the track's own edge. */
+.split-select-seg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .split-select-seg {
+    transition: none;
+  }
+  .split-select-seg:active {
+    transform: none;
+  }
+}

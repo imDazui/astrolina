@@ -228,23 +228,21 @@ export const settings = {
     },
   },
 
-  // Which school's rulerships the essential-dignity list reads. The two agree about
-  // nine signs and split over three, and the split is not only about who rules them:
-  // detriment follows rulership, so it moves too. The control hint says both halves,
-  // because the second is the one nobody expects.
+  // Which rulership table the essential-dignity list reads. Two values, not three:
+  // the modern scheme ADDS the outer three to the classical table rather than
+  // replacing anything, so Mars keeps Scorpio beside Pluto and both are in
+  // detriment in Taurus. Choosing Traditional only ever removes the outer
+  // planets' rows — no classical planet's dignity moves either way, which is the
+  // thing the control hint has to say, because the two labels imply otherwise.
   rulership: {
-    hint: 'The three signs the two schools split over: Scorpio, Aquarius and Pisces. The choice moves the detriments along with the rulerships — traditional Mars is in detriment in Taurus, modern Mars is not — and it decides whether the outer planets carry essential dignity at all. Read in the chart wheel’s Balance panel.',
+    hint: 'Which rulership table the chart wheel’s essential-dignity read uses. Modern ADDS the outer three rather than replacing anyone: Mars keeps Scorpio beside Pluto, and both are in detriment in Taurus opposite it. Choosing Traditional drops the outer planets’ rows and changes nothing else in the list.',
     traditional: {
       label: 'Traditional',
-      hint: 'Mars rules Scorpio, Saturn Aquarius, Jupiter Pisces — the seven-planet scheme. Uranus, Neptune and Pluto rule nothing, so they carry no dignity at all.',
+      hint: 'The seven-planet table alone — Mars rules Scorpio, Saturn Aquarius, Jupiter Pisces. Uranus, Neptune and Pluto rule nothing, so they carry no dignity.',
     },
     modern: {
       label: 'Modern',
-      hint: 'Pluto rules Scorpio, Uranus Aquarius, Neptune Pisces. Mars, Saturn and Jupiter keep one sign each, and lose the detriment that came with the second.',
-    },
-    both: {
-      label: 'Both',
-      hint: 'Co-rulership: those three signs have two rulers each, and the list names which school grants which. The app’s original reading, and its default.',
+      hint: 'The same seven, plus Pluto in Scorpio, Uranus in Aquarius and Neptune in Pisces. Those three signs have two rulers, and each row names its era.',
     },
   },
   // "The current settings have switched this off" — the shared vocabulary for an

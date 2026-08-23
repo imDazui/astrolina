@@ -702,14 +702,19 @@ export default function App() {
   const [nodeType, setNodeType] = useState<NodeType>(() =>
     localStorage.getItem('astro:node-type:v1') === 'mean' ? 'mean' : 'true',
   );
-  // Which school's rulerships the essential-dignity read uses. 'both' is the
-  // default because it is what the app did before this was a choice — the two
-  // tables were merged — so an existing install's dignity list does not move
-  // under it on upgrade. A plain preference: no combination of settings makes a
-  // scheme invalid, so there is nothing here to derive or mask.
+  // Which rulership table the essential-dignity read uses (Settings ▸ Calculation ▸
+  // Rulerships). 'modern' is the default because it is what the app did before this
+  // was a choice — the modern scheme is the classical table PLUS the outer three,
+  // which is exactly the merged table that shipped — so an existing install's
+  // dignity list does not move under it. A plain preference: neither value is ever
+  // invalid, so there is nothing here to derive or mask.
   const [rulershipScheme, setRulershipScheme] = useState<RulershipScheme>(() => {
-    const v = localStorage.getItem('astro:rulership:v1');
-    return v === 'traditional' || v === 'modern' ? v : 'both';
+    // Anything but 'traditional' resolves to 'modern' — the default doubles as the
+    // fallback, so an unreadable or unrecognised stored value lands on the reading
+    // the app has always given rather than silently switching schools.
+    return localStorage.getItem('astro:rulership:v1') === 'traditional'
+      ? 'traditional'
+      : 'modern';
   });
   // The STORED line-system choice. Consumers read the derived `lineSystem` below, not
   // this — the geodetic mapping is tropical-only, so a sidereal zodiac masks it. Masking
