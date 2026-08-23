@@ -197,6 +197,7 @@ import {
 } from './lib/astro/ayanamsa';
 import { activeReturnBody, findReturn, type ReturnBody } from './lib/astro/returns';
 import { buildLineCard, type LineCardDistance } from './lib/lineCard';
+import type { RulershipScheme } from './lib/astro/dignities';
 import { generateOrbBands } from './lib/astro/orbBands';
 import { generateStarLines, starsOfDate } from './lib/astro/starLines';
 import { generateNightShade } from './lib/astro/nightShade';
@@ -701,6 +702,15 @@ export default function App() {
   const [nodeType, setNodeType] = useState<NodeType>(() =>
     localStorage.getItem('astro:node-type:v1') === 'mean' ? 'mean' : 'true',
   );
+  // Which school's rulerships the essential-dignity read uses. 'both' is the
+  // default because it is what the app did before this was a choice — the two
+  // tables were merged — so an existing install's dignity list does not move
+  // under it on upgrade. A plain preference: no combination of settings makes a
+  // scheme invalid, so there is nothing here to derive or mask.
+  const [rulershipScheme, setRulershipScheme] = useState<RulershipScheme>(() => {
+    const v = localStorage.getItem('astro:rulership:v1');
+    return v === 'traditional' || v === 'modern' ? v : 'both';
+  });
   // The STORED line-system choice. Consumers read the derived `lineSystem` below, not
   // this — the geodetic mapping is tropical-only, so a sidereal zodiac masks it. Masking
   // rather than rewriting is the point: sidereal is a standing condition, and when it
@@ -1832,6 +1842,9 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('astro:node-type:v1', nodeType);
   }, [nodeType]);
+  useEffect(() => {
+    localStorage.setItem('astro:rulership:v1', rulershipScheme);
+  }, [rulershipScheme]);
   // The PREFERENCE, never the derived value. Persisting the derived one would write
   // 'celestial' the moment a sidereal zodiac masks a geodetic choice — quietly
   // destroying it, and only visibly so in the NEXT session.
@@ -5636,6 +5649,8 @@ export default function App() {
           setZodiacMode={setZodiacModeSafe}
           nodeType={nodeType}
           setNodeType={setNodeType}
+          rulershipScheme={rulershipScheme}
+          setRulershipScheme={setRulershipScheme}
           theme={theme}
           setTheme={setTheme}
           projection={projection}
@@ -6074,6 +6089,7 @@ export default function App() {
           localSpaceGated={lsActive && !promoteOverlay && !gatedTierMet}
           localSpaceRelocated={localSpaceRelocated}
           aspectOrbs={effAspectOrbs}
+          rulershipScheme={rulershipScheme}
           advanced={advancedWheel}
           setAdvanced={setAdvancedMode}
           dualWheels={dualWheels}

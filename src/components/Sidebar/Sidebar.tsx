@@ -44,6 +44,7 @@ import {
 } from '../../lib/overlayPrefs';
 import { setDiscreet, useDiscreet } from '../../lib/discreet';
 import type { ZodiacMode } from '../../lib/astro/ayanamsa';
+import type { RulershipScheme } from '../../lib/astro/dignities';
 import { planTierFor, tierMet, tierLabel, shouldShowTierBadge, shouldShowNudge, nudgeAction, type PlanTier } from '../../lib/plan';
 import { EyeIcon } from '../ui/EyeIcon';
 import { SpyIcon } from '../ui/SpyIcon';
@@ -135,6 +136,10 @@ interface SidebarProps {
   showAdvancedTab: boolean;
   nodeType: NodeType;
   setNodeType: (n: NodeType) => void;
+  /** Which school's rulerships the essential-dignity list reads. Its only consumer
+   *  is that list, which is Advanced-only — hence the row's own gate below. */
+  rulershipScheme: RulershipScheme;
+  setRulershipScheme: (s: RulershipScheme) => void;
   theme: Theme;
   setTheme: (t: Theme) => void;
   projection: MapProjectionMode;
@@ -199,6 +204,10 @@ const HOUSE_SYSTEM_VALUES: HouseSystem[] = [
 ];
 
 const NODE_TYPE_VALUES: NodeType[] = ['true', 'mean'];
+
+// Single schools first, the union last: 'both' is the default, but it is the
+// compound answer and reads as one only after the two it compounds.
+const RULERSHIP_SCHEME_VALUES: RulershipScheme[] = ['traditional', 'modern', 'both'];
 
 // (The arc/angle and Pri.-directions Rate orderings used to live here and be exported,
 // from when this panel drew those dropdowns. All three controls are on the timeline bar
@@ -1037,6 +1046,8 @@ export function Sidebar({
   showAdvancedTab,
   nodeType,
   setNodeType,
+  rulershipScheme,
+  setRulershipScheme,
   theme,
   setTheme,
   projection,
@@ -1497,6 +1508,40 @@ export function Sidebar({
                 tier="adv"
                 locked={!advUnlocked}
               />
+            </>
+          )}
+
+          {/* Rulerships: which school owns Scorpio, Aquarius and Pisces. It belongs
+              on this tab because that is what it is — a school, like the house system
+              above it — but it does NOT tease the ADV rung the way those two do. Its
+              only consumer is the essential-dignity list in the expanded wheel, which
+              isn't drawn below that rung at all, so a nudge here would advertise a
+              control whose effect the reader still couldn't see after taking it. The
+              stored preference is left alone either way; nothing masks it, because no
+              combination of settings makes a scheme invalid.
+              No ADV tag on the (i): the row only exists above the rung, so it would
+              state the obvious — the same reason the Advanced tab's Fortune (i) has
+              none, inverted. */}
+          {advUnlocked && (
+            <>
+              <h2 className="info-heading">
+                {t('settings.headings.rulerships')}
+                <InfoTip
+                  title={t('settings.headings.rulerships')}
+                  hint={t('settings.rulership.hint')}
+                />
+              </h2>
+              <ul className="theme-list">
+                {RULERSHIP_SCHEME_VALUES.map((value) => (
+                  <HintOption
+                    key={value}
+                    selected={rulershipScheme === value}
+                    onSelect={() => setRulershipScheme(value)}
+                    label={t(`settings.rulership.${value}.label`)}
+                    hint={t(`settings.rulership.${value}.hint`)}
+                  />
+                ))}
+              </ul>
             </>
           )}
         </div>

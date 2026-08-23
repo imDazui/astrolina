@@ -59,7 +59,8 @@ import {
   signElement,
   signIndex,
   signModality,
-  type Dignity,
+  type DignityResult,
+  type RulershipScheme,
 } from '../../lib/astro/dignities';
 import { ELEMENT_GLYPHS, MODALITY_GLYPHS } from '../../lib/astro/glyphChars';
 import { lonToZodiac, planetRank, visibleAngleSpecs } from '../../lib/astro/format';
@@ -239,6 +240,10 @@ interface ExpandedChartSidebarProps {
   localSpaceGated?: boolean;
   /** Per-aspect orb limits (Advanced ▸ Aspect orbs) for the grid + wheel lines. */
   aspectOrbs: AspectOrbs;
+  /** Which school's rulerships the essential-dignity list reads (Settings ▸
+   *  Calculation ▸ Rulerships). Under 'both' a dignity granted by only one of
+   *  the two tables is labelled with that school — see the list below. */
+  rulershipScheme: RulershipScheme;
   /** The Advanced reading mode (degree rim, aspect grid, coordinate tables). The
    *  NEW/ADV cue below the Hide button toggles it (the profile plan tag does too). */
   advanced: boolean;
@@ -872,6 +877,7 @@ export function ExpandedChartSidebar({
   localSpaceGated = false,
   localSpaceRelocated,
   aspectOrbs,
+  rulershipScheme,
   advanced,
   setAdvanced,
   dualWheels,
@@ -2128,9 +2134,15 @@ export function ExpandedChartSidebar({
         // the always-on constellation costs nothing extra.
         const dignified = advanced
           ? shownPlanets
-              .map((p) => ({ p, d: essentialDignity(p.name, signIndex(p.lon)) }))
-              .filter((x): x is typeof x & { d: Dignity } => x.d !== null)
+              .map((p) => ({
+                p,
+                d: essentialDignity(p.name, signIndex(p.lon), rulershipScheme),
+              }))
+              .filter((x): x is typeof x & { d: DignityResult } => x.d !== null)
           : [];
+        // Only the Both scheme can attribute a dignity to one school, and only then
+        // do the rows need the extra width for the suffix.
+        const attributed = dignified.some((x) => x.d.from !== null);
         const elementSegs = (['fire', 'earth', 'air', 'water'] as const).map(
           (e) => ({
             key: e,
@@ -2172,22 +2184,44 @@ export function ExpandedChartSidebar({
               </div>
             </div>
             {dignified.length > 0 && (
-              <ul className="es-dignity-list">
+              <ul
+                className={`es-dignity-list${attributed ? ' is-attributed' : ''}`}
+              >
                 {dignified.map(({ p, d }) => {
-                  const term = t(`expandedSidebar.dignity.${d}`);
+                  const term = t(`expandedSidebar.dignity.${d.dignity}`);
+                  const from = d.from
+                    ? t(`expandedSidebar.dignityFrom.${d.from}`)
+                    : null;
                   return (
                     <li key={p.name}>
                       <PlanetTipGlyph planet={p.name} size={12} className="asp-planet" />
                       <span className="es-dignity-planet">{labels.planet(p.name)}</span>
                       <TipSpan
-                        className={`es-dignity es-dignity-${d}`}
+                        className={`es-dignity es-dignity-${d.dignity}`}
                         placement="top"
                         tapReveal
                         tip={term.charAt(0).toUpperCase() + term.slice(1)}
-                        hint={t(`expandedSidebar.dignityDesc.${d}`)}
+                        hint={t(`expandedSidebar.dignityDesc.${d.dignity}`)}
                       >
                         {term}
                       </TipSpan>
+                      {/* Which school granted it — shown only where the two disagree,
+                          which is only possible under the Both scheme. Without it Mars
+                          and Pluto both read a bare "rulership" in Scorpio, which is
+                          the confusion the scheme choice exists to answer; with it, a
+                          reader who wants one school knows which row to ignore (and
+                          which setting removes it). */}
+                      {d.from && from && (
+                        <TipSpan
+                          className="es-dignity-from"
+                          placement="top"
+                          tapReveal
+                          tip={from.charAt(0).toUpperCase() + from.slice(1)}
+                          hint={t(`expandedSidebar.dignityFromDesc.${d.from}`)}
+                        >
+                          {`(${from})`}
+                        </TipSpan>
+                      )}
                     </li>
                   );
                 })}

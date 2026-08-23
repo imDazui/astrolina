@@ -877,6 +877,9 @@
   align-items: center;
   gap: 5px;
   font-size: 11px;
+  /* The school suffix can push a row past its column on a narrow sidebar; wrapping
+     costs one taller grid row, spilling out of the panel costs the read. */
+  flex-wrap: wrap;
 }
 
 .es-dignity-planet {
@@ -897,6 +900,23 @@
 .es-dignity-detriment,
 .es-dignity-fall {
   color: #c98a4b;
+}
+
+/* The school suffix — only present under the Both rulership scheme, on the rows the
+   two schools disagree about. Quieter than the term it qualifies: it says where the
+   term came from, not what it means, and the colour belongs to the term. */
+.es-dignity-from {
+  color: var(--text-muted);
+  font-size: 10px;
+  opacity: 0.8;
+  cursor: help;
+}
+
+/* Those rows are appreciably longer, so the grid takes wider columns rather than
+   letting "(traditional)" wrap on every line. Set only under Both — the
+   single-school lists keep the tighter packing they have always had. */
+.es-dignity-list.is-attributed {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
 }
 
 /* --- Aspects section (only shown in Advanced mode) --- */

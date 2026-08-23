@@ -136,7 +136,8 @@ export const expandedSidebar = {
   },
 
   // Balance section: element/modality glyph constellations (always shown) +
-  // essential dignities (Advanced) over the bodies the map filter shows.
+  // essential dignities (Advanced) over the bodies the map filter shows. The
+  // dignities read whichever rulership school Settings ▸ Calculation is set to.
   balanceHeading: 'Balance',
   balanceTip: 'Chart balance',
   balanceHint: 'How the shown bodies spread across the four elements (fire, earth, air, water) and three modalities (cardinal, fixed, mutable) — a quick read of where the chart’s emphasis lies.',
@@ -160,6 +161,18 @@ export const expandedSidebar = {
     exaltation: 'exaltation',
     detriment: 'detriment',
     fall: 'fall',
+  },
+  // Under the Both rulership scheme the two schools disagree about three signs, so a
+  // rulership or detriment only ONE of them grants is named as that school’s — without
+  // it Mars and Pluto both read a bare "rulership" in Scorpio with nothing to tell them
+  // apart, which is the complaint this scheme choice answers. Nothing is appended under
+  // a single-school scheme, or where the two schools agree: there the label would imply
+  // a choice that was not made.
+  dignityFrom: { traditional: 'traditional', modern: 'modern' },
+  // Hover blurbs for the school suffix, in the same voice as the dignity ones.
+  dignityFromDesc: {
+    traditional: 'Granted by the traditional rulerships only — the seven-planet scheme, where Mars keeps Scorpio, Saturn Aquarius and Jupiter Pisces.',
+    modern: 'Granted by the modern rulerships only — where Pluto takes Scorpio, Uranus Aquarius and Neptune Pisces from their traditional rulers.',
   },
   // Hover blurbs explaining each essential dignity (the Advanced dignity list).
   dignityDesc: {

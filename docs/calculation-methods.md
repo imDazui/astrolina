@@ -174,6 +174,43 @@ Conventions:
   inter-epoch precession — and now agrees with the bi-wheel's cross-aspect orb
   for the same pair (the two disagreed when contacts were frozen to tropical).
 
+## Rulerships (traditional vs modern)
+
+**Settings ▸ Calculation ▸ Rulerships** decides which table the **essential
+dignity** read under the chart wheel's *Balance* panel uses — the only consumer
+of rulership in the app. Advanced only, like the dignity list itself.
+
+The two schools agree about nine signs and split over three:
+
+| Sign | Traditional | Modern |
+|---|---|---|
+| Scorpio | Mars | Pluto |
+| Aquarius | Saturn | Uranus |
+| Pisces | Jupiter | Neptune |
+
+Conventions:
+
+- **Detriment follows rulership, so the choice moves it too.** This is the half
+  that surprises people. Traditional Mars rules Scorpio, so it is in detriment in
+  **Taurus** as well as Libra; modern Mars rules Aries alone and Taurus costs it
+  nothing — the detriment there is Pluto's. The same holds for Saturn/Uranus in
+  Leo and Jupiter/Neptune in Virgo.
+- **Under Traditional the outer three have no essential dignity at all** and drop
+  out of the list, rather than appearing in it undignified.
+- **Both** is the union of the two tables, and is the default — it is what the
+  app did when the tables were merged and the scheme was not a choice, so an
+  existing install's reading does not move on upgrade. A rulership or detriment
+  that only ONE school grants is labelled with that school in the list; where the
+  two agree (Mars in Aries, Mars in Libra) nothing is appended, because naming a
+  school there would imply a choice that was not made.
+- **Exaltations are the seven classical ones under every scheme.** The moderns
+  assign the outer planets no exaltation, so Modern is deliberately lopsided:
+  Uranus, Neptune and Pluto can hold rulership and detriment but never exaltation
+  or fall.
+- **Independent of the zodiac mode.** Sidereal shifts which sign a body is in,
+  not which planet rules that sign, and sidereal + modern rulers is unusual rather
+  than invalid — so the two settings are not coupled.
+
 ## Relationship charts (Davison & Composite)
 
 The Synastry overlay's **Generate** button turns the active chart + partner into

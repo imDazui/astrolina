@@ -41,6 +41,7 @@ export const settings = {
     progAngles: 'Angles',
     magnitudeSteps: 'Magnitude steps',
     fortuneFormula: 'Part of Fortune',
+    rulerships: 'Rulerships',
   },
   // Basemap detail toggles. Roads + rivers share one switch; "Place names" (city
   // and country text) is named to avoid confusion with the ACG line-label badges.
@@ -224,6 +225,26 @@ export const settings = {
     ptolemaic: {
       label: 'Ptolemaic (fixed)',
       hint: 'Ascendant + Moon − Sun for every chart, day or night. The alternative historical convention.',
+    },
+  },
+
+  // Which school's rulerships the essential-dignity list reads. The two agree about
+  // nine signs and split over three, and the split is not only about who rules them:
+  // detriment follows rulership, so it moves too. The control hint says both halves,
+  // because the second is the one nobody expects.
+  rulership: {
+    hint: 'The three signs the two schools split over: Scorpio, Aquarius and Pisces. The choice moves the detriments along with the rulerships — traditional Mars is in detriment in Taurus, modern Mars is not — and it decides whether the outer planets carry essential dignity at all. Read in the chart wheel’s Balance panel.',
+    traditional: {
+      label: 'Traditional',
+      hint: 'Mars rules Scorpio, Saturn Aquarius, Jupiter Pisces — the seven-planet scheme. Uranus, Neptune and Pluto rule nothing, so they carry no dignity at all.',
+    },
+    modern: {
+      label: 'Modern',
+      hint: 'Pluto rules Scorpio, Uranus Aquarius, Neptune Pisces. Mars, Saturn and Jupiter keep one sign each, and lose the detriment that came with the second.',
+    },
+    both: {
+      label: 'Both',
+      hint: 'Co-rulership: those three signs have two rulers each, and the list names which school grants which. The app’s original reading, and its default.',
     },
   },
   // "The current settings have switched this off" — the shared vocabulary for an
