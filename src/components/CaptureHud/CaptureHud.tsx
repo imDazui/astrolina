@@ -15,6 +15,7 @@ import type { ReactNode } from 'react';
 import { useT } from '../../i18n';
 import { useMovableHud, effectiveCenterX } from '../../lib/useMovableHud';
 import { captureExportGate } from '../../lib/captureGate';
+import { lastCaptureFailure } from '../../lib/captureFailure';
 import { useDiscreet } from '../../lib/discreet';
 import { downloadBlob } from '../../lib/downloadBlob';
 import { getCaptureSink } from '../../lib/extensions/captureSink';
@@ -82,7 +83,7 @@ function canShareImageFiles(): boolean {
  *  button. `which` names the action so a report says which of the four. */
 function reportCaptureFailure(which: string, cause: unknown): void {
   // eslint-disable-next-line no-console
-  console.error(`[capture] ${which} failed`, cause);
+  console.error(`[capture] ${which} failed`, cause, { reason: lastCaptureFailure() });
 }
 
 function DownloadIcon() {
@@ -328,6 +329,25 @@ export function CaptureHud({
   const [linkCopied, setLinkCopied] = useState(false);
   const [sinkDone, setSinkDone] = useState(false);
   const [failed, setFailed] = useState(false);
+  // The frame's own account of why it gave back nothing (lib/captureFailure). Held in
+  // state beside `failed` because the banner is the only place the person having the
+  // problem ever sees it — the console line goes to everyone who is not.
+  const [failReason, setFailReason] =
+    useState<ReturnType<typeof lastCaptureFailure>>(null);
+  // Raise the banner for an action that went through the FRAME, carrying whatever reason
+  // it left behind. Read and set together so the banner can never pair this attempt's
+  // failure with the last one's reason.
+  const markFailed = useCallback(() => {
+    setFailReason(lastCaptureFailure());
+    setFailed(true);
+  }, []);
+  // Raise it for an action that did NOT — the share link is plain text and never touches
+  // captureFrame, so whatever reason is sitting in that module belongs to some earlier
+  // export and would be a confident, wrong explanation of a clipboard refusal.
+  const markFailedNoReason = useCallback(() => {
+    setFailReason(null);
+    setFailed(true);
+  }, []);
   // Show the native Share button only on touch devices that can share image files — on
   // desktop the Download / Copy buttons cover it, so Share is just clutter there.
   const touchLayout = useTouchLayout();
@@ -408,17 +428,17 @@ export function CaptureHud({
       const blob = await onCapture();
       if (!blob) {
         reportCaptureFailure('download', 'the frame produced no image');
-        setFailed(true);
+        markFailed();
         return;
       }
       downloadBlob(blob, fileName);
     } catch (e) {
       reportCaptureFailure('download', e);
-      setFailed(true);
+      markFailed();
     } finally {
       setBusy(false);
     }
-  }, [busy, onCapture, fileName, divertIfLocked]);
+  }, [busy, onCapture, fileName, divertIfLocked, markFailed]);
 
   const onCopy = useCallback(async () => {
     if (divertIfLocked()) return;
@@ -443,18 +463,18 @@ export function CaptureHud({
         const blob = await onCapture();
         if (!blob) {
           reportCaptureFailure('copy', 'the frame produced no image');
-          setFailed(true);
+          markFailed();
           return;
         }
         downloadBlob(blob, fileName);
       }
     } catch (e) {
       reportCaptureFailure('copy', e);
-      setFailed(true);
+      markFailed();
     } finally {
       setBusy(false);
     }
-  }, [busy, onCapture, fileName, divertIfLocked]);
+  }, [busy, onCapture, fileName, divertIfLocked, markFailed]);
 
   // Copy the shareable chart URL (plain text — no capture involved). The link is
   // built lazily so it carries the camera as it is at the click.
@@ -466,9 +486,9 @@ export function CaptureHud({
       setLinkCopied(true);
       setTimeout(() => setLinkCopied(false), 1800);
     } catch {
-      setFailed(true);
+      markFailedNoReason();
     }
-  }, [shareLink]);
+  }, [shareLink, markFailedNoReason]);
 
   // First-use heads-up before the copy: the link carries the chart's FULL birth
   // details (that's what makes it reopenable), which the hover hint explains but
@@ -514,7 +534,7 @@ export function CaptureHud({
       const blob = await onCapture();
       if (!blob) {
         reportCaptureFailure('share', 'the frame produced no image');
-        setFailed(true);
+        markFailed();
         return;
       }
       const file = new File([blob], fileName, { type: 'image/png' });
@@ -541,12 +561,12 @@ export function CaptureHud({
       // Dismissing the share sheet rejects with AbortError — that's a cancel, not a failure.
       if ((e as { name?: string } | null)?.name !== 'AbortError') {
         reportCaptureFailure('share', e);
-        setFailed(true);
+        markFailed();
       }
     } finally {
       setBusy(false);
     }
-  }, [busy, onCapture, fileName, divertIfLocked, t]);
+  }, [busy, onCapture, fileName, divertIfLocked, t, markFailed]);
 
   // Optional registered destination (lib/extensions/captureSink) — a fourth action
   // that hands the frame to whatever surface registered it. Deliberately NOT diverted
@@ -569,7 +589,7 @@ export function CaptureHud({
         // saying so is the difference between debugging the map and debugging
         // whatever registered the sink.
         reportCaptureFailure(`sink:${s.id} (frame)`, 'the frame produced no image');
-        setFailed(true);
+        markFailed();
         return;
       }
       await s.onCapture(blob);
@@ -577,11 +597,11 @@ export function CaptureHud({
       setTimeout(() => setSinkDone(false), 1800);
     } catch (e) {
       reportCaptureFailure(`sink:${s.id}`, e);
-      setFailed(true);
+      markFailed();
     } finally {
       setBusy(false);
     }
-  }, [busy, onCapture]);
+  }, [busy, onCapture, markFailed]);
 
   // How many action buttons render this frame — download + copy are always in;
   // share, copy-link and the sink each add one when present. Drives the row
@@ -973,6 +993,13 @@ export function CaptureHud({
         {(busy || failed) && (
           <div className="capture-hud-status" role="status">
             {busy ? t('captureHud.busy') : t('captureHud.failed')}
+            {/* The reason, when the frame gave one. On its own the banner can only say
+                "try again", which is the wrong advice for every one of these. */}
+            {!busy && failReason && (
+              <span className="capture-hud-status-why">
+                {t(`captureHud.failedReason.${failReason}`)}
+              </span>
+            )}
           </div>
         )}
       </div>

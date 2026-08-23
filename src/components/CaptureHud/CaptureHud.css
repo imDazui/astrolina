@@ -184,6 +184,15 @@
   }
 }
 
+/* The failure reason, under the generic banner line (see failedReason). Its own block so
+   it wraps as a sentence rather than running on from the headline. */
+.capture-hud-status-why {
+  display: block;
+  margin-top: 3px;
+  opacity: 0.85;
+  font-weight: 400;
+}
+
 .capture-hud-status {
   font-size: 11px;
   text-align: center;

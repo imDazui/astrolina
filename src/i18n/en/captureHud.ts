@@ -150,4 +150,14 @@ export const captureHud = {
   },
   busy: 'Rendering…',
   failed: 'Export failed — please try again.',
+  // Appended to `failed` when the frame said WHY it gave back nothing (Map.lastCaptureFailure).
+  // Each names the thing to change, because "try again" is advice that cannot work for any
+  // of them — which is what made these indistinguishable in support mail.
+  failedReason: {
+    'no-frame': 'The map view was not ready. Reopen Capture and try once more.',
+    'no-canvas': 'This browser would not give the export a drawing surface.',
+    'taint-basemap':
+      'The map tiles refused to be exported. Tracking prevention or a content blocker is the usual cause — allow this site, then try again.',
+    encode: 'The image was too large to encode. Try a smaller frame ratio.',
+  },
 } as const;

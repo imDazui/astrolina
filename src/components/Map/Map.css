@@ -419,11 +419,24 @@
 
 .acg-badge {
   position: absolute;
-  /* Anchored at the layer's origin and moved/centered by the inline `translate`
-     property (see badgePos) so panning updates it on the compositor, not via a
-     layout reflow. */
+  /* Anchored at the layer's origin and moved/centered by the transform below, whose
+     coordinates arrive as the inline --bx / --by custom properties (see badgePos), so
+     panning updates it on the compositor, not via a layout reflow.
+
+     The transform lives HERE rather than inline for two reasons badgePos spells out:
+     html2canvas-pro parses `transform` but has no `translate` descriptor at all, and
+     the hover lift below has to append its scale to this same declaration — the
+     individual transform properties compose as translate · rotate · scale · transform,
+     so a bare `scale` would multiply this offset instead of scaling in place.
+
+     Deliberately NOT transitioned: panning rewrites --bx/--by every frame and the
+     position has to track the map exactly. (The layer is hidden in motion anyway —
+     see .acg-edge-badges.is-moving — but a transform transition here would also put
+     an in-flight animation inside the capture window, which captureFrame waits out by
+     measured milliseconds.) */
   left: 0;
   top: 0;
+  transform: translate(var(--bx, 0px), var(--by, 0px));
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -480,15 +493,18 @@
   font-family: inherit;
   appearance: none;
   -webkit-appearance: none;
-  /* Lift on hover via the independent `scale` property, so it never disturbs the
-     `translate` that positions the badge (and the position stays un-transitioned —
-     instant tracking while panning). */
-  transition: scale 0.12s ease, filter 0.12s ease;
+  /* Lift on hover by RESTATING the position transform with a scale appended (see
+     .acg-badge). The independent `scale` property would compose as scale · transform
+     and so multiply the position offset — a badge 800px across the frame would jump
+     ~56px sideways on pointer-over. The lift is instant rather than eased because
+     `transform` carries the position too, and transitioning it would smear the badge
+     across the map every time the camera settles. */
+  transition: filter 0.12s ease;
 }
 
 .acg-badge-btn:hover {
   filter: brightness(1.08);
-  scale: 1.07;
+  transform: translate(var(--bx, 0px), var(--by, 0px)) scale(1.07);
 }
 
 /* The LS azimuth degree (E=0 / N=90), shown in place of the old IN/OUT text. */
@@ -514,12 +530,14 @@
 }
 
 /* Transparent export, "Degrees": each line's bearing printed ALONG the line, just inside its
-   badge toward the origin. Positioned like a badge (absolute, moved by `translate`) but with no
-   pill — just the line's colour over the map, with a dark halo so it stays legible on any tone. */
+   badge toward the origin. Positioned like a badge (absolute, moved by the same --bx / --by
+   transform) but with no pill — just the line's colour over the map, with a dark halo so it
+   stays legible on any tone. */
 .ls-line-deg {
   position: absolute;
   left: 0;
   top: 0;
+  transform: translate(var(--bx, 0px), var(--by, 0px));
   font-size: 11px;
   font-weight: 700;
   line-height: 1;

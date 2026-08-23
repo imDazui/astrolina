@@ -22,6 +22,7 @@ import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geo
 import type { LineProps, ZenithProps } from '../../lib/astro/lines';
 import { getCaptureBrand } from '../../lib/captureBrand';
 import { addPngMetadata } from '../../lib/pngMeta';
+import { setCaptureFailure } from '../../lib/captureFailure';
 import { cloneWithInlineStyles, svgToImage } from '../../lib/wheelRaster';
 import { isTouchLayout, usePhone } from '../../lib/touch';
 import {
@@ -227,14 +228,38 @@ function badgeTextColor(fill: string): string {
   return lum > 0.62 ? '#1a1c22' : '#fff';
 }
 
-// Center-anchor a badge at screen (x, y) via the GPU `translate` property rather
-// than left/top. left/top changes force a layout reflow each frame while panning;
-// translate is handled on the compositor (no reflow), so the labels track the map
-// smoothly. The calc()s fold in the -50% / -50% centering (% is of the badge's own
-// size), and a non-none translate still makes each badge a stacking context (the LS
-// arrow's z-index:-1 relies on that).
-function badgePos(x: number, y: number): string {
-  return `calc(${x}px - 50%) calc(${y}px - 50%)`;
+// Center-anchor a badge at screen (x, y) on the compositor rather than via left/top.
+// left/top changes force a layout reflow each frame while panning; a transform is
+// handled on the compositor (no reflow), so the labels track the map smoothly. The
+// calc()s fold in the -50% / -50% centering (% is of the badge's own size), and a
+// non-none transform still makes each badge a stacking context (the LS arrow's
+// z-index:-1 relies on that).
+//
+// What this returns is a pair of CUSTOM PROPERTIES, not the transform itself — the
+// stylesheet composes them (Map.css, .acg-badge / .ls-line-deg). Two reasons, both
+// load-bearing:
+//
+//  1. This was the independent `translate` property until 2026-08-23, and
+//     html2canvas-pro has no `translate` descriptor at all: it parses `transform`,
+//     `transform-origin` and `rotate`, and nothing else. So a badge's position in an
+//     export survived only because html2canvas re-measures the CLONED node inside its
+//     hidden iframe, where the real engine applies `translate`. Placement was an
+//     accident of that iframe laying out identically to the live page; when it did
+//     not, the pills separated from their own glyphs — which are re-stamped from the
+//     LIVE DOM with fillText and so never moved with them. Naming the offset in a
+//     property the rasteriser actually reads removes the coincidence.
+//
+//  2. The hover lift has to compose the other way round. The individual transform
+//     properties build the matrix as translate · rotate · scale · transform, so an
+//     inline `transform: translate(...)` left alongside `scale: 1.07` on hover gives
+//     S · T — the translation itself gets scaled, and a badge at x≈800px jumps ~56px
+//     when you point at it. Letting the stylesheet own the whole `transform`
+//     declaration keeps translate-then-scale inside one matrix, as it was.
+function badgePos(x: number, y: number): CSSProperties {
+  return {
+    '--bx': `calc(${x}px - 50%)`,
+    '--by': `calc(${y}px - 50%)`,
+  } as CSSProperties;
 }
 
 // One badge per paran, parked at the horizontal centre of the screen on the line's
@@ -330,6 +355,23 @@ const compassScaleAt = (zoom: number) =>
   (1 - COMPASS_MIN_SCALE) *
     Math.min(1, Math.max(0, (zoom - COMPASS_ZOOM) / (CLOSE_ZOOM - COMPASS_ZOOM)));
 const maskRadiusAt = (zoom: number) => (HORIZON_WHEEL_SIZE * compassScaleAt(zoom) * 1.3) / 2;
+// The Local-Space "Circle Mask" in map-container CSS pixels, or null when it isn't up.
+//
+// ONE definition, because there are two consumers that MUST agree and cannot check each
+// other: the live view clips the GL canvas with a CSS clip-path, and captureFrame re-cuts
+// the same circle on the 2D composite (ctx.drawImage ignores CSS clipping, so the export
+// has to redraw it by hand). Those were two separate expressions of the same formula, read
+// at different instants — which is how the circle on screen and the circle in the exported
+// PNG drift apart with nothing to attribute it to. The caller supplies the origin it has,
+// so the live pass can pass its fresh projection and the export the ref that pass wrote.
+function lsMaskCircle(
+  origin: { x: number; y: number } | null | undefined,
+  zoom: number,
+  transparent: boolean,
+): { cx: number; cy: number; r: number } | null {
+  if (!transparent || !origin || zoom < COMPASS_ZOOM) return null;
+  return { cx: origin.x, cy: origin.y, r: maskRadiusAt(zoom) };
+}
 const LS_BADGE_RADIUS_PX = 74;
 const LS_RADIUS_ZOOM_MIN = 2;
 const LS_RADIUS_MAX_SCALE = 4;
@@ -2773,6 +2815,29 @@ const CAPTURE_PNG_XMP =
   '</rdf:Description></rdf:RDF></x:xmpmeta>' +
   '<?xpacket end="r"?>';
 
+/** Context to attach to a capture warning or failure.
+ *
+ *  Diagnostics ONLY. Nothing in the render path branches on any of it — this codebase
+ *  deliberately carries no user-agent sniffing anywhere near drawing, and a capability
+ *  probe is always the better answer (see canShareImageFiles, canExport). It exists
+ *  because a capture failure always arrives as a screenshot taken on someone else's
+ *  machine, and the things that actually decide what the rasteriser does — the pixel
+ *  ratio, the layout viewport, the engine — are exactly what a screenshot cannot show. */
+function captureEnv(extra?: Record<string, unknown>): Record<string, unknown> {
+  const nav = navigator as Navigator & {
+    userAgentData?: { brands?: { brand: string; version: string }[]; platform?: string };
+  };
+  return {
+    engine:
+      nav.userAgentData?.brands?.map((b) => `${b.brand} ${b.version}`).join(', ') ??
+      navigator.userAgent,
+    platform: nav.userAgentData?.platform,
+    dpr: window.devicePixelRatio,
+    viewport: `${window.innerWidth}×${window.innerHeight}`,
+    ...extra,
+  };
+}
+
 /** Can this source still be read back after being drawn?
  *
  *  Canvas TAINT is only observable at READ time: drawing a cross-origin source
@@ -2786,6 +2851,7 @@ const CAPTURE_PNG_XMP =
  *  Works for a WebGL canvas too, which cannot be probed directly (it already
  *  holds a gl context, so getContext('2d') returns null) — drawing one pixel of
  *  it into a scratch 2D canvas asks the same question. */
+
 function canExport(src: CanvasImageSource): boolean {
   try {
     const probe = document.createElement('canvas');
@@ -2955,9 +3021,13 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
     slideTo: (dtDays: number) => slideApiRef.current?.to(dtDays),
     slideBy: (deltaDays: number) => slideApiRef.current?.by(deltaDays),
     captureFrame: async () => {
+      setCaptureFailure(null);
       const map = mapRef.current;
       const frameEl = frameRef.current;
-      if (!map || !frameEl) return null;
+      if (!map || !frameEl) {
+        setCaptureFailure('no-frame');
+        return null;
+      }
 
       // ── Let the camera stop before anything is sampled. ──
       //
@@ -3011,7 +3081,28 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       out.width = W;
       out.height = H;
       const ctx = out.getContext('2d');
-      if (!ctx) return null;
+      if (!ctx) {
+        setCaptureFailure('no-canvas');
+        return null;
+      }
+
+      // The camera as it stands right now, which is the view the GL canvas below is blitted
+      // from. The settle wait above covers motion BEFORE this point; NOTHING covered the gap
+      // after it, and that gap is long — two awaited font loads and a dynamic import stand
+      // between the blit and the DOM clone. A flyTo landing in there (Transparent mode arms
+      // one on its way in) leaves the map from one view and every DOM layer from another:
+      // the documented "rose converging on one point with its compass drawn around another",
+      // arriving with nothing to attribute it to. Re-read after the overlay pass.
+      const cameraSig = () => {
+        const c = map.getCenter();
+        return [
+          c.lng.toFixed(6),
+          c.lat.toFixed(6),
+          map.getZoom().toFixed(4),
+          map.getBearing().toFixed(3),
+          map.getPitch().toFixed(3),
+        ].join('/');
+      };
 
       // A chart-subject export is a picture of the CARD, not of the map: the card covers
       // the frame, so every map-derived layer below stands down. Skipping them rather than
@@ -3026,82 +3117,98 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       const cardEl = frameEl.querySelector('.capture-extras-fill');
       const chartOnly = !!cardEl;
 
-      // 0) Backdrop. In 3D globe mode the "space" void is a CSS background on the map
-      //    container (the GL canvas is transparent there), so paint it first or the
-      //    export would have a transparent void. In flat 2D the basemap is opaque and
-      //    this is a harmless no-op (the container background is unset/transparent).
-      //    While the basemap is hidden (Local Space ▸ "Hide map") stand down entirely:
-      //    a transparent background IS the export — nothing may pre-fill the bitmap.
-      //    (Read off the container class the hideBasemap effect maintains — the same
-      //    signal the checkerboard CSS keys on — rather than a reactive prop ref.)
-      //    For a chart card the backdrop is the CARD's own colour, read off the live
-      //    element: html2canvas paints the card over this anyway, but a failure of that
-      //    layer should cost the export its labels, not leave it a transparent hole.
-      if (chartOnly) {
-        const bg = getComputedStyle(cardEl!).backgroundColor;
-        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
-          ctx.fillStyle = bg;
-          ctx.fillRect(0, 0, W, H);
+      // Layers 0 and 1 together: the backdrop fill and the GL blit, both of which read the
+      // camera as it is WHEN CALLED. Kept re-runnable rather than left inline because the
+      // camera can move across the long async gap before the overlay pass (see cameraSig),
+      // and the only honest answer to that is to paint the map again from where it actually
+      // is — not to ship a composite whose halves disagree. Returns false when the basemap
+      // cannot be exported at all, which aborts the whole capture.
+      const paintMapLayer = (): boolean => {
+        // 0) Backdrop. In 3D globe mode the "space" void is a CSS background on the map
+        //    container (the GL canvas is transparent there), so paint it first or the
+        //    export would have a transparent void. In flat 2D the basemap is opaque and
+        //    this is a harmless no-op (the container background is unset/transparent).
+        //    While the basemap is hidden (Local Space ▸ "Hide map") stand down entirely:
+        //    a transparent background IS the export — nothing may pre-fill the bitmap.
+        //    (Read off the container class the hideBasemap effect maintains — the same
+        //    signal the checkerboard CSS keys on — rather than a reactive prop ref.)
+        //    For a chart card the backdrop is the CARD's own colour, read off the live
+        //    element: html2canvas paints the card over this anyway, but a failure of that
+        //    layer should cost the export its labels, not leave it a transparent hole.
+        if (chartOnly) {
+          const bg = getComputedStyle(cardEl!).backgroundColor;
+          if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+            ctx.fillStyle = bg;
+            ctx.fillRect(0, 0, W, H);
+          }
+        } else if (!containerRef.current?.classList.contains('basemap-hidden')) {
+          const containerBg = containerRef.current
+            ? getComputedStyle(containerRef.current).backgroundColor
+            : '';
+          if (containerBg && containerBg !== 'rgba(0, 0, 0, 0)' && containerBg !== 'transparent') {
+            ctx.fillStyle = containerBg;
+            ctx.fillRect(0, 0, W, H);
+          }
         }
-      } else if (!containerRef.current?.classList.contains('basemap-hidden')) {
-        const containerBg = containerRef.current
-          ? getComputedStyle(containerRef.current).backgroundColor
-          : '';
-        if (containerBg && containerBg !== 'rgba(0, 0, 0, 0)' && containerBg !== 'transparent') {
-          ctx.fillStyle = containerBg;
-          ctx.fillRect(0, 0, W, H);
-        }
-      }
 
-      // 1) The map itself: draw the live WebGL canvas straight in. Reliable because
-      //    the map is built with preserveDrawingBuffer, and far sturdier than asking
-      //    html2canvas to rasterise a GL canvas. The map container is INSET within the
-      //    frame — by the caption band (bottom, always reserved) and, when an Extras panel
-      //    is shown, by that panel (left for landscape / top for square/portrait). So draw
-      //    the canvas at its OWN position + size relative to the frame, not at the origin —
-      //    otherwise the lines shift out from under the edge labels (which html2canvas
-      //    captures at their real inset spots below) and bleed into the opaque panel/caption.
-      const mapRect = mapCanvas.getBoundingClientRect();
-      const mapX = Math.round((mapRect.left - rect.left) * scale);
-      const mapY = Math.round((mapRect.top - rect.top) * scale);
-      const mapW = Math.round(mapRect.width * scale);
-      const mapH = Math.round(mapRect.height * scale);
-      // Overdraw ~1px each side so the map tucks UNDER the (opaque) panel/caption and past
-      // the frame edge — hiding any 1px rounding seam between this GL rect and the
-      // html2canvas overlay. Guarded: a degenerate zero rect skips the draw rather than
-      // smearing the whole backbuffer across the frame. A chart card has no map in it at
-      // all, which also puts the cross-origin abort below out of its way: a tainted
-      // basemap can't stop an export that never touches the basemap.
-      if (!chartOnly && mapW > 0 && mapH > 0) {
-        // "Mask Lines": clip the map canvas to the same circle the live view uses (origin +
-        // ~30%-over-compass radius), so the exported linework is a self-contained compass rose.
-        // The DOM overlays below (compass, rim badges) are composited AFTER, unclipped.
-        const os = originScreenRef.current;
-        const doMask = lsTransparentRef.current && os && map.getZoom() >= COMPASS_ZOOM;
-        if (doMask) {
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(
-            mapX + os.x * scale,
-            mapY + os.y * scale,
-            maskRadiusAt(map.getZoom()) * scale,
-            0,
-            Math.PI * 2,
+        // 1) The map itself: draw the live WebGL canvas straight in. Reliable because
+        //    the map is built with preserveDrawingBuffer, and far sturdier than asking
+        //    html2canvas to rasterise a GL canvas. The map container is INSET within the
+        //    frame — by the caption band (bottom, always reserved) and, when an Extras panel
+        //    is shown, by that panel (left for landscape / top for square/portrait). So draw
+        //    the canvas at its OWN position + size relative to the frame, not at the origin —
+        //    otherwise the lines shift out from under the edge labels (which html2canvas
+        //    captures at their real inset spots below) and bleed into the opaque panel/caption.
+        const mapRect = mapCanvas.getBoundingClientRect();
+        const mapX = Math.round((mapRect.left - rect.left) * scale);
+        const mapY = Math.round((mapRect.top - rect.top) * scale);
+        const mapW = Math.round(mapRect.width * scale);
+        const mapH = Math.round(mapRect.height * scale);
+        // Overdraw ~1px each side so the map tucks UNDER the (opaque) panel/caption and past
+        // the frame edge — hiding any 1px rounding seam between this GL rect and the
+        // html2canvas overlay. Guarded: a degenerate zero rect skips the draw rather than
+        // smearing the whole backbuffer across the frame. A chart card has no map in it at
+        // all, which also puts the cross-origin abort below out of its way: a tainted
+        // basemap can't stop an export that never touches the basemap.
+        if (!chartOnly && mapW > 0 && mapH > 0) {
+          // "Mask Lines": clip the map canvas to the same circle the live view uses (origin +
+          // ~30%-over-compass radius), so the exported linework is a self-contained compass rose.
+          // The DOM overlays below (compass, rim badges) are composited AFTER, unclipped.
+          const mask = lsMaskCircle(
+            originScreenRef.current,
+            map.getZoom(),
+            lsTransparentRef.current,
           );
-          ctx.clip();
+          if (mask) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(
+              mapX + mask.cx * scale,
+              mapY + mask.cy * scale,
+              mask.r * scale,
+              0,
+              Math.PI * 2,
+            );
+            ctx.clip();
+          }
+          if (!canExport(mapCanvas)) {
+            console.error(
+              '[capture] the basemap canvas cannot be exported (cross-origin content was drawn ' +
+                'into it without CORS). Every export path fails on this, not just one — check the ' +
+                'active basemap style: its sprite and raster sources must send ' +
+                'access-control-allow-origin.',
+              captureEnv(),
+            );
+            setCaptureFailure('taint-basemap');
+            return false;
+          }
+          ctx.drawImage(mapCanvas, mapX - 1, mapY - 1, mapW + 2, mapH + 2);
+          if (mask) ctx.restore();
         }
-        if (!canExport(mapCanvas)) {
-          console.error(
-            '[capture] the basemap canvas cannot be exported (cross-origin content was drawn ' +
-              'into it without CORS). Every export path fails on this, not just one — check the ' +
-              'active basemap style: its sprite and raster sources must send ' +
-              'access-control-allow-origin.',
-          );
-          return null;
-        }
-        ctx.drawImage(mapCanvas, mapX - 1, mapY - 1, mapW + 2, mapH + 2);
-        if (doMask) ctx.restore();
-      }
+        return true;
+      };
+      if (!paintMapLayer()) return null;
+      const cameraAtBlit = cameraSig();
 
       // 2) DOM overlays (pin, edge labels, local-horizon wheel, AND the caption band +
       //    watermark): html2canvas over the whole frame, with the GL canvas and UI
@@ -3128,12 +3235,45 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
         } catch {
           /* font API unavailable — fillText will use whatever is loaded */
         }
+        // Everything this composite draws EXCEPT the layer below measures the live DOM:
+        // the GL blit, the wheel raster, the glyph stamps and the pins all read
+        // getBoundingClientRect() off this page. html2canvas instead clones the document
+        // into a hidden iframe and measures THERE. The export is only right while those two
+        // layouts agree, and nothing used to check that they did — so when they didn't
+        // (reported on Edge, 2026-08) the badge pills came out away from their own glyphs,
+        // which had been stamped from the live DOM and so hadn't moved. Read the live
+        // reference now; the clone compares itself against it at the end of onclone, after
+        // its own mutations have settled.
+        const liveFrameRect = frameEl.getBoundingClientRect();
+        // Frame-RELATIVE, so the clone iframe's own viewport offset cancels out and only a
+        // real layout difference survives. Any badge does; the first one is as good as any.
+        const probeOffset = (probe: Element | null, frame: DOMRect) => {
+          if (!probe) return null;
+          const r = probe.getBoundingClientRect();
+          return { x: r.left - frame.left, y: r.top - frame.top };
+        };
+        const liveProbe = probeOffset(frameEl.querySelector('.acg-badge'), liveFrameRect);
+        // PINNED to an exact version in package.json, here and in the app that vendors this
+        // — not a caret range. The two manifests both said ^2.2.0 and resolved differently
+        // (2.2.0 in the app that ships, 2.3.9 in this repo), so `dev:core` rasterised with a
+        // build no user had and a fault reproduced in one could be absent in the other. The
+        // box-shadow compensation in onclone below is calibrated against THIS build's
+        // behaviour; re-measure it before moving the pin.
         const { default: html2canvas } = await import('html2canvas-pro');
         const overlay = await html2canvas(frameEl, {
           backgroundColor: null,
           scale,
           useCORS: true,
           logging: false,
+          // Pin the clone to THIS viewport. Left unset, html2canvas falls back to its own
+          // reading of the window and re-derives the element box inside the iframe — so a
+          // media query, a viewport unit or a scrollbar resolving differently there moves
+          // this whole layer relative to every live-measured one above. Stating it is the
+          // cheap half of the guarantee the assertion at the end of onclone checks.
+          windowWidth: window.innerWidth,
+          windowHeight: window.innerHeight,
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
           ignoreElements: (el: Element) => {
             if (el === mapCanvas) return true;
             const cl = el.classList;
@@ -3193,7 +3333,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
           // carries an OPAQUE void background in 3D globe mode — left as-is, html2canvas
           // would repaint it over the globe we already drew in step 1. The void colour
           // is preserved by the backdrop fill in step 0.
-          onclone: (_doc: Document, el: HTMLElement) => {
+          onclone: async (cloneDoc: Document, el: HTMLElement) => {
             el.style.outline = 'none';
             el.style.boxShadow = 'none';
             // Set with priority: the "Hide map" transparency checkerboard (Map.css,
@@ -3280,8 +3420,67 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
                 w.style.setProperty('flex', '0 0 auto', 'important');
               });
             }
+            // The font waits before this call resolve against THIS document. The clone is a
+            // separate document in its own iframe with its own font set, and text measured
+            // against a fallback face is a different width — which, for a badge centred by a
+            // percentage of its own size, moves the pill without moving the glyph stamped
+            // beside it. Wait for the clone's copies too. html2canvas awaits this callback,
+            // so the delay is honoured.
+            try {
+              await cloneDoc.fonts.load('16px "Noto Sans Symbols"', '☉');
+              if (brandFonts?.length) {
+                await Promise.all(brandFonts.map((spec) => cloneDoc.fonts.load(spec)));
+              }
+              await cloneDoc.fonts.ready;
+            } catch {
+              /* clone document may not expose the font API — fall through to the check */
+            }
+            // Does the clone lay out like the live page? Measured LAST, so it reflects the
+            // mutations above rather than the state they started from. A warning here is the
+            // difference between "the export is broken" and "the clone laid out N pixels off,
+            // and here is the environment it happened in".
+            const cloneFrameRect = el.getBoundingClientRect();
+            if (
+              Math.abs(cloneFrameRect.width - liveFrameRect.width) > 1 ||
+              Math.abs(cloneFrameRect.height - liveFrameRect.height) > 1
+            ) {
+              console.warn(
+                '[capture] the cloned frame is a different SIZE from the live one, so this ' +
+                  'overlay layer will not line up with the map, the glyph stamps or the pins. ' +
+                  `live ${Math.round(liveFrameRect.width)}×${Math.round(liveFrameRect.height)}, ` +
+                  `clone ${Math.round(cloneFrameRect.width)}×${Math.round(cloneFrameRect.height)}`,
+                captureEnv(),
+              );
+            }
+            const cloneProbe = probeOffset(el.querySelector('.acg-badge'), cloneFrameRect);
+            if (liveProbe && cloneProbe) {
+              const dx = cloneProbe.x - liveProbe.x;
+              const dy = cloneProbe.y - liveProbe.y;
+              if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                console.warn(
+                  '[capture] the first map badge sits somewhere else in the clone than it does ' +
+                    'on screen, so its pill will be drawn away from its glyph (which is stamped ' +
+                    `from the live DOM). Off by ${dx.toFixed(1)}, ${dy.toFixed(1)} px.`,
+                  captureEnv(),
+                );
+              }
+            }
           },
         });
+        // The camera may have moved while the fonts loaded, the chunk arrived and the clone
+        // rendered — see cameraSig. The map already on the canvas would then be a different
+        // view from everything measured since, so repaint it from where the map actually is
+        // rather than composite the mismatch. Only layers 0 and 1 are down at this point, so
+        // clearing is safe and exact.
+        if (cameraSig() !== cameraAtBlit) {
+          console.warn(
+            '[capture] the camera moved between the map blit and the overlay pass — ' +
+              'repainting the map so the layers agree.',
+            captureEnv({ from: cameraAtBlit, to: cameraSig() }),
+          );
+          ctx.clearRect(0, 0, W, H);
+          if (!paintMapLayer()) return null;
+        }
         if (canExport(overlay)) {
           ctx.drawImage(overlay, 0, 0, W, H);
         } else {
@@ -3524,7 +3723,14 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // the original blob if anything goes wrong, so it can't break the export. The tagged blob
       // flows to download AND the mobile share sheet; the clipboard carries it too where the OS
       // doesn't strip metadata on paste.
-      return blob ? addPngMetadata(blob, CAPTURE_PNG_META, CAPTURE_PNG_XMP) : null;
+      if (!blob) {
+        // toBlob handing back null is the encoder refusing the bitmap — in practice its
+        // size. Distinct from the taint abort above and worth saying so: the way out is a
+        // smaller frame, not a different basemap.
+        setCaptureFailure('encode');
+        return null;
+      }
+      return addPngMetadata(blob, CAPTURE_PNG_META, CAPTURE_PNG_XMP);
     },
   }), []);
   const markerRef = useRef<maplibregl.Marker | null>(null);
@@ -3892,12 +4098,17 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
       // centred on the origin — but only while the compass is actually shown (zoomed in enough).
       // Clip the canvas, NOT the container: the container also holds the bottom-right attribution /
       // credits control, which must stay visible (and captured) even while the linework is masked.
-      const zoomNow = map.getZoom();
-      const maskActive = lsTransparentRef.current && zoomNow >= COMPASS_ZOOM;
-      const maskR = maskActive ? maskRadiusAt(zoomNow) : 0;
       const glCanvas = map.getCanvas();
-      if (maskActive) {
-        glCanvas.style.setProperty('clip-path', `circle(${maskR}px at ${oc.x}px ${oc.y}px)`);
+      const mask = lsMaskCircle({ x: oc.x, y: oc.y }, map.getZoom(), lsTransparentRef.current);
+      // The badge placement below anchors to the same rim (lsRimCrossing, the angular
+      // spread), so it reads the circle from here rather than re-testing the zoom.
+      const maskActive = mask != null;
+      const maskR = mask?.r ?? 0;
+      if (mask) {
+        glCanvas.style.setProperty(
+          'clip-path',
+          `circle(${mask.r}px at ${mask.cx}px ${mask.cy}px)`,
+        );
       } else {
         glCanvas.style.removeProperty('clip-path');
       }
@@ -6563,7 +6774,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               data-bkey={b.key}
               tabIndex={-1}
               className="acg-badge acg-badge-btn"
-              style={{ translate: badgePos(b.x, b.y), background: bg, color: text }}
+              style={{ ...badgePos(b.x, b.y), background: bg, color: text }}
               onClick={() => flyToZenith(flyId, zenithTarget[0], zenithTarget[1])}
               placement="top"
               tip={flyTip}
@@ -6575,7 +6786,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               key={b.key}
               data-bkey={b.key}
               className="acg-badge"
-              style={{ translate: badgePos(b.x, b.y), background: bg, color: text }}
+              style={{ ...badgePos(b.x, b.y), background: bg, color: text }}
             >
               {inner}
             </span>
@@ -6588,7 +6799,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
             key={b.key}
             tabIndex={-1}
             className="acg-badge paran-badge acg-badge-btn"
-            style={{ translate: badgePos(b.x, b.y), background: zenithFill, color: paranText }}
+            style={{ ...badgePos(b.x, b.y), background: zenithFill, color: paranText }}
             onClick={() => onParanClick(b)}
             placement="top"
             tip={t('map.flyToParan')}
@@ -6620,7 +6831,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               // Transparent export: glyph-only (drop the "LS" prefix), and ~50% larger on the
               // outbound half so the compass rose reads big on a floor-plan overlay.
               className={`acg-badge acg-badge-btn${lgBadge ? ' ls-badge-lg' : ''}`}
-              style={{ translate: badgePos(b.x, b.y), background: b.color, color: text }}
+              style={{ ...badgePos(b.x, b.y), background: b.color, color: text }}
               onClick={() =>
                 localSpaceOrigin &&
                 flyToPoint(localSpaceOrigin.lng, localSpaceOrigin.lat)
@@ -6647,7 +6858,7 @@ export const Map = forwardRef<MapHandle, MapProps>(function Map({
               <span
                 key={`${b.key}-deg`}
                 className="ls-line-deg"
-                style={{ translate: badgePos(b.degX, b.degY), color: b.color }}
+                style={{ ...badgePos(b.degX, b.degY), color: b.color }}
               >
                 {b.bearing}
               </span>
