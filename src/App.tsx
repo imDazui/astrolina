@@ -172,6 +172,7 @@ import {
   VIEW_LOCK_PARKED_OVERLAYS,
   overlayBlockedFor,
   overlayAuxBlocked,
+  normalizeAngle,
   type AngleProgression,
   type ArcMethod,
   type ProgAngleFrame,
@@ -5316,6 +5317,17 @@ export default function App() {
       // natal frame to hold, so the map draws the moment's own whatever is stored.
       transitFrame: effTransitFrame,
       setTransitFrame: setTransitFrameByUser,
+      // RAW, unlike the pair above, and the doc comment on the field says why: the two
+      // conditions that mask effTransitFrame can't arise for this one, because a chart
+      // that can't carry a progressed technique has `overlayMode` masked off it entirely.
+      progAngleFrame,
+      setProgAngleFrame,
+      // Measured off the layer the map is actually drawing, so it is right for every
+      // overlay without a table of which ones move their frame: the ones that hold the
+      // natal RAMC report 0 because their gmst IS the natal one.
+      frameOffsetDeg: overlayLayer
+        ? Math.abs((normalizeAngle(overlayLayer.gmst - gmst) * 180) / Math.PI)
+        : 0,
       nightShadeOn: showNightShade,
       overlayMode,
       angleProgression,
@@ -5375,6 +5387,9 @@ export default function App() {
       coordSystem,
       lineSystem,
       effTransitFrame,
+      progAngleFrame,
+      overlayLayer,
+      gmst,
       overlayMode,
       angleProgression,
       primaryRate,

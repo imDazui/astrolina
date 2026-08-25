@@ -1186,10 +1186,12 @@ export function TimelineHud({
           into it once the angles are advancing at all. Under Natal angles the menu is
           still shown, holding the choice the reader would return to.
 
-          Tertiary shares this control unchanged. Its angle arc is the SECONDARY progressed
-          solar arc (lib/astro/timeline: the tertiary clock reaches the bodies only), which
-          is under review — but that is a question about the maths, not about this control,
-          and the two overlays' menus agreeing is worth more than pre-empting the answer. */}
+          Tertiary shares this control unchanged, and now means the same thing by it: since
+          2026-08-24 its angle arc is measured to the TERTIARY instant, the one its own
+          bodies are read at, rather than to the secondary-progressed Sun (lib/astro/
+          timeline — the arc is derived from `progJD`, whichever clock produced it). That
+          was a question about the maths and never about this control, which is why the
+          menus could agree before the answer arrived. */}
       {(overlayMode === 'progressed' || overlayMode === 'tertiary-progressed') && (
         <div className="thud-row thud-setting-row">
           <div className="thud-mode thud-setting">

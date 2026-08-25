@@ -16,15 +16,19 @@ import { createRequire } from 'node:module';
 import {
   birthDataToJD,
   directedAngles,
+  getAngleCoords,
   getPlanetPositions,
   gmstRadians,
   initEphemeris,
   obliquity,
   raDecToEclipticLon,
   eclipticLonOfRA,
+  eclipticToRaDec,
   relocate,
 } from '../src/lib/ephemeris';
+import type { HouseSystem } from '../src/lib/ephemeris';
 import { buildOverlay, epochMsToJD, jdToEpochMs, normalizeAngle } from '../src/lib/astro/timeline';
+import type { AngleProgression } from '../src/lib/astro/timeline';
 import { buildDavison } from '../src/lib/astro/relationship';
 import { generateLines, type MeridianLng } from '../src/lib/astro/lines';
 import type { BirthData } from '../src/lib/birthData';
@@ -105,12 +109,157 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
   const arcLong = normalizeAngle(sunProgLon - sunNatalLon);
   const baseAng = relocate(birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'placidus');
   const saLDir = directedAngles(baseAng, birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'placidus', saL.angleArc, saL.angleFrame);
+  // The MC is the ONLY angle a longitude arc advances directly: it is a point on
+  // the ecliptic, so "the chart shifts in longitude" and "the meridian moves" are
+  // the same sentence for it, and for nothing else.
   check(
-    'progressed sa-long: wheel angles advance by the same arc as the map frame',
-    saL.angleFrame === 'long' &&
-      dAng(saLDir.mc, baseAng.mc + arcLong) < 1e-12 &&
-      dAng(saLDir.asc, baseAng.asc + arcLong) < 1e-12,
+    'progressed sa-long: directed MC advances by the arc in longitude',
+    saL.angleFrame === 'long' && dAng(saLDir.mc, baseAng.mc + arcLong) < 1e-12,
   );
+  // The Ascendant does NOT, and until 2026-08-24 this file asserted that it did —
+  // `dAng(saLDir.asc, baseAng.asc + arcLong) < 1e-12`, pinning what the code was
+  // doing. Solar Fire and Sirius both contradict it, and the app's own printed table
+  // was internally inconsistent: it gave the directed Ascendant a right ascension no
+  // Ascendant could have at this latitude. The Ascendant is not a linear function of
+  // the RAMC, so adding the arc to its longitude names a point that does not rise
+  // against the directed meridian — 15° away at age 85 here. It must be re-derived
+  // from the RAMC that culminates the directed MC. (Lina's ruling, 24 Aug 2026.)
+  const advRamc = eclipticToRaDec(normalizeAngle(baseAng.mc + arcLong), 0, eps).ra;
+  const fromRamc = relocate(
+    birthJD, CHART.birthplace.lat, ((advRamc - natalGmst) * 180) / Math.PI, 'placidus',
+  );
+  check(
+    'progressed sa-long: directed ASC is derived from the directed MC, not arc-shifted',
+    dAng(saLDir.asc, fromRamc.asc) < 1e-12,
+    `the retired convention sits ${(dAng(baseAng.asc + arcLong, fromRamc.asc) * RAD2DEG).toFixed(2)}° away`,
+  );
+
+  // Cusps are part of the directed angle set, not leftovers from the natal one.
+  // `directedAngles` used to omit them entirely, so every directed overlay carried a
+  // directed Ascendant glued to twelve NATAL cusps. That is invisible on a quadrant
+  // wheel except as a stray first-house spoke — but WheelSvg INFERS whole sign from
+  // the cusps and anchors the wheel on cusps[0], so it drew the whole directed chart
+  // on the natal rising sign.
+  const QUADRANT: HouseSystem[] = ['placidus', 'koch', 'regiomontanus', 'campanus', 'porphyry'];
+  for (const [name, layer] of [['sa-long', saL], ['sa-ra', saRa], ['naibod-ra', naibod]] as const) {
+    let worstQ = 0;
+    for (const sys of QUADRANT) {
+      const b = relocate(birthJD, CHART.birthplace.lat, CHART.birthplace.lng, sys);
+      const d = directedAngles(b, birthJD, CHART.birthplace.lat, CHART.birthplace.lng, sys, layer.angleArc, layer.angleFrame);
+      worstQ = Math.max(
+        worstQ,
+        dAng(d.cusps[0], d.asc), dAng(d.cusps[3], d.ic),
+        dAng(d.cusps[6], d.dsc), dAng(d.cusps[9], d.mc),
+      );
+    }
+    check(`${name}: directed cusps 1/4/7/10 are the directed angles`, worstQ < 1e-9,
+      `max Δ ${(worstQ * RAD2DEG * 3600).toFixed(3)}″ over ${QUADRANT.length} quadrant systems`);
+
+    // Whole sign is detected by every cusp lying on a sign boundary (WheelSvg's 1e-6
+    // rad test). A rigid +arc would walk them off it and silently flip the wheel to
+    // quadrant layout mid-overlay, so the cusps have to come from the house engine.
+    const bw = relocate(birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'whole');
+    const dw = directedAngles(bw, birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'whole', layer.angleArc, layer.angleFrame);
+    const offBoundary = Math.max(...dw.cusps.map((c) => {
+      const m = ((c % (Math.PI / 6)) + Math.PI / 6) % (Math.PI / 6);
+      return Math.min(m, Math.PI / 6 - m);
+    }));
+    check(`${name}: directed whole-sign cusps stay on their sign boundaries`, offBoundary < 1e-6);
+    check(`${name}: directed whole-sign wheel anchors on the DIRECTED rising sign`,
+      dAng(dw.cusps[0], Math.floor(dw.asc / (Math.PI / 6)) * (Math.PI / 6)) < 1e-9);
+  }
+
+  // ── The invariant that would have caught all of this ────────────────────────
+  // An Ascendant is ON the horizon; a Midheaven is ON the meridian. Read the directed
+  // angles back through the shipped horizontal-coordinate path, in the overlay's OWN
+  // map frame. That last part is what gives it teeth: it fails if the angles are wrong
+  // (defect 1), if the map frame is wrong (defect 2), or if the two were derived at
+  // different meridians — which is exactly how the two defects differed. Before
+  // 2026-08-24 this read −16.7° of altitude under sa-long and −17.4° under naibod-long.
+  for (const [name, layer] of [['sa-long', saL], ['sa-ra', saRa], ['naibod-ra', naibod]] as const) {
+    const dir = directedAngles(
+      baseAng, birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'placidus',
+      layer.angleArc, layer.angleFrame,
+    );
+    const ac = getAngleCoords(dir, layer.gmst, eps, CHART.birthplace.lat, CHART.birthplace.lng);
+    const lst = layer.gmst + CHART.birthplace.lng * DEG2RAD;
+    check(`${name}: the directed ASC sits on its own horizon`,
+      Math.abs(ac.asc.alt) * RAD2DEG < 1e-9, `alt ${(ac.asc.alt * RAD2DEG).toFixed(6)}°`);
+    check(`${name}: the directed MC sits on its own meridian`,
+      dAng(lst, ac.mc.ra) * RAD2DEG < 1e-9, `hour angle ${(dAng(lst, ac.mc.ra) * RAD2DEG).toFixed(6)}°`);
+  }
+
+  // The map frame's anchor, pinned. `-long` must culminate the directed MC at the
+  // CHART'S OWN meridian; anchoring at Greenwich (or at the map pin) fails this.
+  check(
+    'progressed sa-long: the map frame culminates the directed MC at the birth meridian',
+    dAng(saL.gmst + CHART.birthplace.lng * DEG2RAD, advRamc) < 1e-12,
+  );
+  // …and Δλ = 0 must round-trip to the natal frame exactly, through the new local form.
+  const saL0 = buildOverlay(CHART, 'progressed', jdToEpochMs(birthJD), null, 'mean', 'sa-long', 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
+  const nai0 = buildOverlay(CHART, 'progressed', jdToEpochMs(birthJD), null, 'mean', 'naibod-long', 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
+  check('longitude methods at age 0: frame is the natal RAMC exactly',
+    dAng(saL0.gmst, natalGmst) < 1e-12 && dAng(nai0.gmst, natalGmst) < 1e-12);
+
+  // The `-ra` frame is anchor-INDEPENDENT — the true half of the Greenwich rule. Assert
+  // it at meridians the chart has nothing to do with, so a future "tidy-up" that gives
+  // the RA methods a birthplace term too gets caught.
+  {
+    let worstRa = 0;
+    for (const [lat, lng] of [[0, 0], [51.5, -0.1], [-33.9, 151.2], [69.6, 18.96]] as const) {
+      const b = relocate(birthJD, lat, lng, 'placidus');
+      const d = directedAngles(b, birthJD, lat, lng, 'placidus', saRa.angleArc, saRa.angleFrame);
+      worstRa = Math.max(worstRa, dAng(eclipticLonOfRA(saRa.gmst + lng * DEG2RAD, eps), d.mc));
+    }
+    check('sa-ra: the map frame culminates the directed MC at EVERY meridian',
+      worstRa * RAD2DEG < 1e-9, `max Δ ${(worstRa * RAD2DEG).toExponential(2)}°`);
+  }
+
+  // ── One overlay, one instant (Lina's tertiary ruling, 24 Aug 2026) ──────────
+  // The tertiary clock used to reach the BODIES only: the angle arc was measured to
+  // the secondary-progressed Sun, so a tertiary chart carried tertiary planets against
+  // secondary angles, and its angles were byte-identical to the secondary overlay's at
+  // the same date. Solar Fire and Sirius both put them on the tertiary instant.
+  const sunLonAt = (jd: number) => {
+    const p = getPlanetPositions(jd, 'mean').find((x) => x.name === 'Sun')!;
+    return raDecToEclipticLon(p.ra, p.dec, eps);
+  };
+  const natalSunLon = sunLonAt(birthJD);
+  const terOf = (ap: AngleProgression) =>
+    buildOverlay(CHART, 'tertiary-progressed', target, null, 'mean', ap, 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
+  const terSaL = terOf('sa-long');
+  check(
+    'tertiary sa-long: the angle arc is the Sun\'s travel to the TERTIARY instant',
+    dAng(terSaL.angleArc ?? 0, normalizeAngle(sunLonAt(wantTer) - natalSunLon)) < 1e-12,
+    `${((terSaL.angleArc ?? 0) * RAD2DEG).toFixed(2)}°`,
+  );
+  check(
+    'tertiary angles are no longer the secondary angles at the same date',
+    dAng(terSaL.angleArc ?? 0, saL.angleArc ?? 0) * RAD2DEG > 1,
+    `tertiary ${((terSaL.angleArc ?? 0) * RAD2DEG).toFixed(2)}° vs secondary ${((saL.angleArc ?? 0) * RAD2DEG).toFixed(2)}°`,
+  );
+  // Naibod is a mean RATE, so it follows the same instant: 0.985647° per progressed
+  // day. Wrapped, because the tertiary hand passes a full turn of mean solar motion
+  // before age 28 and an arc is a rotation — only the residue means anything.
+  const terNai = terOf('naibod-ra');
+  check(
+    'tertiary naibod: the same mean rate over the TERTIARY interval, wrapped',
+    dAng(terNai.angleArc ?? 0, normalizeAngle((wantTer - birthJD) * 0.985647 * DEG2RAD)) < 1e-12,
+    `${((terNai.angleArc ?? 0) * RAD2DEG).toFixed(2)}° over ${(wantTer - birthJD).toFixed(1)} progressed days`,
+  );
+  check(
+    'secondary naibod is untouched by the tertiary fix',
+    dAng(naibod.angleArc ?? 0, 0.985647 * years * DEG2RAD) < 1e-12,
+  );
+  // The point of the ruling, stated as an invariant: whatever clock an overlay runs,
+  // the instant its bodies are read at is the instant its angle arc is measured to.
+  for (const [name, layer, progJd] of [
+    ['secondary', saL, wantSec], ['tertiary', terSaL, wantTer],
+  ] as const) {
+    check(`${name}: bodies and angle arc share one instant`,
+      Math.abs(layer.jd - progJd) < 1e-9 &&
+        dAng(layer.angleArc ?? 0, normalizeAngle(sunLonAt(layer.jd) - natalSunLon)) < 1e-12);
+  }
 }
 
 // ── 2. Solar arc ──────────────────────────────────────────────────────────────

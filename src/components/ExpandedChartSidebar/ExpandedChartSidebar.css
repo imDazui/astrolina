@@ -1113,7 +1113,14 @@
 /* The overlay's positions, folded under the chart's own. A plain text row rather
    than a switch: it reveals a reading, it does not change one, and the caret is
    the whole affordance. */
-.es-overlay-positions {
+/* The second chart's readings, each folded under the first chart's in its own
+   section: positions under the readout, balance under the constellations,
+   aspects under the aspect list. One rule for the three — they are the same
+   gesture in three places, and a divider that differed between them would read
+   as three unrelated controls. */
+.es-overlay-positions,
+.es-overlay-balance,
+.es-overlay-aspects {
   margin-top: 10px;
   border-top: 1px solid rgba(var(--tint), 0.07);
   padding-top: 8px;

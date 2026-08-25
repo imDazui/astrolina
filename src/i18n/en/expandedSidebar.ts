@@ -206,6 +206,25 @@ export const expandedSidebar = {
   // which second chart is being read is the whole question.
   overlayPositions: '{overlay} positions',
 
+  // The fold under the BALANCE groups that opens the same reading for the
+  // overlay's bodies, and the one under the aspect list that opens the overlay's
+  // OWN aspects. Both named for the overlay, like overlayPositions above, since
+  // which second chart is being read is the whole question.
+  //
+  // "{overlay} aspects" is deliberately distinct from overlayAspectsCount below:
+  // that section lists the contacts BETWEEN the two charts, this one the second
+  // chart's aspects to itself. Two lists that both mention the overlay is exactly
+  // the ambiguity, so the hints say which is which and the two sit adjacent.
+  //
+  // Plain '{count}' rather than the plural form its neighbours use: both of their
+  // branches are identical anyway, and a plural template cannot also interpolate
+  // {overlay}.
+  overlayBalance: '{overlay} balance',
+  overlayOwnAspects: '{overlay} aspects ({count})',
+  overlayOwnAspectsTip: 'The second chart’s own aspects',
+  overlayOwnAspectsHint:
+    'Aspects among the overlay chart’s OWN bodies — the web the second wheel draws for itself. The contacts between the two charts are the section below.',
+
   // Overlay-aspect section: the "(overlay)" planet suffix, counted heading, tip, hint.
   overlaySuffix: '(overlay)',
   overlayAspectsCount: '{count, plural, one {Overlay aspects (#)} other {Overlay aspects (#)}}',

@@ -124,6 +124,15 @@ function legacyArcMethod(): ArcMethod | null {
 //
 // Abandoning it would silently move the drawn map of every astrologer who had picked a
 // method, which is the failure the rule is protecting against, not an instance of it.
+//
+// "Without changing a single line" is a claim about the ROUTING, and it still holds —
+// re-checked 2026-08-24 against every legacy value. It is not a claim that the lines
+// never moved: the August 2026 angle fixes did move them for anyone on a longitude
+// method, because they were wrong (the Ascendant was arc-shifted instead of derived from
+// the progressed MC, and the map frame was anchored at Greenwich). Those are independent
+// of this migration and reach a reader through their stored choice rather than because of
+// it. The DEFAULT path is untouched: an install that never opened the control still holds
+// the natal frame with no arc applied, and draws exactly what it drew before.
 export function loadArcMethod(): ArcMethod {
   const v = localStorage.getItem(ARC_METHOD_KEY);
   if (v && (ARC_METHODS as string[]).includes(v)) return v as ArcMethod;

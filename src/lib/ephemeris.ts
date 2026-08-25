@@ -1117,17 +1117,26 @@ export function relocate(
  * Directed bi-wheel angles for the time overlays. A directed / progressed chart has
  * no relocatable "second moment": its overlay-ring angle marks are the NATAL
  * relocated angles (`base`) advanced by the directional `arc`.
- *   - 'long' (solar-arc-in-longitude): the whole chart shifts in ecliptic longitude,
- *     so add the arc to each angle's longitude directly.
+ *   - 'long' (solar-arc-in-longitude): the MC's ecliptic longitude advances by the arc,
+ *     and everything that depends on LATITUDE — ASC/DSC, the Vertex, the cusps — is then
+ *     re-derived from the RAMC that culminates that directed MC. The MC is the only angle
+ *     a longitude arc advances directly, because it is a point on the ecliptic: for it,
+ *     "the chart shifts in longitude" and "the meridian moves" are the same sentence.
+ *     The Ascendant is not a linear function of the RAMC, so `natal ASC + arc` names a
+ *     different point from the one that actually rises against the directed meridian —
+ *     15° away at age 85 on the Jim Lewis chart, and 17° BELOW its own horizon.
  *   - 'ramc' (the classical meridian operation): an angle has no independent
  *     declination to freeze — it is fixed entirely by the RAMC. Since
  *     `armc = gmst(jd) + lng`, relocating at `lng + arc` advances the RAMC by exactly
  *     the arc and re-derives MC/ASC at the SAME latitude and obliquity (the audited
  *     angle engine the map frame already uses), giving the forward "MC advances
  *     ~1°/yr" motion rather than a declination-frozen RA shift or a rigid rotation.
- *   - The Vertex/Anti-Vertex are re-derived from the advanced RAMC in BOTH frames
- *     ('long' uses the RAMC that culminates the directed MC), so the directed ring
- *     shows a real directed Vertex point — never the natal Vertex arc-shifted.
+ *   - Every latitude-dependent value — ASC/DSC, Vertex/Anti-Vertex, and all twelve
+ *     CUSPS — is re-derived from the advanced RAMC in BOTH frames ('long' uses the RAMC
+ *     that culminates the directed MC), so the directed ring shows real directed points,
+ *     never natal ones arc-shifted. The cusps matter beyond the house spokes: `WheelSvg`
+ *     INFERS Whole Sign from them and anchors the wheel on `cusps[0]`, so leaving them
+ *     natal drew the whole directed wheel on the natal rising sign.
  * `arc`/`frame` absent (transits / synastry / Natal-Frame progressed) → `base`.
  * See docs/calculation-methods.md, "Directed-overlay angles".
  */
@@ -1142,27 +1151,32 @@ export function directedAngles(
 ): RelocatedAngles {
   if (!arc || !frame) return base;
   if (frame === 'long') {
-    const asc = norm2pi(base.asc + arc);
     const mc = norm2pi(base.mc + arc);
-    // The Vertex has no clean longitude advance (adding the arc to it would
-    // misplace it — an angle has no declination to hold), so it is re-derived
-    // from the RAMC that culminates the directed MC: the SAME advanced RAMC the
-    // map's 'long' frame uses (timeline.ramcOfLong = RA of the directed MC).
+    // Advance the MC in longitude, convert THAT to an RAMC, and re-derive every
+    // latitude-dependent angle from it — one relocate() at this pin's own meridian.
+    // `timeline.ramcOfLong` performs the same construction for the map frame; the two
+    // agree where they are evaluated at the same meridian.
     const eps = obliquity(angleJd);
     const advRamc = eclipticToRaDec(mc, 0, eps).ra;
     const d = relocate(angleJd, latDeg, ((advRamc - gmstRadians(angleJd)) * 180) / Math.PI, system);
     return {
       ...base,
-      asc,
+      asc: d.asc,
+      // eclipticToRaDec → eclipticLonOfRA round-trips, so d.mc equals `mc` to 1e-12.
+      // The explicit form is kept because it is what the method MEANS: this frame is
+      // defined by the MC's longitude advance, and the RAMC is derived from it.
       mc,
-      dsc: norm2pi(asc + Math.PI),
+      dsc: d.dsc,
       ic: norm2pi(mc + Math.PI),
       vertex: d.vertex,
       antivertex: d.antivertex,
+      cusps: d.cusps,
+      // Describes the cusps being RETURNED, so it must follow d, not base.
+      fallback: d.fallback,
     };
   }
   // 'ramc': advance the RAMC by the arc and re-derive ALL angles — including the
-  // Vertex — at the same place.
+  // Vertex and the cusps — at the same place.
   const d = relocate(angleJd, latDeg, lngDeg + (arc * 180) / Math.PI, system);
   return {
     ...base,
@@ -1172,5 +1186,7 @@ export function directedAngles(
     ic: d.ic,
     vertex: d.vertex,
     antivertex: d.antivertex,
+    cusps: d.cusps,
+    fallback: d.fallback,
   };
 }

@@ -22,6 +22,7 @@ import type {
   AngleProgression,
   OverlayMode,
   PrimaryRate,
+  ProgAngleFrame,
   TransitFrame,
 } from '../astro/timeline';
 import type {
@@ -160,6 +161,35 @@ export interface MapExtensionContext {
    *  behalf. Without that, the offered fix would be refused by a hold the reader has no
    *  idea is there. */
   setTransitFrame: (frame: TransitFrame) => void;
+  /** The PROGRESSED overlays' answer to the same question {@link transitFrame} asks of
+   *  Transits: are the lines drawn against the birth chart's angles ('natal') or against
+   *  angles advanced by the arc ('progressed')? The bar calls it `Angles`.
+   *
+   *  Under 'progressed' the map's whole frame is advanced off the natal RAMC — ~85° at
+   *  age 85 — so a consumer resolving instants against the natal frame is answering a
+   *  different question from the map, exactly as under 'transit-moment'. The difference
+   *  worth knowing: this offset is FIXED, where the transit one sweeps ~15° an hour.
+   *
+   *  Raw, not effective, and deliberately so: the two conditions that mask
+   *  {@link transitFrame} cannot arise here, because a chart with no birth time has
+   *  `overlayMode` masked away from the progressed techniques altogether (App.tsx's
+   *  `overlayBlockedFor`) and there is no borrow on this control. A guard should still
+   *  read the EFFECTIVE {@link overlayMode} beside it rather than a stored technique. */
+  progAngleFrame: ProgAngleFrame;
+  /** Set the progressed angle frame — the write half of {@link progAngleFrame}, and the
+   *  counterpart to {@link setTransitFrame}. Note the two vocabularies differ and are
+   *  not interchangeable: this takes 'natal', that one takes 'relative-to-natal'. */
+  setProgAngleFrame: (frame: ProgAngleFrame) => void;
+  /** How far the active overlay's drawn frame stands off the natal RAMC, in DEGREES —
+   *  0 when it holds the natal frame. Derived from the layer the map is actually
+   *  drawing, so a consumer disclosing a frame mismatch can tell the reader how far off
+   *  they are instead of only that they are off. A number is more use than a warning.
+   *
+   *  Only meaningful where the frame itself moves: the progressed overlays under
+   *  'progressed', and Transits under 'transit-moment'. Solar Arc and Primary Directions
+   *  hold the natal RAMC and move the BODIES instead, so this reads 0 there — which is
+   *  correct, and is why their lists never part company with the map. */
+  frameOffsetDeg: number;
   /** Whether the night-side shading layer is on (Appearance ▸ Night Shade), so an
    *  extension drawing its own day/night treatment can follow the same switch. */
   nightShadeOn: boolean;

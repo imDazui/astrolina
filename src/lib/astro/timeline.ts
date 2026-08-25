@@ -237,8 +237,16 @@ const TROPICAL_MONTH_DAYS = 27.321582;
 // How the TRANSIT overlay's angle lines are framed:
 //  - 'relative-to-natal' (default): hold the natal chart's RAMC fixed and let the
 //    transiting planets fall through it — the lines reflect the planets' zodiacal
-//    (secondary) motion, drifting slowly day to day. This is the radix-relative map
-//    (the Solar Maps-style transit map this app's astrologers work with).
+//    (secondary) motion, drifting slowly day to day. This is the radix-relative map,
+//    and it is the DEFAULT on the judgement that it is the more intuitive first map
+//    for a reader who has come here to ask where to live: it holds still enough to be
+//    read across a season, where the moment's own frame sweeps ~15° an hour and only
+//    means anything at an instant deliberately chosen. (It was justified here as "the
+//    Solar Maps-style transit map this app's astrologers work with" until August 2026.
+//    That does not survive measurement: Astro Gold is Esoteric Technologies — the Solar
+//    Fire and Solar Maps house — and it draws the moment's frame. Two independent
+//    programs draw the moment's frame and we are the outlier. The default is still
+//    right; the reason had to change. See overlayPrefs.ts, which already said this.)
 //  - 'transit-moment': the standard Jim Lewis transit astrocartography — the
 //    transiting planets angular at the transit instant itself, driven by that
 //    moment's sidereal time (the diurnal/primary placement; lines sweep ~15°/hour).
@@ -409,13 +417,18 @@ export function directedBase(chart: StoredChart, nodeType: NodeType) {
   // list drops bodies that lack data, so an index would silently misread.
   const sunOf = (list: PlanetPosition[]) => list.find((p) => p.name === 'Sun') ?? list[0];
   const natalSun = sunOf(real);
-  // Memoized per trial instant: a scan marches every body over the SAME grid of
-  // times, so each sample's Sun is solved once however many bodies ask for it.
+  // The Sun's travel from birth to a PROGRESSED instant, in both measures. Keyed on
+  // the progressed instant rather than the target date, because which symbolic clock
+  // produced it is not this function's business — the tertiary hand reaches a different
+  // instant from the secondary hand and both are asked the same question here.
+  //
+  // Memoized: a scan marches every body over the SAME grid of times, so each sample's
+  // Sun is solved once however many bodies ask for it.
   const sunMemo = new Map<number, { long: number; ra: number }>();
-  const arcsAt = (jd: number) => {
-    let v = sunMemo.get(jd);
+  const arcsAtProgressedJD = (progJD: number) => {
+    let v = sunMemo.get(progJD);
     if (v === undefined) {
-      const s = sunOf(getPlanetPositions(progressedJDAt(jd), nodeType));
+      const s = sunOf(getPlanetPositions(progJD, nodeType));
       v = {
         long: normalizeAngle(
           raDecToEclipticLon(s.ra, s.dec, eps) -
@@ -423,19 +436,56 @@ export function directedBase(chart: StoredChart, nodeType: NodeType) {
         ),
         ra: normalizeAngle(s.ra - natalSun.ra),
       };
-      sunMemo.set(jd, v);
+      sunMemo.set(progJD, v);
     }
     return v;
   };
+  /** Naibod's mean rate over the same interval: 0.985647° per progressed DAY. For the
+   *  secondary clock a progressed day IS a year of life, which is why this reads as
+   *  °/year there; on the tertiary clock it is the same rate over the tertiary
+   *  interval, which is what keeps one overlay on one instant.
+   *
+   *  WRAPPED, like the true arc beside it. The tertiary hand covers ~1139 progressed
+   *  days by age 85 — over three full turns of mean solar motion — and an arc is a
+   *  rotation, so only its residue means anything. Leaving it unwrapped still drew the
+   *  right map (every consumer normalises eventually) but reported `angleArc` as
+   *  1122.86°, which is the number a reader would be shown. On the secondary clock
+   *  nothing wraps before age 365, which is why this never mattered until now. */
+  const naibodArcTo = (progJD: number) =>
+    normalizeAngle(((progJD - birthJD) * NAIBOD_DEG_PER_YR * Math.PI) / 180);
+  const arcsAt = (jd: number) => arcsAtProgressedJD(progressedJDAt(jd));
   const arcLongAt = (jd: number) => arcsAt(jd).long;
   const arcRAAt = (jd: number) => arcsAt(jd).ra;
-  // Advance the MC's ecliptic longitude by Δλ and return the matching RAMC (gmst).
-  // eclipticToRaDec(eclipticLonOfRA(g),0).ra round-trips to g, so Δλ=0 ⇒ natalGMST.
+  // Advance the MC's ecliptic longitude by Δλ and return the matching frame, as a
+  // GREENWICH sidereal time — which is what every consumer of `gmst` expects.
+  //
+  // The advance has to be worked at the CHART'S OWN meridian, not at Greenwich. An arc
+  // carried in right ascension is a rigid rotation of the sphere: advance the RAMC at
+  // any meridian and every other meridian advances by the same amount, so for the
+  // `-ra` methods the anchor is a free choice and Greenwich is as good as anywhere. A
+  // LONGITUDE arc is not rigid. "Add Δλ to the culminating degree" gives a different RA
+  // advance at every meridian, because the ecliptic-to-equator map is nonlinear — so
+  // there is no one global frame that satisfies it everywhere, and the anchor decides
+  // which single meridian it IS satisfied at. Greenwich is the one meridian with no
+  // claim to it: the resulting frame did not culminate the MC the wheel prints and two
+  // other programs corroborate. Measured 3.74° out at Yonkers on the Jim Lewis chart,
+  // and up to ~8° elsewhere, varying with the chart's own longitude — which is what
+  // made it look like a moving target rather than a constant offset.
+  //
+  // Corrects docs/calculation-methods.md, "Angles anchored to Greenwich", which stated
+  // the free half of this as though it covered both. (Lina's defect 2, 24 Aug 2026.)
+  //
+  // eclipticToRaDec(eclipticLonOfRA(g),0).ra round-trips to g, so Δλ=0 ⇒ natalGMST
+  // still holds exactly: the two birthLng terms cancel.
+  const birthLng = (chart.birthplace.lng * Math.PI) / 180;
   const ramcOfLong = (dLon: number) =>
-    eclipticToRaDec(eclipticLonOfRA(natalGMST, eps) + dLon, 0, eps).ra;
+    norm2pi(
+      eclipticToRaDec(eclipticLonOfRA(natalGMST + birthLng, eps) + dLon, 0, eps).ra - birthLng,
+    );
   return {
     birthJD, eps, natal, natalGMST, natalSun,
     yearsAt, progressedJDAt, arcLongAt, arcRAAt, ramcOfLong,
+    arcsAtProgressedJD, naibodArcTo,
   };
 }
 export type DirectedBase = ReturnType<typeof directedBase>;
@@ -580,7 +630,22 @@ export function buildOverlay(
       const isTertiary =
         mode === 'tertiary-progressed' || progressionType === 'tertiary';
       const c = directionContext(chart, targetDate, nodeType);
-      const naibodArc = (NAIBOD_DEG_PER_YR * c.years * Math.PI) / 180;
+      // THE overlay's instant — one per overlay, computed before anything reads it.
+      // The tertiary hand runs a day per tropical month, the secondary a day per
+      // tropical year; the bodies are read AT this instant and the angle arc is
+      // measured TO it. Until 2026-08-24 the arc was computed above this line, from
+      // the secondary clock, so a tertiary chart carried tertiary bodies against
+      // secondary angles — two clocks inside one overlay, and tertiary angles that
+      // were identical to secondary ones at the same date. Solar Fire and Sirius both
+      // put this chart's tertiary angles on the tertiary instant, and Lina ruled with
+      // them (24 Aug 2026): within one overlay, bodies and angles derive from one
+      // instant. Secondary already satisfied it; this is what makes tertiary do so.
+      const progJD =
+        isTertiary
+          ? c.birthJD + (epochMsToJD(targetDate) - c.birthJD) / TROPICAL_MONTH_DAYS
+          : c.progressedJD;
+      const arcs = c.arcsAtProgressedJD(progJD);
+      const naibodArc = c.naibodArcTo(progJD);
       // The planets progress via day-for-a-year; the angle method chooses how the
       // RAMC (gmst) is framed. DEFAULT is relative-to-natal: the progressed planets
       // plotted against the NATAL RAMC (consistent with the transit / solar-arc /
@@ -589,8 +654,14 @@ export function buildOverlay(
       // — can be re-exposed as its own option when the angle-frame UI toggle is built.
       // The map frame (gmst) and the bi-wheel's angle marks (angleArc/angleFrame,
       // applied to the relocated NATAL angles via angleJd below by ephemeris.
-      // directedAngles) advance by the same arc in the same frame, so wheel and map
-      // always agree. The Natal Frame default leaves both untouched.
+      // directedAngles) advance by the same arc in the same frame. Under the `-ra`
+      // methods that makes them agree exactly, at every pin — an RA arc is a rigid
+      // rotation. Under the `-long` methods they agree at the CHART'S OWN meridian and
+      // part by a bounded amount as the pin moves away from it (a few degrees, peaking
+      // near ±90° of RA from the birth meridian), because a longitude arc is not a
+      // rigid rotation and no single global frame can satisfy it everywhere. That
+      // residual is intrinsic to the method, not a bug to chase — see ramcOfLong.
+      // The Natal Frame default leaves both untouched.
       let gmst: number;
       let angleArc: number | undefined;
       let angleFrame: 'long' | 'ramc' | undefined;
@@ -600,20 +671,16 @@ export function buildOverlay(
           angleArc = naibodArc;
           angleFrame = 'ramc';
           break;
-        case 'sa-ra': {
-          const arc = c.arcRA();
-          gmst = norm2pi(c.natalGMST + arc);
-          angleArc = arc;
+        case 'sa-ra':
+          gmst = norm2pi(c.natalGMST + arcs.ra);
+          angleArc = arcs.ra;
           angleFrame = 'ramc';
           break;
-        }
-        case 'sa-long': {
-          const arc = c.arcLong();
-          gmst = c.ramcOfLong(arc);
-          angleArc = arc;
+        case 'sa-long':
+          gmst = c.ramcOfLong(arcs.long);
+          angleArc = arcs.long;
           angleFrame = 'long';
           break;
-        }
         case 'naibod-long':
           gmst = c.ramcOfLong(naibodArc);
           angleArc = naibodArc;
@@ -624,14 +691,8 @@ export function buildOverlay(
           gmst = c.natalGMST; // Natal Frame (default): angles stay natal
           break;
       }
-      // Tertiary swaps only the symbolic clock (day per tropical month instead
-      // of day per year); the angle-method arcs above stay defined by the
-      // secondary-progressed Sun, the conventional reading for solar arcs, and
-      // the default (natal) framing is untouched either way.
-      const progJD =
-        isTertiary
-          ? c.birthJD + (epochMsToJD(targetDate) - c.birthJD) / TROPICAL_MONTH_DAYS
-          : c.progressedJD;
+      // `progJD` and the arcs are both established above the switch — see the note
+      // there. The default (natal) framing is untouched on either clock.
       return {
         kind: mode,
         moment,

@@ -974,6 +974,17 @@ export function ExpandedChartSidebar({
   const [ovPosOpen, setOvPosOpen] = useState(false);
   const [aspectSort, setAspectSort] = useState<SortState<AspectSortKey>>(null);
   const [crossSort, setCrossSort] = useState<SortState<AspectSortKey>>(null);
+  // The second chart's own readings, below the first chart's in each section.
+  // Shut by default for the same reason the positions fold above is: they are a
+  // second reading of a second set of bodies, wanted often enough to be one
+  // press away and not often enough to push everything below them off screen.
+  // Session state only — nothing here is persisted, so there is no storage key
+  // and no stale default in an existing install.
+  const [ovBalOpen, setOvBalOpen] = useState(false);
+  const [ovAspOpen, setOvAspOpen] = useState(false);
+  // Its own sort, like every other list in this panel: ordering the overlay's
+  // aspects must not reorder the chart's above them.
+  const [ovAspSort, setOvAspSort] = useState<SortState<AspectSortKey>>(null);
 
 
   // Respect the Map Filter's planet toggles across every area of the expanded
@@ -1112,10 +1123,24 @@ export function ExpandedChartSidebar({
   // fills with its date is where the partner's name goes. Taken off the label's
   // detail half — "Synastry · Jane Doe" — from the FIRST middot only, so a name
   // that contains one survives whole.
-  const overlaySubject =
+  //
+  // MASKED HERE, once, rather than at the two places it renders (the bi-wheel's
+  // corner caption and the dual header). The name arrives already baked into
+  // `overlayLabel` — lib/astro/timeline builds "Synastry · {name}" from
+  // `partner.name` raw — so this derivation is the only point between the
+  // timeline and the screen where Discreet can catch it. It was not caught, and
+  // the panel printed a partner's real name in the one mode whose whole purpose
+  // is hiding who a chart is, while the SynastryHud and the chart switcher two
+  // inches away masked the same string (2026-08-24).
+  //
+  // Emptiness is tested BEFORE masking, not after: maskName('') returns three
+  // dots rather than '', so `id.name(raw) || null` can never be null and an
+  // overlay label with an empty detail half would grow a phantom name line.
+  const overlaySubjectRaw =
     overlayKind === 'synastry' && overlayLabel && overlayLabel.includes('·')
-      ? overlayLabel.slice(overlayLabel.indexOf('·') + 1).trim() || null
-      : null;
+      ? overlayLabel.slice(overlayLabel.indexOf('·') + 1).trim()
+      : '';
+  const overlaySubject = overlaySubjectRaw ? id.name(overlaySubjectRaw) : null;
   // The overlay's date/time (UTC) to show alongside its name over the wheel, so the moment
   // reads even without the timeline bar in view. A middot splits date · time (matching the
   // bar's separator convention); "UTC" is kept explicit as the labelFull captions do.
@@ -1515,6 +1540,119 @@ export function ExpandedChartSidebar({
     );
   };
 
+
+  // The balance readout, for ONE chart: the element and modality constellations,
+  // and (Advanced only) the essential-dignity list under them. Written once and
+  // called twice, exactly like positionsBlock above — the second wheel is a
+  // chart too, and "how is THAT chart weighted" had no answer in this panel
+  // before 2026-08-24. A second copy would be a second place for an element
+  // grouping to drift.
+  const balanceBlock = (bodies: EclipticPosition[]): ReactNode => {
+    // Group the bodies by element and by modality (every body has exactly one of
+    // each). We keep the bodies themselves, not just a count, so the balance can
+    // be drawn as a constellation of their glyphs.
+    const elementBodies: Record<'fire' | 'earth' | 'air' | 'water', EclipticPosition[]> = {
+      fire: [],
+      earth: [],
+      air: [],
+      water: [],
+    };
+    const modalityBodies: Record<'cardinal' | 'fixed' | 'mutable', EclipticPosition[]> = {
+      cardinal: [],
+      fixed: [],
+      mutable: [],
+    };
+    for (const p of bodies) {
+      const idx = signIndex(p.lon);
+      elementBodies[signElement(idx)].push(p);
+      modalityBodies[signModality(idx)].push(p);
+    }
+    // Dignities stay gated to Advanced; skip the lookup entirely otherwise so
+    // the always-on constellation costs nothing extra.
+    const dignified = advanced
+      ? bodies
+          .map((p) => ({
+            p,
+            d: essentialDignity(p.name, signIndex(p.lon), rulershipScheme),
+          }))
+          .filter((x): x is typeof x & { d: DignityResult } => x.d !== null)
+      : [];
+    // Only Modern can attribute a row to an era (Traditional has no modern claim
+    // to distinguish it from), and only then do the rows need the extra width.
+    const attributed = dignified.some((x) => x.d.from !== null);
+    const elementSegs = (['fire', 'earth', 'air', 'water'] as const).map((e) => ({
+      key: e,
+      label: t(`expandedSidebar.element.${e}`),
+      glyph: ELEMENT_GLYPHS[e],
+      cls: `es-el-${e}`,
+      hint: t(`expandedSidebar.elementDesc.${e}`),
+      bodies: elementBodies[e],
+    }));
+    const modalitySegs = (['cardinal', 'fixed', 'mutable'] as const).map((m) => ({
+      key: m,
+      label: t(`expandedSidebar.modality.${m}`),
+      glyph: MODALITY_GLYPHS[m],
+      cls: `es-mod-${m}`,
+      hint: t(`expandedSidebar.modalityDesc.${m}`),
+      bodies: modalityBodies[m],
+    }));
+    return (
+      <>
+        <div className="es-balance-groups">
+          <div className="es-balance-group">
+            {elementSegs.map((seg) => (
+              <BalanceRow key={seg.key} seg={seg} />
+            ))}
+          </div>
+          <div className="es-balance-group">
+            {modalitySegs.map((seg) => (
+              <BalanceRow key={seg.key} seg={seg} />
+            ))}
+          </div>
+        </div>
+        {dignified.length > 0 && (
+          <ul className={`es-dignity-list${attributed ? ' is-attributed' : ''}`}>
+            {dignified.map(({ p, d }) => {
+              const term = t(`expandedSidebar.dignity.${d.dignity}`);
+              const from = d.from ? t(`expandedSidebar.dignityFrom.${d.from}`) : null;
+              return (
+                <li key={p.name}>
+                  <PlanetTipGlyph planet={p.name} size={12} className="asp-planet" />
+                  <span className="es-dignity-planet">{labels.planet(p.name)}</span>
+                  <TipSpan
+                    className={`es-dignity es-dignity-${d.dignity}`}
+                    placement="top"
+                    tapReveal
+                    tip={term.charAt(0).toUpperCase() + term.slice(1)}
+                    hint={t(`expandedSidebar.dignityDesc.${d.dignity}`)}
+                  >
+                    {term}
+                  </TipSpan>
+                  {/* Which school granted it — shown only where the two disagree,
+                      which is only possible under the Both scheme. Without it Mars
+                      and Pluto both read a bare "rulership" in Scorpio, which is
+                      the confusion the scheme choice exists to answer; with it, a
+                      reader who wants one school knows which row to ignore (and
+                      which setting removes it). */}
+                  {d.from && from && (
+                    <TipSpan
+                      className="es-dignity-from"
+                      placement="top"
+                      tapReveal
+                      tip={from.charAt(0).toUpperCase() + from.slice(1)}
+                      hint={t(`expandedSidebar.dignityFromDesc.${d.from}`)}
+                    >
+                      {`(${from})`}
+                    </TipSpan>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </>
+    );
+  };
 
   // The place line and its coordinates — the panel header's, and the overlay
   // wheel's below it, because they are the same fact about both: the angles on
@@ -2110,126 +2248,40 @@ export function ExpandedChartSidebar({
         </section>
       )}
 
-      {frame && shownPlanets.length > 0 && (() => {
-        // Element/modality tallies (always shown) + essential dignities (Advanced
-        // only — domicile/detriment/etc. is a denser read) over the SHOWN bodies
-        // (the map filter decides what counts, like every list in this panel).
-        // Group the SHOWN bodies by element and by modality (every body has
-        // exactly one of each). We keep the bodies themselves, not just a count,
-        // so the balance can be drawn as a constellation of their glyphs.
-        const elementBodies: Record<
-          'fire' | 'earth' | 'air' | 'water',
-          EclipticPosition[]
-        > = { fire: [], earth: [], air: [], water: [] };
-        const modalityBodies: Record<
-          'cardinal' | 'fixed' | 'mutable',
-          EclipticPosition[]
-        > = { cardinal: [], fixed: [], mutable: [] };
-        for (const p of shownPlanets) {
-          const idx = signIndex(p.lon);
-          elementBodies[signElement(idx)].push(p);
-          modalityBodies[signModality(idx)].push(p);
-        }
-        // Dignities stay gated to Advanced; skip the lookup entirely otherwise so
-        // the always-on constellation costs nothing extra.
-        const dignified = advanced
-          ? shownPlanets
-              .map((p) => ({
-                p,
-                d: essentialDignity(p.name, signIndex(p.lon), rulershipScheme),
-              }))
-              .filter((x): x is typeof x & { d: DignityResult } => x.d !== null)
-          : [];
-        // Only Modern can attribute a row to an era (Traditional has no modern claim
-        // to distinguish it from), and only then do the rows need the extra width.
-        const attributed = dignified.some((x) => x.d.from !== null);
-        const elementSegs = (['fire', 'earth', 'air', 'water'] as const).map(
-          (e) => ({
-            key: e,
-            label: t(`expandedSidebar.element.${e}`),
-            glyph: ELEMENT_GLYPHS[e],
-            cls: `es-el-${e}`,
-            hint: t(`expandedSidebar.elementDesc.${e}`),
-            bodies: elementBodies[e],
-          }),
-        );
-        const modalitySegs = (['cardinal', 'fixed', 'mutable'] as const).map(
-          (m) => ({
-            key: m,
-            label: t(`expandedSidebar.modality.${m}`),
-            glyph: MODALITY_GLYPHS[m],
-            cls: `es-mod-${m}`,
-            hint: t(`expandedSidebar.modalityDesc.${m}`),
-            bodies: modalityBodies[m],
-          }),
-        );
-        return (
-          <section className="es-section es-section-balance">
-            <TipHeading
-              tip={t('expandedSidebar.balanceTip')}
-              hint={t('expandedSidebar.balanceHint')}
-            >
-              {t('expandedSidebar.balanceHeading')}
-            </TipHeading>
-            <div className="es-balance-groups">
-              <div className="es-balance-group">
-                {elementSegs.map((s) => (
-                  <BalanceRow key={s.key} seg={s} />
-                ))}
-              </div>
-              <div className="es-balance-group">
-                {modalitySegs.map((s) => (
-                  <BalanceRow key={s.key} seg={s} />
-                ))}
-              </div>
-            </div>
-            {dignified.length > 0 && (
-              <ul
-                className={`es-dignity-list${attributed ? ' is-attributed' : ''}`}
+      {frame && shownPlanets.length > 0 && (
+        <section className="es-section es-section-balance">
+          <TipHeading
+            tip={t('expandedSidebar.balanceTip')}
+            hint={t('expandedSidebar.balanceHint')}
+          >
+            {t('expandedSidebar.balanceHeading')}
+          </TipHeading>
+          {balanceBlock(shownPlanets)}
+          {/* The SECOND chart's balance, one press away. Same block, same
+              groupings, its own bodies — the overlay is a chart too, and "how is
+              that one weighted" had no answer in this panel before. Folded shut
+              by default, like the overlay's positions table above it, so it costs
+              nothing until it is wanted (2026-08-24). */}
+          {shownOverlay && shownOverlay.length > 0 && (
+            <div className="es-overlay-balance">
+              <button
+                type="button"
+                className={`es-disclosure${ovBalOpen ? ' open' : ''}`}
+                aria-expanded={ovBalOpen}
+                onClick={() => setOvBalOpen((v) => !v)}
               >
-                {dignified.map(({ p, d }) => {
-                  const term = t(`expandedSidebar.dignity.${d.dignity}`);
-                  const from = d.from
-                    ? t(`expandedSidebar.dignityFrom.${d.from}`)
-                    : null;
-                  return (
-                    <li key={p.name}>
-                      <PlanetTipGlyph planet={p.name} size={12} className="asp-planet" />
-                      <span className="es-dignity-planet">{labels.planet(p.name)}</span>
-                      <TipSpan
-                        className={`es-dignity es-dignity-${d.dignity}`}
-                        placement="top"
-                        tapReveal
-                        tip={term.charAt(0).toUpperCase() + term.slice(1)}
-                        hint={t(`expandedSidebar.dignityDesc.${d.dignity}`)}
-                      >
-                        {term}
-                      </TipSpan>
-                      {/* Which school granted it — shown only where the two disagree,
-                          which is only possible under the Both scheme. Without it Mars
-                          and Pluto both read a bare "rulership" in Scorpio, which is
-                          the confusion the scheme choice exists to answer; with it, a
-                          reader who wants one school knows which row to ignore (and
-                          which setting removes it). */}
-                      {d.from && from && (
-                        <TipSpan
-                          className="es-dignity-from"
-                          placement="top"
-                          tapReveal
-                          tip={from.charAt(0).toUpperCase() + from.slice(1)}
-                          hint={t(`expandedSidebar.dignityFromDesc.${d.from}`)}
-                        >
-                          {`(${from})`}
-                        </TipSpan>
-                      )}
-                    </li>
-                  );
+                <span className="es-disclosure-caret" aria-hidden="true">
+                  ▸
+                </span>
+                {t('expandedSidebar.overlayBalance', {
+                  overlay: overlayName ?? t('expandedSidebar.overlaySuffix'),
                 })}
-              </ul>
-            )}
-          </section>
-        );
-      })()}
+              </button>
+              {ovBalOpen && balanceBlock(shownOverlay)}
+            </div>
+          )}
+        </section>
+      )}
 
       {angles && advanced && (() => {
         // Longitude aspects plus the declination pairs (parallel reads with the
@@ -2262,7 +2314,19 @@ export function ExpandedChartSidebar({
         const azOnly = (azAspects ?? [])
           .filter(vis)
           .filter((a) => !natKeys.has(k(a)));
-        if (lonAspects.length + decAspects.length + azOnly.length === 0) {
+        // The SECOND chart's OWN aspects — the web the overlay wheel draws for
+        // itself, which nothing below the wheel listed before 2026-08-24. Three
+        // different questions live in a row here and each gets its own list: this
+        // chart's aspects (below), the overlay's aspects (the fold under them),
+        // and the contacts BETWEEN the two (the section after).
+        const ownOverlay = shownOverlay
+          ? computeAspects(shownOverlay, aspectOrbs)
+              .filter(vis)
+              .sort((x, y) => x.orb - y.orb)
+          : [];
+        // ownOverlay counts here too: a chart with no aspects of its own must not
+        // take the overlay's list down with it.
+        if (lonAspects.length + decAspects.length + azOnly.length + ownOverlay.length === 0) {
           return null;
         }
         const byOrb = (x: Aspect, y: Aspect) => x.orb - y.orb;
@@ -2724,35 +2788,110 @@ export function ExpandedChartSidebar({
 
         return (
           <section className="es-section es-section-aspects">
-            <div className="es-aspect-head">
-              <TipHeading
-                tip={t('expandedSidebar.aspectsTip')}
-                hint={t('expandedSidebar.aspectsHint')}
-              >
-                {t('expandedSidebar.aspectsCount', { count })}
-              </TipHeading>
-              {azByKey && (
+            {/* The chart's own heading and list appear only when it HAS aspects.
+                A narrow body filter can leave this chart with none while the
+                overlay still has some (two charts, two geometries), and the
+                section then exists to hold the fold below — "Aspects (0)" over an
+                empty list and a live sort strip would be furniture claiming a
+                reading. */}
+            {count > 0 && (
+              <>
+              <div className="es-aspect-head">
+                <TipHeading
+                  tip={t('expandedSidebar.aspectsTip')}
+                  hint={t('expandedSidebar.aspectsHint')}
+                >
+                  {t('expandedSidebar.aspectsCount', { count })}
+                </TipHeading>
+                {azByKey && (
+                  <TipButton
+                    type="button"
+                    className={`es-advanced-toggle es-frames-toggle ${splitFrames ? 'on' : 'off'}`}
+                    onClick={() => setSplitFrames(!splitFrames)}
+                    role="switch"
+                    aria-checked={splitFrames}
+                    placement="bottom"
+                    gated
+                    tip={t('expandedSidebar.localSpace.compareTip')}
+                    hint={t('expandedSidebar.localSpace.compareHint')}
+                  >
+                    <span className="es-toggle-label">
+                      {t('expandedSidebar.localSpace.compare')}
+                    </span>
+                    <span className="es-toggle-track">
+                      <span className="es-toggle-thumb" />
+                    </span>
+                  </TipButton>
+                )}
+              </div>
+              {body}
+              </>
+            )}
+            {/* The overlay's own aspects, one press away — same rows, same sort
+                gesture, its own bodies. Both glyphs carry the "(overlay)" suffix,
+                because every pair in this list is overlay-to-overlay; the section
+                below, where only the FIRST glyph carries it, is the one that
+                crosses the two charts. */}
+            {ownOverlay.length > 0 && (
+              <div className="es-overlay-aspects">
+                {/* A TipButton rather than a bare disclosure, unlike the balance
+                    and positions folds: this label and the heading of the section
+                    directly below it both name the overlay, and only the hover
+                    says which of them crosses the two charts. */}
                 <TipButton
                   type="button"
-                  className={`es-advanced-toggle es-frames-toggle ${splitFrames ? 'on' : 'off'}`}
-                  onClick={() => setSplitFrames(!splitFrames)}
-                  role="switch"
-                  aria-checked={splitFrames}
-                  placement="bottom"
-                  gated
-                  tip={t('expandedSidebar.localSpace.compareTip')}
-                  hint={t('expandedSidebar.localSpace.compareHint')}
+                  className={`es-disclosure${ovAspOpen ? ' open' : ''}`}
+                  aria-expanded={ovAspOpen}
+                  onClick={() => setOvAspOpen((v) => !v)}
+                  placement="top"
+                  tip={t('expandedSidebar.overlayOwnAspectsTip')}
+                  hint={t('expandedSidebar.overlayOwnAspectsHint')}
                 >
-                  <span className="es-toggle-label">
-                    {t('expandedSidebar.localSpace.compare')}
+                  <span className="es-disclosure-caret" aria-hidden="true">
+                    ▸
                   </span>
-                  <span className="es-toggle-track">
-                    <span className="es-toggle-thumb" />
-                  </span>
+                  {t('expandedSidebar.overlayOwnAspects', {
+                    overlay: overlayName ?? t('expandedSidebar.overlaySuffix'),
+                    count: ownOverlay.length,
+                  })}
                 </TipButton>
-              )}
-            </div>
-            {body}
+                {ovAspOpen && (
+                  <>
+                    <SortStrip
+                      label={t('expandedSidebar.sortBy')}
+                      sort={ovAspSort}
+                      onSort={(key) => setOvAspSort((so) => nextSort(so, key))}
+                      options={[
+                        { key: 'pair', label: t('expandedSidebar.sort.pair'), hint: t('expandedSidebar.sort.pairHint') },
+                        { key: 'type', label: t('expandedSidebar.sort.type'), hint: t('expandedSidebar.sort.typeHint') },
+                        { key: 'orb', label: t('expandedSidebar.sort.orb'), hint: t('expandedSidebar.sort.orbHint') },
+                      ]}
+                    />
+                    <ul className="es-aspect-list">
+                      {sortAspects(ownOverlay, ovAspSort).map((a, i) => (
+                        <li key={i} className={`asp asp-${a.category}`}>
+                          <PlanetTipGlyph
+                            planet={a.a as PlanetName}
+                            size={12}
+                            className="asp-planet asp-planet-overlay"
+                            suffix={t('expandedSidebar.overlaySuffix')}
+                          />
+                          <AspectGlyph type={a.type} color={a.color} />
+                          <PlanetTipGlyph
+                            planet={a.b as PlanetName}
+                            size={12}
+                            className="asp-planet asp-planet-overlay"
+                            suffix={t('expandedSidebar.overlaySuffix')}
+                          />
+                          <span className="asp-type">{a.type}</span>
+                          <span className="asp-orb">{fmtOrb(a.orb)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
           </section>
         );
       })()}
