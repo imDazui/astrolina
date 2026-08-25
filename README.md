@@ -19,13 +19,13 @@ chart wheel updating live. It features planet-to-planet parans and local space,
 ten house systems, geodetic (Mundane) lines, time overlays (transits, secondary
 progressions, solar-arc and primary directions) with an animated timeline, and
 synastry. Every position is computed client-side with the Swiss Ephemeris. Runs
-on any device, no install.
+on any device, in the browser.
 
 Deployed as a static site on Cloudflare Pages, with two edge functions for
 geocoding.
 
 > **We're new at this, and glad of your help.** The astronomy is solid — Swiss
-> Ephemeris, JPL data, agreement with the professional tools to well under an
+> Ephemeris, JPL data, audited against NASA's Horizons service to well under an
 > arcsecond. The app around it is version one, and it does enough that we
 > couldn't have reached every corner before launch. So if a line looks wrong, a
 > figure looks odd, or something simply won't do what you asked, please tell us —

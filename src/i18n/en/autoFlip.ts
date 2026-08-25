@@ -47,7 +47,7 @@ export const autoFlip = {
   // line on the map move is not in a mood to go looking.
   'overlay-frame-held': {
     title: 'Overlay frame held on Return angles',
-    body: 'A return chart is a moment of its own, with its own angles, and the returning body is back on its birth degree — so this is the only frame its lines move in. Your own frame is held, not cleared: it comes back when you leave the return, or straight away from the ✕ on the chip.',
+    body: 'A return chart is a moment of its own, with its own angles, and the map is now drawn against them rather than the natal ones. The previous frame is held, not cleared — it comes back on leaving the return, or straight away from the ✕ on the chip.',
   },
   // Fires from several tools, so the trigger stays unnamed — but the old "has no meaning
   // under the Mundane mapping" asserted the conclusion without the fact behind it. The

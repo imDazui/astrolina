@@ -365,22 +365,22 @@ export const settings = {
   arcMethod: {
     'sa-long': {
       label: 'Solar arc — in longitude',
-      angles: 'Advances the angles by the distance this chart’s progressed Sun has actually travelled, measured along the ecliptic.',
+      angles: 'Advances the angles by the distance the progressed Sun has travelled to this overlay’s own instant, measured along the ecliptic.',
       bodies: 'Advances every body by the distance this chart’s progressed Sun has actually travelled, measured along the ecliptic. The classic method.',
     },
     'sa-ra': {
       label: 'Solar arc — in right ascension',
-      angles: 'Advances the angles by the distance this chart’s progressed Sun has actually travelled, measured along the equator.',
+      angles: 'Advances the angles by the distance the progressed Sun has travelled to this overlay’s own instant, measured along the equator.',
       bodies: 'Advances every body by the distance this chart’s progressed Sun has actually travelled, measured along the equator.',
     },
     'naibod-long': {
       label: 'Naibod, mean rate — in longitude',
-      angles: 'Advances the angles at the Sun’s average yearly motion, measured along the ecliptic.',
+      angles: 'Advances the angles at the Sun’s mean rate over this overlay’s own interval, measured along the ecliptic.',
       bodies: 'Advances every body at the Sun’s average yearly motion, measured along the ecliptic.',
     },
     'naibod-ra': {
       label: 'Naibod, mean rate — in right ascension',
-      angles: 'Advances the angles at the Sun’s average yearly motion, measured along the equator.',
+      angles: 'Advances the angles at the Sun’s mean rate over this overlay’s own interval, measured along the equator.',
       bodies: 'Advances every body at the Sun’s average yearly motion, measured along the equator.',
     },
     // Menu headers — the question the four entries answer, which differs by overlay and
@@ -403,13 +403,25 @@ export const settings = {
       label: 'Progressed angles',
       short: 'Progressed',
       tip: 'The progressed chart’s own angles',
-      hint: 'The progressed chart has a real moment of its own — one day after birth for each year of life — so it has its own angles. The map is drawn against those instead of the natal ones.',
+      // Lina's ruling, 25 Aug 2026: "real" was doing rhetorical rather than informational
+      // work — "a moment of its own" already carries that the moment exists and can be dated —
+      // and dropping it makes this and hintTertiary read as the matched pair they are.
+      hint: 'The progressed chart has a moment of its own — one day after birth for each year of life — so it has its own angles. The map is drawn against those instead of the natal ones.',
+      // Tertiary runs a different clock, so the same sentence would state the wrong
+      // rule beside a correct chart. Naming the month is deliberate and Lina's ruling:
+      // "lunar month" reads as SYNODIC to a good share of astrologers, and a reader
+      // checking our progressed date against 29.53 days would compute 1,053 progressed
+      // days where the app uses 1,139 and conclude the app is wrong. 27.32 closes that.
+      // Twice trimmed to stay under tipWidth's 180-char step (now 179) so this segment
+      // and its Natal sibling keep the same card width — "real" and "of life" went to
+      // pay for the number, which is the better trade.
+      hintTertiary: 'The tertiary chart has a moment of its own — a day after birth for each tropical month (27.32 days) — so it has its own angles. The map is drawn against those, not the natal ones.',
     },
     // On the calculation menu while the angles are held natal: it is showing a method
     // that isn't running, which needs saying before a reader takes it for the live one.
     idle: {
       tip: 'Not in force',
-      hint: 'The angles are held on the birth chart’s, so no arc is being applied to them. Choosing a calculation here also switches the map to Progressed angles.',
+      hint: 'The angles are held on the natal chart, so no arc is applied to them. Choosing a calculation here also switches the map to Progressed angles.',
     },
   },
 

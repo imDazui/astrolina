@@ -40,7 +40,7 @@ export const topNav = {
       'tertiary-progressed': {
         label: 'Tert. Progressed',
         tipTitle: 'Tertiary Progressions',
-        desc: 'Tertiary progressions: a day-for-a-lunar-month hand for finer timing.',
+        desc: 'Tertiary progressions: a day for a tropical month (27.32 days), a finer hand for timing.',
       },
       'solar-arc': {
         label: 'Solar Arc',

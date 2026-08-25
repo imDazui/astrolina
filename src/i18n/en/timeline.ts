@@ -139,7 +139,7 @@ export const timeline = {
       solar: 'Solar return',
       lunar: 'Lunar return',
       tip: 'The map is on a return',
-      hint: 'The overlay frame is borrowed for this moment, because a return chart is only itself in its own frame. Your own frame is underneath and comes back when you leave the return — step returns with the arrows to keep it, or clear it here.',
+      hint: 'The overlay frame is borrowed while the map is on a return, since a return chart’s angles are its own. The previous frame is held underneath and comes back on leaving. Stepping between returns with the arrows keeps the hold.',
       clear: 'Leave the return',
       clearHint: 'Puts the overlay frame back where it was. The date stays where it is.',
       clearAria: 'Leave the return and restore the overlay frame',

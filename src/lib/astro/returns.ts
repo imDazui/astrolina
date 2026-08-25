@@ -28,6 +28,14 @@ const RETURN_PLANET: Record<ReturnBody, PlanetName> = {
 // Mean revolution period (days) — only the seed for hopping to the previous/
 // next return; the Newton refinement does the precision work. (Lunar returns
 // recur per TROPICAL month: a return to a longitude, not to a fixed star.)
+//
+// 27.321582 is ALSO the tertiary-progression clock (TROPICAL_MONTH_DAYS in
+// ./timeline.ts). Same number, unrelated concepts — a mean revolution period
+// here, a day-for-a-month ratio there — so neither is a copy of the other and
+// neither should be unified with it. They also fail differently: this one is a
+// seed a single Newton step corrects (even a synodic-month value would still
+// converge on the right return, being under half a revolution away), while the
+// progression constant DIVIDES elapsed time, so an error there scales with age.
 const RETURN_PERIOD_DAYS: Record<ReturnBody, number> = {
   solar: 365.2422,
   lunar: 27.321582,

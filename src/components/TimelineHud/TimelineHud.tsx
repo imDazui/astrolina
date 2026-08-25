@@ -1212,7 +1212,16 @@ export function TimelineHud({
                   aria-pressed={progAngleFrame === value}
                   placement="top"
                   tip={t(`settings.progAngles.${value}.tip`)}
-                  hint={t(`settings.progAngles.${value}.hint`)}
+                  // The Progressed segment explains the clock behind the moment, and the
+                  // two overlays run different ones — a day per year, a day per lunar
+                  // month. One string here stated the secondary rule beside a correct
+                  // tertiary chart, which is the same fault as the arc had, surviving in
+                  // the copy. The Natal segment says nothing clock-specific and is shared.
+                  hint={
+                    value === 'progressed' && overlayMode === 'tertiary-progressed'
+                      ? t('settings.progAngles.progressed.hintTertiary')
+                      : t(`settings.progAngles.${value}.hint`)
+                  }
                   onClick={() => setProgAngleFrame(value)}
                 >
                   <span className="thud-frame-word">

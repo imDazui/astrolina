@@ -37,7 +37,7 @@ export const creditsModal = {
   // `report` at itself instead of at the address (see creditsFooter's notice tail).
   notice: {
     lead: 'We’re new at this, and glad of your help.',
-    body: 'The astronomy is solid — Swiss Ephemeris, JPL data, agreement with the professional tools to well under an arcsecond. The app around it is version one, and it does enough that we couldn’t have reached every corner before launch. So if a line looks wrong, a figure looks odd, or something simply won’t do what you asked, please tell us — every report is read by a person, and we mean to make this a tool you can rely on.',
+    body: 'The astronomy is solid — Swiss Ephemeris, JPL data, audited against NASA’s Horizons service to well under an arcsecond. The app around it is version one, and it does enough that we couldn’t have reached every corner before launch. So if a line looks wrong, a figure looks odd, or something simply won’t do what you asked, please tell us — every report is read by a person, and we mean to make this a tool you can rely on.',
     // The one thing in the notice to act on, so it is the only thing in it that links.
     report: 'Report an issue.',
   },

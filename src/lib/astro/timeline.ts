@@ -232,6 +232,9 @@ export type PrimaryRate =
 // its progressed case — but the type also lets callers/tests name a clock directly).
 export type ProgressionType = 'secondary' | 'tertiary';
 
+// The tertiary clock: one ephemeris day per tropical month of life. See returns.ts,
+// where the same number is the lunar-return interval — a different concept that must
+// not be unified with this one.
 const TROPICAL_MONTH_DAYS = 27.321582;
 
 // How the TRANSIT overlay's angle lines are framed:

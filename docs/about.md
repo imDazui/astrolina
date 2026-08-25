@@ -1,6 +1,6 @@
 # About This App
 
-A modern, web-based astrocartography tool for curious minds. Plot a natal chart's planetary lines on an interactive world map, drag to relocate, and view the relocated chart wheel instantly, on any device, with no install. The astronomical engine runs entirely in your browser.
+A modern, web-based astrocartography tool for curious minds. Plot a natal chart's planetary lines on an interactive world map, drag to relocate, and view the relocated chart wheel instantly, on any device. The astronomical engine runs entirely in your browser.
 
 This page explains what the app computes, what it deliberately doesn't do yet, and where its accuracy has limits. For the underlying math and conventions, see [Calculation Methods](calculation-methods.md).
 
@@ -19,9 +19,9 @@ This page explains what the app computes, what it deliberately doesn't do yet, a
 
 ## Why a web-based tool
 
-These are the things that set a browser-based tool apart from established desktop software.
+These are the things that follow from running in a browser.
 
-- **Platform-agnostic and instant.** No install and no operating-system restriction. A URL works on any device: phone, tablet, or a client's laptop during a reading. The professional desktop tools are typically Windows-only or Mac-only.
+- **Runs anywhere there is a browser.** One URL and no operating-system restriction: the same app on a phone, a tablet, or a client's laptop during a reading, with the astronomy computed on the device in front of you rather than on a server.
 - **Live drag-relocation with the relocated wheel inline.** Drag a point on the map and the relocated chart wheel updates in real time, right beside the map, with no switching to a separate window to see the relocated chart.
 - **Modern, legible map design.** A dark, minimal basemap lets the planet lines stand out, with faint parans that never overwhelm. A clean map is itself useful, since astrologers screenshot maps to share with clients.
 - **Techniques toggle without dialogs.** Show or hide parans and individual planets, and switch calculation conventions (Celestial/Mundane, In Mundo/In Zodiaco, house system, lunar-node type, progression/direction method) from one sidebar, with local space on its own movable Location panel — each re-rendering the map instantly.
@@ -31,7 +31,7 @@ These are the things that set a browser-based tool apart from established deskto
 
 ## What it doesn't do (yet)
 
-Set against full-featured desktop software, these are the deliberate gaps:
+These are the known gaps. The ones with a plan say so; the rest are deliberate scope.
 
 - **Star parans.** Fixed-star angle lines ship (a 40-star catalog with proper motion), but the per-location star × planet paran list and star-to-star parans are not surfaced.
 - **A full classical primary-directions engine.** The map's directions (solar arc, secondary progressions, primary directions) are an angle-only treatment: the directed angles and their lines, not individual promissor-to-significator directions with latitude, semi-arc proportions, or converse motion. (A dated directions list does not ship.)
@@ -49,9 +49,9 @@ Set against full-featured desktop software, these are the deliberate gaps:
 
 ## Accuracy & limitations
 
-**Planetary positions.** The app reads the Swiss Ephemeris, the same JPL-derived engine the professional desktop tools use, so planet, node, asteroid, Lilith, and angle positions agree with those tools to well under an arcsecond. The engine, data files, and date range are described in [Calculation Methods](calculation-methods.md).
+**Planetary positions.** The app reads the Swiss Ephemeris, Astrodienst's port of JPL DE441 data, so planet, node, asteroid and Lilith positions agree to well under an arcsecond with any program reading the same ephemeris. The **angles** rest on the time chain as well as the ephemeris — birth moment to Universal Time, ΔT, then Greenwich apparent sidereal time — so they are pinned separately, against JPL Horizons goldens (sidereal time within 0.08″). The engine, data files, and date range are described in [Calculation Methods](calculation-methods.md).
 
-**Birthplace atlas and timezones.** Birthplaces resolve offline-first from a bundled GeoNames cities dataset, falling back to OpenStreetMap for places not in that set; timezones and historical daylight-saving offsets come from the IANA time-zone database. That stack is excellent for **post-1970 dates and for locations in the Americas or Europe**. For earlier dates, especially elsewhere, historical daylight-saving and local-mean-time records get spotty (wartime European DST changes, 19th-century births before standard time zones, and so on). The app flags such births as "uncertain" so you know to spot-check: a famous pre-1900 chart can land several minutes off, and since the sky turns fifteen degrees an hour, every four minutes of that is a full degree of longitude on its MC line. The professional desktop tools license a proprietary, hand-curated historical atlas that captures these edge cases.
+**Birthplace atlas and timezones.** Birthplaces resolve offline-first from a bundled GeoNames cities dataset, falling back to OpenStreetMap for places not in that set; timezones and historical daylight-saving offsets come from the IANA time-zone database. That stack is excellent for **post-1970 dates and for locations in the Americas or Europe**. For earlier dates, especially elsewhere, historical daylight-saving and local-mean-time records get spotty (wartime European DST changes, 19th-century births before standard time zones, and so on). The app flags such births as "uncertain" so you know to spot-check: a famous pre-1900 chart can land several minutes off, and since the sky turns fifteen degrees an hour, every four minutes of that is a full degree of longitude on its MC line. Capturing those edge cases is what a proprietary, hand-curated historical atlas exists for, and the app does not license one — so for an early birth, or one outside the Americas and Europe, treat a flagged time as worth checking against the birth record itself.
 
 **Imported charts.** A chart imported from text or CSV carries its own coordinates and timezone offset, so import bypasses the geocoder and timezone lookup entirely; the source data is authoritative.
 
@@ -68,4 +68,4 @@ This application is open source under the **AGPL-3.0**.
 
 ## In short
 
-It's a web-based astrocartography tool for practitioners. The map and live drag-relocation match or beat desktop interactivity, and you can geocode any birthplace, resolve its timezone, and import charts in bulk. It computes the ten classical planets plus the lunar nodes, Black Moon Lilith, Chiron, and the four main asteroids, all with the Swiss Ephemeris, in the browser. You can overlay transits, secondary progressions, and directions and animate them over time, overlay a second chart for relationship work, draw the full set of planet-to-planet parans, and switch lines between in-mundo and in-zodiaco or between celestial and geodetic placement. It doesn't yet have fixed-star parans, a hand-curated historical atlas, or a full primary-directions engine. If your work leans on those, keep your existing tool alongside it; if it leans on planets, asteroids, nodes, parans, local space, a relocated wheel, transits and secondary progressions, and relationship maps, this can already handle the map portion of your workflow on any device.
+It's a web-based astrocartography tool for practitioners. The map redraws continuously as you drag, so relocation is a gesture rather than a step, and you can geocode any birthplace, resolve its timezone, and import charts in bulk. It computes the ten classical planets plus the lunar nodes, Black Moon Lilith, Chiron, and the four main asteroids, all with the Swiss Ephemeris, in the browser. You can overlay transits, secondary progressions, and directions and animate them over time, overlay a second chart for relationship work, draw the full set of planet-to-planet parans, and switch lines between in-mundo and in-zodiaco or between celestial and geodetic placement. It doesn't yet have fixed-star parans, a hand-curated historical atlas, or a full primary-directions engine. If your work leans on those, keep your existing tool alongside it; if it leans on planets, asteroids, nodes, parans, local space, a relocated wheel, transits and secondary progressions, and relationship maps, this can already handle the map portion of your workflow on any device.

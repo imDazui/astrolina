@@ -176,7 +176,12 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
   // (defect 1), if the map frame is wrong (defect 2), or if the two were derived at
   // different meridians — which is exactly how the two defects differed. Before
   // 2026-08-24 this read −16.7° of altitude under sa-long and −17.4° under naibod-long.
-  for (const [name, layer] of [['sa-long', saL], ['sa-ra', saRa], ['naibod-ra', naibod]] as const) {
+  // naibod-long is built here rather than reused, because the comment above quotes its
+  // pre-fix reading and a loop that skipped it would promise coverage it wasn't giving.
+  const naibodLong = buildOverlay(CHART, 'progressed', target, null, 'mean', 'naibod-long', 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
+  for (const [name, layer] of [
+    ['sa-long', saL], ['naibod-long', naibodLong], ['sa-ra', saRa], ['naibod-ra', naibod],
+  ] as const) {
     const dir = directedAngles(
       baseAng, birthJD, CHART.birthplace.lat, CHART.birthplace.lng, 'placidus',
       layer.angleArc, layer.angleFrame,
@@ -239,8 +244,11 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
     `tertiary ${((terSaL.angleArc ?? 0) * RAD2DEG).toFixed(2)}° vs secondary ${((saL.angleArc ?? 0) * RAD2DEG).toFixed(2)}°`,
   );
   // Naibod is a mean RATE, so it follows the same instant: 0.985647° per progressed
-  // day. Wrapped, because the tertiary hand passes a full turn of mean solar motion
-  // before age 28 and an arc is a rotation — only the residue means anything.
+  // day. Wrapped, because an arc is a rotation and only the residue means anything —
+  // and the tertiary hand comes all the way round every 27.32 years of life. That
+  // period is exact rather than approximate: a full turn takes 360/0.985647 = 365.24
+  // progressed days (a tropical year of them), and each progressed day is a tropical
+  // month of life, so the period in YEARS is the tropical month in DAYS.
   const terNai = terOf('naibod-ra');
   check(
     'tertiary naibod: the same mean rate over the TERTIARY interval, wrapped',
@@ -408,6 +416,101 @@ const years = (targetJD - birthJD) / TROPICAL_YEAR_DAYS;
   check('Davison lng: (+170, −170) → ±180 (shorter arc, not 0)', Math.abs(Math.abs(at(170, -170)) - 180) < 1e-9, `got ${at(170, -170)}`);
   check('Davison lng: (10, 30) → 20', Math.abs(at(10, 30) - 20) < 1e-9, `got ${at(10, 30)}`);
   check('Davison lng: (−10, 30) → 10', Math.abs(at(-10, 30) - 10) < 1e-9, `got ${at(-10, 30)}`);
+}
+
+// ── 8. External audit: agreement with Solar Fire ──────────────────────────────
+// Sections 1–7 pin INTERNAL identities — relations the app must satisfy against
+// itself. This one is different in kind: it pins agreement with an outside authority
+// on printed chart data, and it fails for a different reason. An internal assertion
+// breaking means the code contradicts itself; this breaking means the code is
+// self-consistent and wrong, which is the failure that survived here for months.
+//
+// Provenance: Lina's verification of the progressed overlays against Solar Fire,
+// 24–25 Aug 2026. Both programs agree on the natal chart to the arcminute, which is
+// what makes the directed comparison meaningful.
+//
+// This is the case that exposed defect 1 most sharply. The Ascendant error is 31° here
+// against 15° on the Jim Lewis chart above, because the arc lands in a part of the
+// zodiac where the Ascendant moves fast — so a fix that lands both is well tested.
+//
+// Footnote from the same audit, deliberately not asserted: Solar Fire labels the zone
+// CST on a date when Saint Paul is on CDT, putting the two progressed instants 1h03m
+// apart in real time. On a secondary progression that is ~2.5 seconds of progressed
+// time, which is why the Suns agree exactly and Jupiter differs by one arcminute. It
+// would matter on a technique whose angles run fast.
+{
+  const dms = (d: number, m: number, s: number) => d + m / 60 + s / 3600;
+  const SP = stored({
+    name: 'Saint Paul 1972',
+    year: 1972, month: 11, day: 12, hour: 11, minute: 7, tzOffset: -6,
+    birthplace: { label: 'Saint Paul MN', lat: dms(44, 56, 59), lng: -dms(93, 5, 35) },
+  });
+  const spJD = birthDataToJD(SP);
+  const spTarget = Date.UTC(2026, 7, 23, 12, 0, 0);
+  const zod = (sign: string, d: number, m: number) =>
+    ((['Ari', 'Tau', 'Gem', 'Can', 'Leo', 'Vir', 'Lib', 'Sco', 'Sag', 'Cap', 'Aqu', 'Pis']
+      .indexOf(sign) * 30) + d + m / 60) * DEG2RAD;
+  // Tolerance: one arcminute. Tighter than the zone footnote above would justify, and
+  // it holds — the point of an external golden is that it is not fitted to us.
+  const ARCMIN = DEG2RAD / 60;
+  const near = (a: number, b: number) => dAng(a, b) < ARCMIN;
+  const fmt = (r: number) => `${(dAng(r, 0) * RAD2DEG * 60).toFixed(2)}′`;
+
+  const spNatal = relocate(spJD, SP.birthplace.lat, SP.birthplace.lng, 'placidus');
+  check('Saint Paul natal MC = 7°57′ Sco (Solar Fire)', near(spNatal.mc, zod('Sco', 7, 57)),
+    `Δ ${fmt(spNatal.mc - zod('Sco', 7, 57))}`);
+  check('Saint Paul natal ASC = 9°32′ Cap (Solar Fire)', near(spNatal.asc, zod('Cap', 9, 32)),
+    `Δ ${fmt(spNatal.asc - zod('Cap', 9, 32))}`);
+
+  const spL = buildOverlay(SP, 'progressed', spTarget, null, 'mean', 'sa-long', 'ptolemy', 1, 'relative-to-natal', 'secondary', t)!;
+  const spDir = directedAngles(
+    spNatal, spL.angleJd ?? spL.jd, SP.birthplace.lat, SP.birthplace.lng, 'placidus',
+    spL.angleArc, spL.angleFrame,
+  );
+  // The arc, measured off the two printed MCs rather than reconstructed.
+  check('Saint Paul sa-long arc = 54.58° (natal MC → progressed MC, both printed)',
+    Math.abs((spL.angleArc ?? 0) * RAD2DEG - 54.58) < 0.02,
+    `${((spL.angleArc ?? 0) * RAD2DEG).toFixed(2)}°`);
+  check('Saint Paul directed MC = 2°32′ Cap (Solar Fire)', near(spDir.mc, zod('Cap', 2, 32)),
+    `Δ ${fmt(spDir.mc - zod('Cap', 2, 32))}`);
+  check('Saint Paul directed ASC = 5°18′ Ari (Solar Fire)', near(spDir.asc, zod('Ari', 5, 18)),
+    `Δ ${fmt(spDir.asc - zod('Ari', 5, 18))}`);
+
+  // The retired convention, pinned as the thing that must NOT come back: it reproduced
+  // AL's printed 4°08′ Pis to the arcminute, 31° from where the Ascendant belongs.
+  const retired = normalizeAngle(spNatal.asc + (spL.angleArc ?? 0));
+  check('Saint Paul: `natal ASC + arc` still reproduces the old wrong value (4°08′ Pis)',
+    near(retired, zod('Pis', 4, 8)), `Δ ${fmt(retired - zod('Pis', 4, 8))}`);
+  check('…and it is 31° from the Solar Fire Ascendant',
+    Math.abs(dAng(retired, zod('Ari', 5, 18)) * RAD2DEG - 31.18) < 0.1,
+    `${(dAng(retired, zod('Ari', 5, 18)) * RAD2DEG).toFixed(2)}°`);
+}
+
+// ── 9. The arc-separation bound ───────────────────────────────────────────────
+// A standing check Lina asked to keep after a 22.47° separation turned out to be a
+// misreading. The longitude arc and the RA arc are the SAME Sun over the SAME interval,
+// read in two coordinates, so their difference is the reduction to the ecliptic — which
+// peaks near 2.47° (at λ=45°, α=42.53°). An arc is a difference of two such conversions,
+// so the two coordinates can separate by at most about 4.9°, for any chart at any age.
+// This refutes a large claimed separation without reference to any particular chart.
+{
+  let worst = 0;
+  let worstAt = '';
+  for (let month = 1; month <= 12; month++) {
+    for (const age of [20, 40, 60, 85]) {
+      const probe = stored({
+        name: 'probe', year: 1970, month, day: 15, hour: 12, minute: 0, tzOffset: 0,
+        birthplace: { label: 'Greenwich', lat: 51.48, lng: 0 },
+      });
+      const at = Date.UTC(1970 + age, month - 1, 15, 12, 0, 0);
+      const mk = (ap: AngleProgression) =>
+        (buildOverlay(probe, 'progressed', at, null, 'mean', ap, 'ptolemy', 1, 'relative-to-natal', 'secondary', t)?.angleArc ?? 0) * RAD2DEG;
+      const sep = Math.abs(mk('sa-ra') - mk('sa-long'));
+      if (sep > worst) { worst = sep; worstAt = `month ${month}, age ${age}`; }
+    }
+  }
+  check('longitude and RA arcs never separate by more than ~4.9°',
+    worst < 4.95, `max ${worst.toFixed(2)}° (${worstAt}) over 48 chart/age combinations`);
 }
 
 console.log(failures === 0 ? '\nverify-directions: ALL PASS' : `\nverify-directions: ${failures} FAILURE(S)`);
