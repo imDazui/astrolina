@@ -66,8 +66,16 @@ export function saveOverlayMode(mode: OverlayMode) {
 }
 
 export function loadOverlayDate(): number {
-  const v = Number(localStorage.getItem(DATE_KEY));
-  return Number.isFinite(v) && v > 0 ? v : Date.now();
+  // ABSENCE is the empty string, not a non-positive number. `v > 0` used to stand in
+  // for "nothing stored", which silently discarded every cursor before 1 Jan 1970:
+  // a reader on a 1963 chart could scrub back to their own childhood, reload, and
+  // land on the present with no way to tell why. Epoch ms are signed, and a negative
+  // one is a date. (Same trap the report blocks record having fixed — see
+  // normalizeBlocks' `NOT atMs > 0` note. This one never got it.)
+  const raw = localStorage.getItem(DATE_KEY);
+  if (raw === null || raw.trim() === '') return Date.now();
+  const v = Number(raw);
+  return Number.isFinite(v) ? v : Date.now();
 }
 export function saveOverlayDate(ms: number) {
   localStorage.setItem(DATE_KEY, String(ms));

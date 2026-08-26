@@ -449,9 +449,26 @@ export function TimelineHud({
   // Read "now" once at mount: calling Date.now() during render makes render
   // impure, and a ±50-year slider doesn't care about sub-second drift.
   const [nowMs] = useState(() => Date.now());
-  const birthMs = current ? birthDateUTCms(current) : nowMs;
+  // No chart is the only case with no birth to anchor on; a rolling window is then
+  // the only honest domain, and the transits one already is that.
+  const birthMs = current ? birthDateUTCms(current) : nowMs - 50 * YEAR_MS;
+  // THE BIRTH MOMENT IS ALWAYS REACHABLE. The transits floor used to be `now − 50y`
+  // outright — anchored on the clock, with nothing to do with the chart — so a 1963
+  // birth could only be scrubbed back to 1976, and the reachable span shrank by a
+  // year every year. That defeats the retrospective reading the whole timeline
+  // exists for (scrub back and see what was hitting when someone lived somewhere),
+  // for exactly the charts where it is most valuable, and it also broke the
+  // dated-arrivals floor downstream, which assumes the birth date can be reached at
+  // all. Widened rather than replaced: `Math.min` keeps the rolling 50 years for a
+  // chart born inside it and adds the birth for one born before.
+  //
+  // The per-overlay asymmetry is deliberate and stays. Real sky exists before a
+  // birth, so transits keep the rolling floor as their FURTHEST reach; a progressed
+  // or directed frame does not exist before the moment it is measured from, so
+  // those floor at the birth exactly (the same rule the reports code relies on —
+  // see normalizeBlocks' note about negative epochs).
   const sliderMin =
-    overlayMode === 'transits' ? nowMs - 50 * YEAR_MS : birthMs;
+    overlayMode === 'transits' ? Math.min(birthMs, nowMs - 50 * YEAR_MS) : birthMs;
   const sliderMax =
     overlayMode === 'transits'
       ? nowMs + 50 * YEAR_MS
