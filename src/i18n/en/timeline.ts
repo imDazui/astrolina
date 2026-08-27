@@ -185,6 +185,17 @@ export const timeline = {
     scrollKey: 'Scroll',
     scrollHint: 'to increase or decrease',
     apply: 'Set',
+    // The year box CLAMPS a year outside the reachable span, and used to do it in
+    // silence — a correction the reader did not make and could not attribute. It
+    // still clamps, and now says so: keeping the typed value instead would let the
+    // cursor sit outside the ruler's own domain, needle pinned at the bound while
+    // the readout showed a different date, which is worse than a clamp.
+    //
+    // Stating the span is a fair answer rather than an apology, because the span
+    // is defensible: it reaches the chart's own birth (TimelineHud's sliderMin),
+    // and on the sky band it is the ephemeris the app ships. Cap: 180 characters
+    // (components/ui/tipWidth.ts).
+    yearRange: 'This picker reaches {min} to {max} — a year outside that snaps to the nearest end.',
   },
 
   // Spelled-out overlay captions (from lib/astro/timeline.ts via the passed t()). The

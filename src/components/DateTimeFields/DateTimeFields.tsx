@@ -49,6 +49,19 @@ interface SpinInputProps {
    *  flags invalid (red) with this text as a hover tooltip, so the limit is shown
    *  rather than silently corrected. (Arrows/wheel still nudge within range.) */
   outOfRangeHint?: string;
+  /** A standing note about the range, shown on hover/focus WHATEVER the value is —
+   *  for a field that keeps clamping and simply says what the limits are.
+   *
+   *  Deliberately separate from {@link outOfRangeHint}, which does two things at
+   *  once: it supplies a tip AND switches the clamp off. A caller that wants the
+   *  clamp kept cannot reuse it, and the timeline picker is exactly that caller —
+   *  keeping an out-of-range value there would put the cursor outside the ruler's
+   *  own domain, needle pinned at the bound while the readout showed the raw date.
+   *  Silent correction was the fault; not correcting is not the fix.
+   *
+   *  Ignored while `outOfRangeHint` is set and the value is actually out of range:
+   *  a live violation outranks a standing note. */
+  rangeHint?: string;
   /** When provided, the box can be CLEARED: erasing its content and leaving (blur /
    *  Enter) calls this instead of snapping back to the old value — for fields where
    *  "no value" is meaningful (an unknown birth time). */
@@ -68,6 +81,7 @@ export function SpinInput({
   placeholder,
   ariaLabel,
   outOfRangeHint,
+  rangeHint,
   onClear,
   onChange,
 }: SpinInputProps) {
@@ -76,8 +90,10 @@ export function SpinInput({
   // With outOfRangeHint set, typed values aren't clamped — flag (not fix) the limit.
   const invalid =
     !!outOfRangeHint && value != null && (value < min || value > max);
-  // The out-of-range explanation shows as the shared .ui-tip card on hover/focus —
-  // never a native title= (the app uses HoverTip everywhere). Positioned off the input.
+  // The out-of-range explanation — or, where the field keeps clamping, the standing
+  // note about the range — shows as the shared .ui-tip card on hover/focus, never a
+  // native title= (the app uses HoverTip everywhere). Positioned off the input.
+  const tipText = invalid ? outOfRangeHint : rangeHint;
   const [tipPos, setTipPos] = useState<TipPos | null>(null);
   const showTip = () => {
     const r = ref.current?.getBoundingClientRect();
@@ -119,11 +135,11 @@ export function SpinInput({
       inputMode="numeric"
       className={`spin-input${invalid ? ' invalid' : ''}`}
       style={width ? { width } : undefined}
-      aria-label={ariaLabel}
+      aria-label={rangeHint ? `${ariaLabel} — ${rangeHint}` : ariaLabel}
       aria-invalid={invalid || undefined}
       maxLength={pad || undefined}
       placeholder={placeholder}
-      onMouseEnter={invalid ? showTip : undefined}
+      onMouseEnter={tipText ? showTip : undefined}
       onMouseLeave={() => setTipPos(null)}
       value={
         draft ??
@@ -160,12 +176,10 @@ export function SpinInput({
       }}
       onFocus={(e) => {
         e.currentTarget.select();
-        if (invalid) showTip();
+        if (tipText) showTip();
       }}
     />
-    {invalid && (
-      <HoverTip pos={tipPos} placement="top" title={outOfRangeHint} />
-    )}
+    {tipText && <HoverTip pos={tipPos} placement="top" title={tipText} />}
     </>
   );
 }
@@ -179,6 +193,10 @@ interface DateTimeFieldsProps<V extends PartialMoment> {
   /** When set, a year outside [yearMin, yearMax] isn't clamped — it's kept and the
    *  year box flags invalid with this hint (used by the birth form's date entry). */
   yearHint?: string;
+  /** A standing note on the year box saying what span it reaches — for callers that
+   *  KEEP the clamp (the date modals). See SpinInput.rangeHint for why this is not
+   *  the same prop as `yearHint`. */
+  yearRangeHint?: string;
   /** Optional element rendered right after the minute input — e.g. a zone label. */
   timeSuffix?: ReactNode;
   /** Let the TIME boxes (hour/minute) be CLEARED back to empty — for callers where
@@ -205,6 +223,7 @@ export function DateTimeFields<V extends PartialMoment>({
   yearMin = BIRTH_YEAR_MIN,
   yearMax = BIRTH_YEAR_MAX,
   yearHint,
+  yearRangeHint,
   timeSuffix,
   timeClearable = false,
   dateOnly = false,
@@ -232,6 +251,7 @@ export function DateTimeFields<V extends PartialMoment>({
             width="62px"
             placeholder="YYYY"
             outOfRangeHint={yearHint}
+            rangeHint={yearRangeHint}
             ariaLabel={t('chartForm.year')}
             onChange={(y) => patch({ year: y, day: clampDay(day, y, month) })}
           />

@@ -31,6 +31,7 @@ import type { OverlayMode } from '../../lib/astro/timeline';
 import { LILITH_PANEL_GLYPH_EARTH, THEMES, type Theme } from '../../lib/theme';
 import type { MapProjectionMode } from '../../lib/projection';
 import { useViewLock } from '../../lib/extensions/viewLock';
+import { GEODETIC_HELD } from '../../lib/geodeticHold';
 import { PlanetGlyph } from '../PlanetGlyph/PlanetGlyph';
 import { ASPECT_GLYPHS, PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 import { ASPECT_NAMES, type AspectName, type AspectOrbs } from '../../lib/aspectPrefs';
@@ -1421,13 +1422,25 @@ export function Sidebar({
           {/* Named so the auto-flip notice can point here when it reports a line-system
               change and this panel happens to be open (lib/autoFlipNotice). A styling
               hook would be wrong — this is an identity, and it must survive a reskin. */}
-          {/* Geodetic (Mundane) is tropical-only, so a sidereal zodiac makes it
-              unavailable — shown INERT rather than filtered out. Removing it left a
+          {/* Geodetic (Mundane) can be unavailable for TWO reasons, and they get
+              different words because they are different facts.
+
+              • It is tropical-only, so a sidereal zodiac makes it unavailable — that
+                one names the setting to change, and changing it brings Mundane back.
+              • It is HELD while the mapping is under review (lib/geodeticHold) — that
+                one has no setting to name, so it says what it is and that the choice
+                is kept.
+
+              The HOLD OUTRANKS the sidereal reason where both apply: telling someone
+              to set the zodiac back to Tropical when that will not re-enable Mundane
+              is worse than saying nothing.
+
+              Shown INERT rather than filtered out, in both cases. Removing it left a
               user who had Mundane selected watching it vanish with nothing to read
-              and no way back; the dimmed half names the setting to change, and the
-              stored choice is only masked, so reverting to tropical restores it.
+              and no way back; the dimmed half explains itself, and the stored choice
+              is only masked, so it returns with nothing to redo.
               (The half never reads as SELECTED while blocked: `lineSystem` here is
-              the derived value, which is already 'celestial' under sidereal.) */}
+              the derived value, which is already 'celestial' under either.) */}
           <SplitSelect
             // Named so the auto-flip notice can point here when it reports a
             // line-system change and this panel happens to be open (lib/autoFlipNotice).
@@ -1436,16 +1449,19 @@ export function Sidebar({
             value={lineSystem}
             onSelect={setLineSystem}
             options={LINE_SYSTEM_VALUES.map((value) => {
-              const unavailable = value === 'geodetic' && siderealActive;
+              const held = value === 'geodetic' && GEODETIC_HELD;
+              const sidereal = value === 'geodetic' && siderealActive;
               return {
                 value,
                 label: labels.lineSystem(value),
                 tip: labels.lineSystem(value),
                 hint: labels.lineSystemHint(value),
-                disabled: unavailable,
-                disabledHint: unavailable
-                  ? t('settings.inert.geodeticSidereal')
-                  : undefined,
+                disabled: held || sidereal,
+                disabledHint: held
+                  ? t('settings.inert.geodeticHeld')
+                  : sidereal
+                    ? t('settings.inert.geodeticSidereal')
+                    : undefined,
               };
             })}
           />

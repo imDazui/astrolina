@@ -75,6 +75,9 @@ import { MissionGuide } from './components/MissionGuide/MissionGuide';
 import { useMissions } from './lib/useMissions';
 import { AutoFlipNotice } from './components/AutoFlipNotice/AutoFlipNotice';
 import { useAutoFlipNotice } from './lib/useAutoFlipNotice';
+// The geodetic (Mundane) hold — one boolean, masking a preference rather than
+// rewriting it. See lib/geodeticHold for the whole of it and how to lift it.
+import { GEODETIC_HELD } from './lib/geodeticHold';
 import { isTouchLayout, useTouchLayout, usePhone } from './lib/touch';
 import { useSafeAreaBottom } from './lib/safeArea';
 // Type-only: erased at compile time, so the eclipses module itself still
@@ -744,8 +747,14 @@ export default function App() {
   // variant, so a sidereal zodiac masks it to celestial. Masked, never rewritten: the
   // Sidebar shows Mundane present-but-unavailable with the reason, and reverting to
   // tropical brings the choice straight back with nothing to redo.
+  //
+  // TWO conditions mask it now. The second is the HOLD (lib/geodeticHold) — the
+  // mapping is withheld while discrepancies in how it draws are worked through —
+  // and it takes the same shape for the same reason: a hold is a standing state,
+  // so the preference is masked and never rewritten, and a reader who had Mundane
+  // selected still has it the day the hold lifts.
   const lineSystem: LineSystem =
-    lineSystemPref === 'geodetic' && effZodiacMode !== 'tropical'
+    lineSystemPref === 'geodetic' && (GEODETIC_HELD || effZodiacMode !== 'tropical')
       ? 'celestial'
       : lineSystemPref;
   // Acknowledgement for settings this app rewrites on the user's behalf. Declared up
@@ -1767,7 +1776,10 @@ export default function App() {
       // Geodetic (Mundane) maps the TROPICAL zodiac onto Earth's longitudes by
       // definition — there is no sidereal variant — so it is unavailable in
       // sidereal mode (mirrors how it is withheld alongside local space / slide).
-      if (next === 'geodetic' && effZodiacMode !== 'tropical') return;
+      // And it is unavailable outright while the mapping is HELD, which is why the
+      // Sidebar's Mundane half is dimmed: this refusal is what makes that dimming
+      // true rather than decorative.
+      if (next === 'geodetic' && (GEODETIC_HELD || effZodiacMode !== 'tropical')) return;
       // Only when the view was actually OPEN — "we closed local space" is a lie when
       // it was already closed, and a notice that lies once is dismissed unread after.
       announceFlip('local-space-off', next === 'geodetic' && showLocalSpace);
@@ -1792,9 +1804,14 @@ export default function App() {
       // 'line-system-held', not 'line-system': this path masks the geodetic choice, it
       // doesn't rewrite it. Same visible change to the map, different fact about the
       // reader's setting, so it gets its own message and its own dismissal.
+      //
+      // The pref is read here rather than the derived value, deliberately — the fact
+      // being reported is that the STORED choice is being masked. But not while the
+      // hold is already masking it: nothing on the map would change, and a warning
+      // about a no-op teaches people to dismiss warnings unread.
       announceFlip(
         'line-system-held',
-        lineSystemPref === 'geodetic' && m !== 'tropical',
+        !GEODETIC_HELD && lineSystemPref === 'geodetic' && m !== 'tropical',
       );
       setZodiacMode(m);
     },

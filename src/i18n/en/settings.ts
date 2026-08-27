@@ -258,6 +258,14 @@ export const settings = {
       'The Part of Fortune is an Advanced reading — turn Advanced on to use it.',
     geodeticSidereal:
       'Mundane maps the TROPICAL zodiac onto Earth’s longitudes — there is no sidereal version of it. Set the zodiac back to Tropical (Advanced) to use it; your choice is only being held, not cleared.',
+    // The HOLD, and a different fact from the line above it: that one names a
+    // setting to change, this one has none to name. So it says what it is and what
+    // survives it, and — like the Activations block — says it is coming back rather
+    // than that something is broken. No detail about the discrepancies: a reason
+    // stated here is a claim that has to stay true, and this one is expected not to
+    // outlive the work it is waiting on. See lib/geodeticHold.
+    geodeticHeld:
+      'Mundane is under review while we check how it draws — we would rather hold it than draw a map we cannot stand behind. Your choice is kept, not cleared; check back soon.',
   },
 
   nodeType: {

@@ -115,11 +115,19 @@ export function TimelineDateModal({
           </button>
         </header>
 
+        {/* The year box CLAMPS, and now says what it clamps to. Built here rather
+            than passed in because both callers already hand over the two numbers
+            it is made of, and a bound that is stated by whoever computed it cannot
+            drift from the bound that is enforced. */}
         <DateTimeFields
           value={draft}
           onChange={setDraft}
           yearMin={yearMin}
           yearMax={yearMax}
+          yearRangeHint={t('timeline.datePicker.yearRange', {
+            min: String(yearMin),
+            max: String(yearMax),
+          })}
           timeSuffix={zoneLabel}
           dateOnly={dateOnly}
         />

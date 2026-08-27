@@ -34,7 +34,8 @@ export interface SplitSelectOption<V extends string> {
   /** THE standard unavailable state (.ui-inert): an option the current settings have
    *  switched off stays VISIBLE and dimmed rather than disappearing and taking its
    *  explanation with it. The half can't be picked, the stored value underneath is
-   *  untouched, and `disabledHint` names the setting to change. */
+   *  untouched, and `disabledHint` explains why — naming the setting to change where
+   *  there is one, and saying what survives the wait where there is not. */
   disabled?: boolean;
   disabledHint?: string;
 }

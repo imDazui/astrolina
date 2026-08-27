@@ -57,6 +57,7 @@ there the whole time it is held, and every way out is something you did.
 | What moves | When | Your setting |
 |---|---|---|
 | The geodetic mapping becomes unavailable | While the zodiac is sidereal | **Held.** Returns when you go back to tropical |
+| The geodetic mapping becomes unavailable | While it is under review — we would rather withhold it than draw a map we cannot stand behind | **Held.** No preference is written; it returns as you left it |
 | The overlay frame is held on the moment's own sky | While the chart's birth time is unknown | **Held.** No preference is written |
 | The projection choice (in mundo / in zodiaco) disappears | While the geodetic mapping is on | **Held.** Geodetic places every body on the ecliptic by construction, so there is no choice left to make |
 | Your overlay technique reads as None | While the active chart can't carry it — a composite has no moment to advance, a chart with no birth time has no exact one, a two-person chart has nobody left to add | **Held.** Back the moment you select a chart that can carry it |
