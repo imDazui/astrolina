@@ -13,6 +13,35 @@ import { PLANET_GLYPHS } from '../../lib/astro/glyphChars';
 //     inherits from the parent unless `color` is given.
 //   • SVG mode (x/y given): an SVG <text> centered on (x, y), for use inside the
 //     chart wheel; `color` (default currentColor) sets the fill.
+// SVG’s dominant-baseline="central" centres the FONT’s em box, not the mark drawn
+// inside it — so a symbol whose ink is not centred in its own em box comes out
+// off-centre by exactly that much, and inside the wheel's planet discs it shows.
+// Every glyph is lifted by this fraction of its size to correct for it.
+//
+// Measured, two ways that agree to 0.003: canvas TextMetrics (ink
+// actualBoundingBox* against the fontBoundingBox* that `central` centres) and
+// pixels off a Chrome screenshot of this very markup. Across the nineteen glyphs
+// the ink sits between 0.045 and 0.155 of the size below the em-box centre, and
+// 0.10 is the middle of that — within 0.005 for most of them.
+const GLYPH_LIFT = 0.1;
+
+// The exceptions, and only where the eye can see them. ⊗ is a CIRCLE INSIDE A
+// CIRCLE once it is drawn in a disc, and nothing shows a few pixels of offset like
+// two circles that should be concentric — it read as sitting low, and it was, by
+// 0.045 of its size after the flat lift. The reason is in glyphChars: this one
+// character is bundled from a different Noto face (Math, not Symbols), where a
+// mathematical operator is centred on the math axis rather than on the optical
+// centre the symbol faces use.
+//
+// ♂ is further out still (0.055 low) and ♄ as far the other way (0.058 high), and
+// neither is listed: an arrow and a scythe have no axis of symmetry for the eye to
+// measure against, so the offset that is glaring on ⊗ is invisible on them.
+// Centring by ink box is an approximation of optical centring, and it is only worth
+// applying where the two agree.
+const GLYPH_LIFT_BY_PLANET: Partial<Record<PlanetName, number>> = {
+  Fortune: 0.145,
+};
+
 interface PlanetGlyphProps {
   planet: PlanetName;
   size?: number;
@@ -34,13 +63,11 @@ export function PlanetGlyph({
   const cls = className ? `astro-glyph ${className}` : 'astro-glyph';
 
   if (x !== undefined && y !== undefined) {
-    // The font's symbols sit a touch low against the central baseline, so inside
-    // the wheel's planet discs they kiss the bottom edge. Nudge up ~10% of the
-    // glyph size to optically center them.
+    // Lifted to sit optically centred in the wheel's planet discs — see GLYPH_LIFT.
     return (
       <text
         x={x}
-        y={y - size * 0.1}
+        y={y - size * (GLYPH_LIFT_BY_PLANET[planet] ?? GLYPH_LIFT)}
         className={cls}
         fontSize={size}
         fill={color ?? 'currentColor'}
