@@ -21,6 +21,7 @@ import { useT } from '../../i18n';
 import type { EnumLabels, MsgKey, TFn } from '../../i18n';
 import { fmtDM, lonToZodiac } from '../../lib/astro/format';
 import { placeOnRing, type RingMark } from '../../lib/ringLayout';
+import { angleLabelHalfPx, wheelGeometry } from '../../lib/wheelGeometry';
 import {
   DEFAULT_ASPECT_ORBS,
   maxAspectOrb,
@@ -461,27 +462,6 @@ function signSectorPath(
 // figure was sized for a circular disc and the labels are wider than that. So each
 // mark states its own half-width and every pair clears the sum of the two.
 //
-// Per-character advances (in em, at weight 700) for the nine characters the six
-// codes are built from. Deliberately a table rather than one average figure: an
-// average generous enough for "Mc" reserves half again too much for "Ic", and the
-// wasted arc is arc some body is being pushed out of for no reason.
-const ANGLE_LABEL_EM: Record<string, number> = {
-  A: 0.72, D: 0.72, I: 0.34, M: 0.92, V: 0.68,
-  c: 0.56, s: 0.52, v: 0.56, x: 0.56,
-};
-// .wheel-angle-label in WheelSvg.css: 13px/700 with a 3px paint-order stroke halo
-// (1.5px each side, and the halo is part of what must not be overlapped — it is
-// the panel colour, so it erases whatever it lands on).
-const ANGLE_LABEL_FONT = 13;
-const ANGLE_LABEL_HALO = 3;
-const angleLabelHalfPx = (code: string): number => {
-  let em = 0;
-  for (const ch of code) em += ANGLE_LABEL_EM[ch] ?? 0.6;
-  return (em * ANGLE_LABEL_FONT + ANGLE_LABEL_HALO) / 2;
-};
-// A planet's disc: the radius plus half its stroke.
-const DISC_HALF_PX = (r: number, stroke: number) => r + stroke / 2;
-
 // (spreadOnRing lived here: bodies-only spreading for the overlay ring. It was
 // the reason the overlay's angle codes were overlapped — it had no way to be told
 // about them. placeOnRing above replaced it and takes both sets.)
@@ -492,11 +472,9 @@ const DISC_HALF_PX = (r: number, stroke: number) => r + stroke / 2;
 const RETRO_COLOR = '#e85a4f';
 const STATION_COLOR = '#c79a17';
 
-// Size-driven detail tiers (independent of the Advanced toggle): the per-planet
-// degree·sign·minute readout appears once the wheel is big enough to read it, and
-// the overlay (bi-wheel) readout needs a larger wheel still.
-const READOUT_MIN = 440;
-const OVERLAY_READOUT_MIN = 600;
+// (The size-driven detail tiers moved to lib/wheelGeometry.ts, where they became
+// an OFFER rather than a verdict: what a wheel actually draws is now decided by
+// whether the aspect hub still gets its share of the middle, not by a threshold.)
 
 // Highlight color for a body's motion state, or null for normal coloring.
 function statusColor(p: EclipticPosition): string | null {
@@ -559,10 +537,12 @@ interface WheelSvgProps {
    */
   interactive?: boolean;
   /**
-   * Force the per-planet degree·sign·minute readout ring on below the usual
-   * READOUT_MIN size gate (still skipped if the wheel is geometrically too tight —
-   * rReadout ≤ 30). For the Capture wheel, which is smaller than a sidebar wheel
-   * but still wants the readout when there's room.
+   * OFFER the per-body degree·sign·minute readout below the size at which the wheel
+   * would offer it unprompted (READOUT_OFFER_MIN, lib/wheelGeometry). It is only an
+   * offer either way: the geometry still sheds the trio — minutes first, then the sign,
+   * then the whole thing — if keeping it would take the aspect hub below its share of
+   * the radius. For the Capture wheel, which is smaller than a sidebar wheel but still
+   * wants the readout when there's room for it.
    */
   readouts?: boolean;
   /**
@@ -612,87 +592,43 @@ export function WheelSvg({
   const [tip, setTip] = useState<HoverTip | null>(null);
   const clearTip = () => setTip(null);
 
-  const cx = size / 2;
-  const cy = size / 2;
-  // The expanded wheel draws everything inside the outer ring; Advanced mode
-  // adds a ring of house-cusp degree labels just OUTSIDE the rim, so it reserves
-  // extra margin (28px) for them. Otherwise just a small breathing margin.
-  const rOuter = size / 2 - (detailed ? (advanced ? 34 : 14) : 4);
-  const rZodiacInner = rOuter - (detailed ? 34 : 0);
-  // Bi-wheel: when a second chart is supplied (and the wheel is big enough),
-  // its planets occupy an outer ring just inside the zodiac band, and the natal
-  // glyph ring is pushed inward to make room. Everything inside cascades from
-  // rPlanets, so the readout/house/aspect rings shift in automatically.
+  // Bi-wheel: when a second chart is supplied (and the wheel is big enough), its
+  // planets occupy an outer ring just inside the zodiac band, and the natal glyph
+  // ring is pushed inward to make room. This is the one geometry input the
+  // component decides rather than the solver, because it depends on the DATA
+  // (is there a second chart at all?) and not on the radius.
   const hasOverlay =
     detailed && !!overlayPlanets && overlayPlanets.length > 0 && size >= 420;
-  const rOverlay = hasOverlay ? rZodiacInner - 18 : 0;
-  // Bi-ring detail: an overlay readout ring (degree·sign·minute) just inside the
-  // overlay glyphs, mirroring the natal readout. Needs extra radial room, so
-  // it's the bi-wheel's third (largest) size tier.
-  const showOverlayReadouts = hasOverlay && size >= OVERLAY_READOUT_MIN;
-  // The readout fan sits 40px inside the overlay glyph ring so the degree value
-  // clears the planet discs with comfortable breathing room. OV_FAN is the
-  // radial gap between the fan's degree / sign / minute slots — a touch wider
-  // than the natal readout's 16 so the overlay trio reads roomier on the rim.
-  const rOverlayReadout = showOverlayReadouts ? rOverlay - 40 : 0;
-  // As the (single) wheel grows, the inner aspect circle would otherwise absorb
-  // ALL the extra radius. Instead share it ~50/50: bandGrow is the extra (0 below
-  // the readout tier), spread across the zodiac→planet, planet→readout and
-  // readout→house gaps so the planets + their readout get more room — leaving the
-  // central aspect-line circle growing at roughly half its former rate. Disabled
-  // for the bi-wheel: that layout is already tight, so spreading/scaling there
-  // would overlap the overlay ring's glyphs and aspect lines — keep it compact.
-  const bandGrow =
-    detailed && !hasOverlay && size >= READOUT_MIN ? (size - READOUT_MIN) * 0.25 : 0;
-  // The readout text, sign glyph, and degree/minute fan scale up with that extra
-  // room so they actually fill it instead of staying small on the inner ring.
-  const readoutScale = 1 + bandGrow / 130;
-  const readoutFan = Math.round(16 * readoutScale);
-  const readoutFont = Math.min(17, Math.round(11 * readoutScale));
-  const OV_FAN = Math.round(18 * readoutScale);
-  // Planet glyph ring, then a readout ring (degree · sign · minute) just
-  // inside it — mirroring a printed natal chart.
-  // The natal glyph ring drops further in when an overlay is present — the gap
-  // from the overlay zone to the natal ring is widened ~15% (28→32, 36→41) so
-  // the separator ring has clear breathing room on both sides and the overlay
-  // discs no longer crowd it.
-  const rPlanets = detailed
-    ? hasOverlay
-      ? showOverlayReadouts
-        ? rOverlayReadout - 41
-        : rOverlay - 32
-      : rZodiacInner - 20 - bandGrow / 3
-    : rOuter - 26;
-  // Bi-wheel separator: a hairline ring drawn in the gap between the overlay
-  // (outer) planet zone and the natal (inner) glyph ring, so the two charts read
-  // as distinct bands. Centered on the midpoint of that gap — between the overlay
-  // content's inner edge (its readout minutes slot, or its glyph disc) and the
-  // natal glyph disc's outer edge — so it clears both rings symmetrically.
-  const rOverlayDivider = hasOverlay
-    ? ((showOverlayReadouts ? rOverlayReadout - OV_FAN : rOverlay - 9) + (rPlanets + 11)) / 2
-    : 0;
-  // Gap from the planet glyphs to the readout trio (the 34px base widened by
-  // ~15% to give the degree value more breathing room from the planet circle).
-  const rReadout = detailed ? rPlanets - 39 - bandGrow / 3 : 0;
-  // The degree·sign·minute readout appears once the wheel is large enough to read
-  // it — the single wheel's second size tier (no longer tied to Advanced). The Capture
-  // wheel opts in below that size gate (`readouts`), still bounded by the geometric guard.
-  const showReadouts = detailed && rReadout > 30 && (size >= READOUT_MIN || readouts);
-  // Dedicated house ring: a band just inside the planet glyphs — or inside the
-  // readout ring when Advanced is on — holding the cusp spokes and house
-  // numbers so nothing else overlaps them. Its two borders (houseRingOuter and
-  // houseRingInner) ARE the band edges, replacing the old thin double border.
-  const houseRingOuter = detailed
-    ? (showReadouts ? rReadout - 28 - bandGrow / 3 : rPlanets - 22)
-    : 0;
-  // planetsOnly zeroes the band: the house ring circle, hover zones, cusp lines
-  // and numbers are all gated on houseBand > 0, so they fall away together while
-  // the inner radii (houseRingInner = houseRingOuter) stay geometrically sane.
-  const houseBand =
-    detailed && !planetsOnly ? Math.min(24, Math.max(0, houseRingOuter - 12)) : 0;
-  const houseRingInner = houseRingOuter - houseBand;
-  const rAspectRing = detailed ? houseRingInner : rPlanets - 22;
-  const rInner = detailed ? houseRingInner : rPlanets - 22;
+
+  // Every radius, disc size and font size the wheel draws with. See
+  // lib/wheelGeometry.ts: the bands are shares of the radius with pixel floors and
+  // caps, and when they still do not fit, detail is shed in a declared order — the
+  // overlay readout, then the natal minutes, then its sign, then the readout
+  // entirely — until the aspect hub keeps its floor of the middle. The cusp rim and
+  // the house band are NOT on that list and never shed.
+  //
+  // The font sizes below are handed to the elements as SVG presentation attributes,
+  // which any CSS selector would beat — see the note at the top of WheelSvg.css, and
+  // do not add a font-size there for a class sized from here.
+  //
+  // What this replaced was a cascade of fixed constants cut for a ~700px wheel. On
+  // a phone their sum exceeded the whole radius, so the rings nearest the centre
+  // absorbed the shortfall: a 12px aspect hub (6.3% of the radius) with 12.6px of
+  // arc per house number, and — below 300px — a house band of ZERO, which deleted
+  // the house ring, the cusp lines and all twelve numbers with nothing said.
+  const g = wheelGeometry({ size, detailed, advanced, hasOverlay, planetsOnly, readouts });
+  const {
+    cx, cy,
+    rOuter, rZodiacInner, rPlanets,
+    rOverlay, rOverlayReadout, rOverlayDivider, overlayFan: OV_FAN,
+    houseRingOuter, houseRingInner, houseBand,
+    rAspectRing, rInner,
+    readoutFont, discR, discHalf, glyphPx, signGlyphPx,
+    houseNumPx, cuspRimPx, cuspSignPx, cuspUnitStepPx, cuspUnitHalfPx, angleCodePx,
+  } = g;
+  const showReadouts = g.detail.readout;
+  const showOverlayReadouts = g.detail.overlayReadout;
+  const showCuspRim = g.detail.cuspRim;
 
   // Whole-sign houses: the first house is a SIGN, beginning at 0° of the rising
   // sign, and the Ascendant floats somewhere inside it. That is the whole content
@@ -826,7 +762,6 @@ export function WheelSvg({
 
   const off = (lon: number) =>
     ((((lon - angles.asc) * 180) / Math.PI) % 360 + 360) % 360;
-  const discHalf = DISC_HALF_PX(detailed ? 11 : 13, 1.3);
 
   // Spread overlapping planets along the ring so their glyphs and readouts
   // don't collide; the true position is still marked by a tick on the zodiac
@@ -853,7 +788,10 @@ export function WheelSvg({
     radius: number,
   ): Map<string, number> => {
     const out = new Map<string, number>();
-    for (const [name, deg] of placeOnRing(fixed, movable, minSep, radius)) {
+    // The overlap tolerance rides on every ring this converter serves — see
+    // BODY_OVERLAP_SHARE in ringLayout: bodies may share a third of their width
+    // rather than be pushed across a house cusp to avoid touching.
+    for (const [name, deg] of placeOnRing(fixed, movable, minSep, radius, g.bodyOverlap)) {
       out.set(name, angles.asc + (deg * Math.PI) / 180);
     }
     return out;
@@ -874,17 +812,12 @@ export function WheelSvg({
     // further from their true degree than anything required and left arcs too
     // narrow to hold what fell in them. Below the readout size the widths decide
     // on their own.
-    const sep = showReadouts
-      ? Math.min(
-          20,
-          Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(rReadout - readoutFan, 1))),
-        )
-      : 0;
+    const sep = g.ringSep;
     const placed = placeLongitudes(
       angleMarks.map((a) => ({
         name: a.key as string,
         off: off(a.lon),
-        half: angleLabelHalfPx(a.key),
+        half: angleLabelHalfPx(a.key, angleCodePx, g.angleCodeHalo),
       })),
       planets.map((p) => ({
         name: p.name as string,
@@ -896,6 +829,92 @@ export function WheelSvg({
     );
     for (const [name, lon] of placed) displayLon.set(name, lon);
   }
+  // ── The zodiac band's own layout ──────────────────────────────────────────
+  // The band carries two things now: the twelve sign glyphs and — in Advanced —
+  // the twelve house-cusp readouts, which used to ring the OUTSIDE of the wheel
+  // and reserved a fifth of the radius on a phone for the privilege.
+  //
+  // They share one radius, so they have to be kept off each other. Only whole sign
+  // puts a cusp on a sign boundary; under the other nine systems a cusp lands
+  // mid-sign, and at the band radius a cusp within ~9° of a sign's midpoint would
+  // print on top of its glyph — which is most of them.
+  //
+  // Same fixed/movable split placeOnRing already runs for angle codes against
+  // bodies, and for the same reason: a cusp readout NAMES A POSITION and must stay
+  // on it, while a sign glyph merely labels a 30° arc and reads no differently a
+  // few degrees off its midpoint. So the glyph is the one that gives way.
+  const rBandMid = (rZodiacInner + rOuter) / 2;
+  // Tabular digits run ~0.55em; the degree and minute marks are narrower, so this
+  // is a slight over-estimate and errs toward keeping the glyph clear.
+  const cuspText = (lon: number) => {
+    const lonDeg = (((lon * 180) / Math.PI) % 360 + 360) % 360;
+    const inSign = lonDeg % 30;
+    const deg = Math.floor(inSign);
+    return {
+      deg,
+      min: Math.floor((inSign - deg) * 60),
+      signIdx: Math.floor(lonDeg / 30),
+    };
+  };
+  // A cusp reads as ONE unit — degree, sign glyph, minutes, laid along the band the
+  // way a printed chart annotates a cusp. Its glyph size, its internal step and its
+  // half-width all come from the geometry, so the band suite reserves the same arc
+  // this actually draws rather than a second estimate of it.
+  /** The step from the unit's centre out to its degree and its minutes, in SCREEN
+   *  px rather than along the band. The unit is a horizontal line of text wherever
+   *  it lands, so the degree is on the left at the bottom of the wheel exactly as it
+   *  is at the top. Stepping along the curve instead looks tidier on the rim and
+   *  reads backwards for half the chart — `00' ♍ 0°` at the six o'clock cusp. */
+
+  /** Where a cusp unit puts its degree and its minutes, relative to its sign glyph.
+   *
+   *  ALONG THE BAND, not flat across the picture. At twelve and six o'clock the band
+   *  runs horizontally and the unit reads `0° ♓ 00'` across; at three and nine it
+   *  runs vertically and the unit stacks, degree above the glyph and minutes below.
+   *  That is what the reference charts do, and it is also what keeps the unit ON the
+   *  wheel: laid out flat, a unit at the sides is at the band's widest point in x and
+   *  half of it falls off the edge of the picture.
+   *
+   *  The direction is then normalised so the unit always READS the right way round —
+   *  degree to the left where the run is more horizontal, degree above where it is
+   *  more vertical. Without that the six o'clock cusp comes out `00' ♍ 0°`. */
+  const cuspOffset = (px: number, py: number) => {
+    const dx = px - cx;
+    const dy = py - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    // The tangent at this point on the band.
+    let ux = -dy / len;
+    let uy = dx / len;
+    // Point it rightward when the run is mostly horizontal, downward when mostly
+    // vertical, so the degree (which sits at -u) lands left or above.
+    const flip = Math.abs(ux) >= Math.abs(uy) ? ux < 0 : uy < 0;
+    if (flip) {
+      ux = -ux;
+      uy = -uy;
+    }
+    return { ux, uy };
+  };
+  const cuspMarks: RingMark[] = showCuspRim
+    ? angles.cusps
+        .map((lon, idx) => ({ name: `cusp-${idx}`, off: off(lon), half: cuspUnitHalfPx }))
+        .filter((m) => Number.isFinite(m.off))
+    : [];
+  // The band carries ONE kind of mark at a time: the cusp units when they are drawn,
+  // and the plain sign glyphs at their midpoints when they are not. So the only
+  // thing to resolve here is cusp against cusp — twelve of them are 30° apart under
+  // most systems, but a polar Placidus chart bunches several within a degree or two,
+  // and two units printed on the same spot are worse than either one moved.
+  const bandLon =
+    detailed && cuspMarks.length > 1
+      ? placeLongitudes(cuspMarks, [], 0, Math.max(rBandMid, 1))
+      : new Map<string, number>();
+  /** Where cusp `idx`'s readout is drawn. Fixed marks keep their exact spot unless
+   *  the band cannot hold the set at all — polar Placidus bunches cusps within a
+   *  degree or two — in which case placeOnRing relaxes them among themselves rather
+   *  than printing one on top of another. */
+  const cuspLonFor = (idx: number, trueLon: number) =>
+    bandLon.get(`cusp-${idx}`) ?? trueLon;
+
   const lonFor = (p: EclipticPosition) => displayLon.get(p.name) ?? p.lon;
   const angleLonFor = (a: { key: string; lon: number }) =>
     displayLon.get(a.key) ?? a.lon;
@@ -908,15 +927,12 @@ export function WheelSvg({
   // ones are on theirs. They are DRAWN at their true longitude already; what was
   // missing is that nothing knew they were there, so the overlay bodies were
   // spread against each other only and settled straight on top of them.
-  const overlaySpreadRadius = showOverlayReadouts
-    ? Math.max(rOverlayReadout - OV_FAN, 1)
-    : rOverlay;
   const overlayDisplay = hasOverlay
     ? placeLongitudes(
         overlayAngleMarks.map((a) => ({
           name: a.key as string,
           off: off(a.lon),
-          half: angleLabelHalfPx(a.key),
+          half: angleLabelHalfPx(a.key, angleCodePx, g.angleCodeHalo),
         })),
         overlayPlanets!.map((p) => ({
           name: p.name as string,
@@ -927,12 +943,7 @@ export function WheelSvg({
         // keep the degree·sign·minute trio clear where it fans inward, and on a
         // wheel too small to draw that trio it is arc reserved for a ring that
         // isn't there.
-        showOverlayReadouts
-          ? Math.min(
-              20,
-              Math.max(4, (16 * 360) / (2 * Math.PI * Math.max(overlaySpreadRadius, 1))),
-            )
-          : 0,
+        g.overlayRingSep,
         Math.max(rOverlay, 1),
       )
     : null;
@@ -1071,8 +1082,13 @@ export function WheelSvg({
             className="sign-hit"
             d={signSectorPath(i, rZodiacInner, rOuter, frameAnchor, cx, cy)}
             onMouseEnter={() => {
-              const lon = ((i * 30 + 15) * Math.PI) / 180;
-              const pos = svgPos(lon, frameAnchor, (rZodiacInner + rOuter) / 2, cx, cy);
+              const pos = svgPos(
+                ((i * 30 + 15) * Math.PI) / 180,
+                frameAnchor,
+                rBandMid,
+                cx,
+                cy,
+              );
               setTip({
                 x: pos.x,
                 y: pos.y,
@@ -1087,18 +1103,22 @@ export function WheelSvg({
           />
         ))}
 
+      {/* The zodiac read straight off the band — but ONLY when the cusp units below
+          are not drawn, because those carry their own sign glyph and two glyphs per
+          sign is a band that reads as noise. This is what a non-Advanced wheel shows,
+          and the reports export and the map minimap with it. */}
       {detailed &&
+        !showCuspRim &&
         Array.from({ length: 12 }).map((_, i) => {
           const lon = ((i * 30 + 15) * Math.PI) / 180;
-          const rMid = (rZodiacInner + rOuter) / 2;
-          const pos = svgPos(lon, frameAnchor, rMid, cx, cy);
+          const pos = svgPos(lon, frameAnchor, rBandMid, cx, cy);
           return (
             <ZodiacGlyph
               key={`sign-${i}`}
               sign={i}
               x={pos.x}
               y={pos.y}
-              size={22}
+              size={signGlyphPx}
               className="sign-rim"
             />
           );
@@ -1125,29 +1145,59 @@ export function WheelSvg({
           );
         })}
 
-      {/* Advanced: house-cusp degree·minute labels ringing the OUTSIDE of the
-          wheel, the way printed natal charts annotate each cusp (e.g. "23°45'").
-          The sign is read from the zodiac band, so no sign glyph here. */}
-      {detailed &&
-        advanced &&
-        !planetsOnly &&
+      {/* Advanced: house-cusp degree·minute labels, the way printed natal charts
+          annotate each cusp (e.g. "23°45'"). INSIDE the zodiac band, sharing its
+          radius with the sign glyphs — the sign is read from the glyph beside them,
+          so no sign glyph here.
+
+          These used to ring the outside of the wheel and reserved a 20–22px band
+          out there to do it: a fifth of the radius on a phone, spent on labels that
+          read as page furniture rather than as part of the chart. Nothing sits
+          outside the rim now but the breathing margin. */}
+      {showCuspRim &&
         angles.cusps.map((lon, idx) => {
           if (!Number.isFinite(lon)) return null;
-          const pos = svgPos(lon, frameAnchor, rOuter + 12, cx, cy);
-          const lonDeg = (((lon * 180) / Math.PI) % 360 + 360) % 360;
-          const inSign = lonDeg % 30;
-          const deg = Math.floor(inSign);
-          const min = Math.floor((inSign - deg) * 60);
+          const at = cuspLonFor(idx, lon);
+          const { deg, min, signIdx } = cuspText(lon);
+          // Degree · sign · minutes, centred on the cusp and stepped along the band.
+          const signPos = svgPos(at, frameAnchor, rBandMid, cx, cy);
+          const { ux, uy } = cuspOffset(signPos.x, signPos.y);
+          const degPos = {
+            x: signPos.x - ux * cuspUnitStepPx,
+            y: signPos.y - uy * cuspUnitStepPx,
+          };
+          const minPos = {
+            x: signPos.x + ux * cuspUnitStepPx,
+            y: signPos.y + uy * cuspUnitStepPx,
+          };
           return (
-            <text
-              key={`cuspdeg-${idx}`}
-              x={pos.x}
-              y={pos.y + 3}
-              textAnchor="middle"
-              className="cusp-rim-deg"
-            >
-              {deg}°{String(min).padStart(2, '0')}&#39;
-            </text>
+            <g key={`cuspdeg-${idx}`}>
+              <text
+                x={degPos.x}
+                y={degPos.y + 3}
+                textAnchor="middle"
+                className="cusp-rim-deg"
+                fontSize={cuspRimPx}
+              >
+                {deg}°
+              </text>
+              <ZodiacGlyph
+                sign={signIdx}
+                x={signPos.x}
+                y={signPos.y}
+                size={cuspSignPx}
+                className="cusp-rim-sign"
+              />
+              <text
+                x={minPos.x}
+                y={minPos.y + 3}
+                textAnchor="middle"
+                className="cusp-rim-deg"
+                fontSize={cuspRimPx}
+              >
+                {String(min).padStart(2, '0')}&#39;
+              </text>
+            </g>
           );
         })}
 
@@ -1230,6 +1280,7 @@ export function WheelSvg({
               y={pos.y + 3}
               textAnchor="middle"
               className="house-number"
+              fontSize={houseNumPx}
             >
               {idx + 1}
             </text>
@@ -1385,7 +1436,7 @@ export function WheelSvg({
         const pos = svgPos(lonFor(p), frameAnchor, rPlanets, cx, cy);
         // The non-detailed minimap draws larger planet discs/glyphs (they're the
         // only thing on that simplified wheel, so there's room).
-        const r = detailed ? 11 : 13;
+        const r = discR;
         // Interactive wheel: the whole group is a hover target (a transparent hit
         // disc widens it past the glyph) that scales the disc + names the planet.
         const markProps = interactive
@@ -1431,7 +1482,7 @@ export function WheelSvg({
                 planet={p.name}
                 x={pos.x}
                 y={pos.y}
-                size={detailed ? 16 : 19.5}
+                size={glyphPx}
                 color={PLANET_COLORS[p.name]}
               />
             </g>
@@ -1477,6 +1528,7 @@ export function WheelSvg({
                   y={pos.y + 4}
                   textAnchor="middle"
                   className="wheel-angle-label"
+                  fontSize={angleCodePx}
                   style={{ fill: a.color } as CSSProperties}
                 >
                   {a.key}
@@ -1647,6 +1699,7 @@ export function WheelSvg({
                   y={glyphPos.y + 4}
                   textAnchor="middle"
                   className="wheel-angle-label"
+                  fontSize={angleCodePx}
                   style={{ fill: a.color } as CSSProperties}
                 >
                   {a.key}
@@ -1749,9 +1802,9 @@ export function WheelSvg({
           stationary → yellow. */}
       {showReadouts &&
         planets.map((p) => {
-          const degPos = svgPos(lonFor(p), frameAnchor, rReadout + readoutFan, cx, cy);
-          const signPos = svgPos(lonFor(p), frameAnchor, rReadout, cx, cy);
-          const minPos = svgPos(lonFor(p), frameAnchor, rReadout - readoutFan, cx, cy);
+          const degPos = svgPos(lonFor(p), frameAnchor, g.rReadoutDeg, cx, cy);
+          const signPos = svgPos(lonFor(p), frameAnchor, g.rReadoutSign, cx, cy);
+          const minPos = svgPos(lonFor(p), frameAnchor, g.rReadoutMin, cx, cy);
           const sc = advanced ? statusColor(p) : null;
           const lonDeg = (((p.lon * 180) / Math.PI) % 360 + 360) % 360;
           const signIdx = Math.floor(lonDeg / 30);
@@ -1774,17 +1827,20 @@ export function WheelSvg({
               >
                 {deg}°
               </text>
-              {readoutSign(signIdx, signPos.x, signPos.y, readoutFont + 3, sc ? motionTag(p) : null)}
-              <text
-                x={minPos.x}
-                y={minPos.y + 3}
-                textAnchor="middle"
-                className="readout-min"
-                fontSize={readoutFont}
-                fill={sc ?? undefined}
-              >
-                {String(min).padStart(2, '0')}&#39;
-              </text>
+              {g.detail.readoutSign &&
+                readoutSign(signIdx, signPos.x, signPos.y, readoutFont + 3, sc ? motionTag(p) : null)}
+              {g.detail.readoutMin && (
+                <text
+                  x={minPos.x}
+                  y={minPos.y + 3}
+                  textAnchor="middle"
+                  className="readout-min"
+                  fontSize={readoutFont}
+                  fill={sc ?? undefined}
+                >
+                  {String(min).padStart(2, '0')}&#39;
+                </text>
+              )}
             </g>
           );
         })}
@@ -1795,9 +1851,9 @@ export function WheelSvg({
       {showReadouts &&
         showAngleMarks &&
         angleMarks.map((a) => {
-          const degPos = svgPos(angleLonFor(a), frameAnchor, rReadout + readoutFan, cx, cy);
-          const signPos = svgPos(angleLonFor(a), frameAnchor, rReadout, cx, cy);
-          const minPos = svgPos(angleLonFor(a), frameAnchor, rReadout - readoutFan, cx, cy);
+          const degPos = svgPos(angleLonFor(a), frameAnchor, g.rReadoutDeg, cx, cy);
+          const signPos = svgPos(angleLonFor(a), frameAnchor, g.rReadoutSign, cx, cy);
+          const minPos = svgPos(angleLonFor(a), frameAnchor, g.rReadoutMin, cx, cy);
           const lonDeg = (((a.lon * 180) / Math.PI) % 360 + 360) % 360;
           const signIdx = Math.floor(lonDeg / 30);
           const inSign = lonDeg % 30;
@@ -1814,16 +1870,18 @@ export function WheelSvg({
               >
                 {deg}°
               </text>
-              {readoutSign(signIdx, signPos.x, signPos.y, readoutFont + 3)}
-              <text
-                x={minPos.x}
-                y={minPos.y + 3}
-                textAnchor="middle"
-                className="readout-min"
-                fontSize={readoutFont}
-              >
-                {String(min).padStart(2, '0')}&#39;
-              </text>
+              {g.detail.readoutSign && readoutSign(signIdx, signPos.x, signPos.y, readoutFont + 3)}
+              {g.detail.readoutMin && (
+                <text
+                  x={minPos.x}
+                  y={minPos.y + 3}
+                  textAnchor="middle"
+                  className="readout-min"
+                  fontSize={readoutFont}
+                >
+                  {String(min).padStart(2, '0')}&#39;
+                </text>
+              )}
             </g>
           );
         })}

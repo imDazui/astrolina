@@ -2689,16 +2689,20 @@ const CARD_PAD = 24;
 const EXTRAS_MAX_FRAC = 0.46;
 /* Two floors, because a docked wheel and a card wheel are asked for different things.
  *
- * DOCKED — a note beside the map: planets, angle marks, the forced readout ring, and
- * nothing else. It stops being worth exporting near 280px, where WheelSvg's per-planet
- * degree·sign·minute ring self-hides; 300 keeps a little clearance.
+ * DOCKED — a note beside the map: planets, angle marks, whatever of the readout ring
+ * fits, and nothing else. Near 280px the wheel starts shedding that ring itself to keep
+ * the aspect hub its share of the radius (lib/wheelGeometry), and how much it sheds
+ * depends on Advanced: a 300px docked wheel gets degree·sign with Advanced OFF and no
+ * readout at all with it ON, because the cusp rim is drawn outside the rim and never
+ * sheds. 300 is the floor for the wheel being worth exporting at all, not a promise
+ * that the ring survives there.
  *
  * CARD — the picture itself, drawn as the sidebar draws it: the aspect web AND, under a
- * running time overlay, a second ring. Those need real diameter, and WheelSvg names the
- * sizes: the bi-wheel ring only appears at 420, and at 440 (READOUT_MIN) the wheel starts
- * volunteering its degree ring rather than having to be told. Below that a card quietly
- * stops drawing things it was asked for — a wheel that has lost its overlay ring without
- * saying so is worse than one the tool declined. 440 clears both marks.
+ * running time overlay, a second ring. Those need real diameter, and the wheel names the
+ * size: the bi-wheel ring only appears at 420. Below that a card quietly stops drawing
+ * things it was asked for — a wheel that has lost its overlay ring without saying so is
+ * worse than one the tool declined. 440 clears that mark with room to spare, and sits
+ * well above the size at which the wheel volunteers its degree ring unprompted (330).
  *
  * A PHONE card is held to the docked floor instead. Every other frame is a choice — a
  * wider ratio, a bigger window — so it can be held to the standard the wheel sets. A

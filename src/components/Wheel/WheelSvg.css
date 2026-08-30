@@ -7,7 +7,26 @@
  */
 
 /* Styles for the shared SVG wheel. Unscoped so they apply equally
-   inside ChartWheel (mini) and ExpandedChartSidebar (detailed). */
+   inside ChartWheel (mini) and ExpandedChartSidebar (detailed).
+
+   NO font-size HERE for the classes WheelSvg sizes from lib/wheelGeometry
+   (.house-number, .cusp-rim-deg, .wheel-angle-label, .readout-deg, .readout-min).
+
+   React renders `fontSize={n}` on an SVG <text> as the PRESENTATION ATTRIBUTE
+   font-size="n", not as an inline style. A presentation attribute is an
+   author-origin rule of specificity ZERO placed at the start of the author
+   stylesheet, so ANY selector here beats it — `.wheel-svg .house-number` at (0,2,0)
+   wins over the element every time. It does not announce itself: the attribute is
+   right there in the DOM with the value you expect, and the computed style is 9px.
+
+   That is not hypothetical. `fontSize={readoutFont}` has been on the readout since
+   readoutScale was written to grow it from 11px to 17px with the wheel, and
+   `.readout-deg { font-size: 10px }` pinned every wheel at 10px the whole time.
+   Nothing looked broken, so nothing was. Measured in Chrome: attr 17 -> computed 10.
+
+   So the size lives in ONE place — the geometry — and this file sets everything
+   else. If a size ever has to be overridden per-surface again, it has to be done
+   with a real inline `style`, or by giving the geometry the case. */
 
 .wheel-svg .ring {
   fill: none;
@@ -64,7 +83,6 @@
 
 .wheel-svg .house-number {
   fill: var(--text-muted);
-  font-size: 9px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
@@ -98,14 +116,12 @@
 
 .wheel-svg .readout-deg {
   fill: var(--text);
-  font-size: 10px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .wheel-svg .readout-min {
   fill: var(--text-muted);
-  font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -127,7 +143,6 @@
 /* Advanced house-cusp degree·minute labels ringing the outside of the rim. */
 .wheel-svg .cusp-rim-deg {
   fill: var(--text);
-  font-size: 9px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -191,7 +206,10 @@
 
 /* Rim sign glyphs are pointer-transparent so the sector hit zone behind them
    catches the hover across the whole slice (and its tint sits behind the glyph). */
-.wheel-svg .sign-rim {
+.wheel-svg .sign-rim,
+/* The sign glyph inside a cusp unit. Same reason: the 30° hover sector beneath
+   the band has to stay hot, and a glyph on top of it would punch a hole. */
+.wheel-svg .cusp-rim-sign {
   pointer-events: none;
 }
 .wheel-svg.interactive .sign-hit {
@@ -220,7 +238,6 @@
    panel-colored halo (paint-order:stroke keeps it behind the fill) keeps the
    code crisp over whichever spoke / aspect line it sits on. */
 .wheel-svg .wheel-angle-label {
-  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.02em;
   paint-order: stroke;

@@ -110,8 +110,15 @@
 
 /* Planet glyph + sign glyph: scale with the row font (the components hard-set px, so
    render the chars directly and size in em here). The angle code reuses .cx-glyph for
-   the same leading-column width but is plain text, not an .astro-glyph. */
-.capture-extras .astro-glyph {
+   the same leading-column width but is plain text, not an .astro-glyph.
+
+   SPAN-scoped, and that qualifier is load-bearing. The list glyphs are spans; the
+   WHEEL's glyphs are SVG <text class="astro-glyph"> sized in px from lib/wheelGeometry
+   — and those px arrive as a presentation attribute, which any selector here beats.
+   Unscoped, this rule reached into the wheel and resolved 1.08em against the ROW font
+   for all of them, so a 24px rim sign and a 17px planet glyph both rendered at 14px:
+   every glyph on the capture wheel the same size, none of them the intended one. */
+.capture-extras span.astro-glyph {
   font-size: 1.08em;
 }
 .cx-glyph {

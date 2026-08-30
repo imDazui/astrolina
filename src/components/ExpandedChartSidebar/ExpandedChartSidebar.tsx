@@ -23,7 +23,7 @@ import {
   type RelocatedAngles,
 } from '../../lib/ephemeris';
 import type { StoredChart } from '../../lib/chartLibrary';
-import { isTouchLayout, useNarrowNav, usePhone } from '../../lib/touch';
+import { isPhone, isTouchLayout, usePhone } from '../../lib/touch';
 import type { LineType } from '../../lib/astro/lines';
 import { ASPECT_GLYPHS } from '../../lib/astro/glyphChars';
 import { fmtLat, fmtLng } from '../../lib/coordFormat';
@@ -315,10 +315,31 @@ const ASPECT_TYPE_RANK: Record<string, number> = {
 const aspectTypeRank = (type: string): number => ASPECT_TYPE_RANK[type] ?? 99;
 const DEFAULT_WIDTH = 720;
 const MIN_WIDTH = 480;
-// Touch screens (usually a narrower landscape phone) get a lower floor than the desktop
-// minimum, so the panel can tuck into a smaller slice of the screen and leave more map.
-const MIN_WIDTH_TOUCH = 380;
-const minSidebarWidth = (): number => (isTouchLayout() ? MIN_WIDTH_TOUCH : MIN_WIDTH);
+// THREE floors, because "touch" is two different amounts of screen and one figure could
+// only ever suit one of them.
+//
+// A phone gets the lowest: the panel has to tuck into a slice of a short landscape screen
+// and leave some map, and 380 is most of an iPhone SE’s 667pt as it is. A TABLET has room
+// and reads badly down there — the floor was written for the phone case ("usually a
+// narrower landscape phone", it said) and tablets inherited it for no better reason than
+// sharing a pointer type. Raised ~15%, which is where the panel stops feeling cramped on an
+// iPad without eating the map: 440 still leaves 304px of it on the narrowest tablet
+// viewport in portrait (744pt, capped at 70%).
+//
+// isPhone() is small-in-EITHER-orientation, so it catches a landscape phone — the case this
+// floor exists for — and no tablet in either. See lib/touch.
+const MIN_WIDTH_PHONE = 380;
+const MIN_WIDTH_TABLET = 440;
+const minSidebarWidth = (): number => {
+  const floor = isTouchLayout() ? (isPhone() ? MIN_WIDTH_PHONE : MIN_WIDTH_TABLET) : MIN_WIDTH;
+  // A floor above the CAP is incoherent, and quietly so: it pins the panel wider than the
+  // cap allows and freezes the handle, because the drag clamps to [floor, cap] and the two
+  // have crossed. Raising the tablet floor put a real device in reach of that — a small
+  // portrait tablet at 601pt caps at 421 — so the cap wins. (Desktop could already reach it
+  // on a window under 686px wide, where the panel took 75% of it with a dead handle. Same
+  // line fixes both; there was never a reason for the floor to outrank the cap.)
+  return Math.min(floor, maxSidebarWidth());
+};
 // The drag handle won't take the panel past ~70% of the viewport (leaving the map
 // usable), and never beyond 1200px — the chart wheel has stopped growing by then,
 // so extra width just wastes space.
@@ -905,12 +926,6 @@ export function ExpandedChartSidebar({
     return Math.max(min, Math.min(base, maxSidebarWidth()));
   });
 
-  // Portrait phones pin this sidebar to the full viewport width and drop the resize handle (see the
-  // CSS), so the width-gated Azimuth/Altitude columns could never be revealed by dragging it wider.
-  // Force them on in that mode and let the advanced table scroll sideways instead (the CSS switches
-  // .es-adv-table to max-content there so it overflows into the existing .es-adv-scroll).
-  const narrow = useNarrowNav();
-  const fixedFullWidth = isTouchLayout() && narrow;
   // A LANDSCAPE phone has the same problem by a different route: the panel stays resizable, but
   // its cap (70% of an already-short viewport) sits under the 640px column cutoff, so dragging can
   // never reveal Azimuth/Altitude either. usePhone() catches a phone in BOTH orientations (and no
@@ -1262,9 +1277,10 @@ export function ExpandedChartSidebar({
 
   // Touch + dragged below the desktop minimum width (MIN_WIDTH): too narrow to spell every label
   // out, so the glyphs carry the rows (`es-compact`, see the CSS). The threshold sits INSIDE the
-  // touch drag range [MIN_WIDTH_TOUCH, ~70% of the viewport], so widening back past it restores
-  // the labels live. (Desktop can't go below MIN_WIDTH, so it's never compact — labels always
-  // show there. The old DEFAULT_WIDTH threshold was unreachable on a phone, so it stuck compact.)
+  // touch drag range — [380, ~70% of the viewport] on a phone, [440, same] on a tablet — so
+  // widening back past it restores the labels live. (Desktop can't go below MIN_WIDTH, so it's
+  // never compact — labels always show there. The old DEFAULT_WIDTH threshold was unreachable
+  // on a phone, so it stuck compact.)
   const compact = isTouchLayout() && width < MIN_WIDTH;
 
   // The positions readout, for ONE chart: the compact two-column list, or the
@@ -1322,8 +1338,7 @@ export function ExpandedChartSidebar({
     const advFullSign = width >= 530;
     // Past 640px the Azimuth + Altitude columns fit; OR force them on phones — portrait pins
     // the panel full-width, landscape caps it at 70% of a short viewport, so NEITHER can reach
-    // the cutoff by dragging — where the table scrolls sideways instead (usePhone also covers
-    // fixedFullWidth's portrait case).
+    // the cutoff by dragging — where the table scrolls sideways instead.
     const advExtraCols = width >= 640 || phone;
     // Advanced view: one planet per row across labelled coordinate columns.
     // Geocentric columns come straight off the body; RA/Azimuth/Altitude come
@@ -2071,7 +2086,6 @@ export function ExpandedChartSidebar({
                         aspectOrbs={aspectOrbs}
                         visibleAspects={visibleAspects}
                         visibleAngles={visibleAngles}
-                        readouts={fixedFullWidth}
                         interactive
                         planetsOnly={planetsOnly && !angles}
                       />
@@ -2133,7 +2147,6 @@ export function ExpandedChartSidebar({
                           aspectOrbs={aspectOrbs}
                           visibleAspects={visibleAspects}
                           visibleAngles={visibleAngles}
-                          readouts={fixedFullWidth}
                           interactive
                         />
                       </div>
@@ -2153,10 +2166,6 @@ export function ExpandedChartSidebar({
                         overlayAngles={overlayAngles}
                         visibleAspects={visibleAspects}
                         visibleAngles={visibleAngles}
-                        // Portrait phone: the panel can't be dragged wider, so the wheel never reaches
-                        // READOUT_MIN — force the per-point degree·sign·minute readouts on (still
-                        // geometry-guarded), which also draws the house ring in tighter to fit them.
-                        readouts={fixedFullWidth}
                         interactive
                         planetsOnly={planetsOnly && !angles}
                       />
